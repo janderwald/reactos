@@ -728,7 +728,7 @@
 @ stdcall RtlCreateSecurityDescriptor(ptr long)
 @ stdcall RtlCreateServiceSid(ptr ptr ptr) # Exists in Windows 2003 SP 2
 @ stdcall RtlCreateSystemVolumeInformationFolder(ptr)
-@ stdcall RtlCreateTagHeap(ptr long str str)
+@ stdcall RtlCreateTagHeap(ptr long wstr wstr)
 @ stdcall RtlCreateTimer(ptr ptr ptr ptr long long long)
 @ stdcall RtlCreateTimerQueue(ptr)
 @ stdcall RtlCreateUnicodeString(ptr wstr)
@@ -825,7 +825,7 @@
 @ stdcall -arch=win32 -ret64 RtlExtendedLargeIntegerDivide(double long ptr)
 @ stdcall -arch=win32 -ret64 RtlExtendedMagicDivide(double double long)
 @ stdcall RtlFillMemory(ptr long long)
-@ stdcall -arch=i386 RtlFillMemoryUlong(ptr long long)
+@ stdcall -arch=i386,arm RtlFillMemoryUlong(ptr long long)
 @ stdcall RtlFinalReleaseOutOfProcessMemoryStream(ptr)
 @ stub -version=0x600+ RtlFindAceByType
 @ stdcall RtlFindActivationContextSectionGuid(long ptr long ptr ptr)

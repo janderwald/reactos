@@ -48,6 +48,7 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     lib/mm/heap.c)
 
 list(APPEND FREELDR_NTLDR_SOURCE
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
     ntldr/conversion.c
     ntldr/registry.c
     ntldr/winldr.c
@@ -73,7 +74,7 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     options.c
     oslist.c
     ui/directui.c
-    ui/gui.c
+    # ui/gui.c
     ui/minitui.c
     ui/noui.c
     ui/tui.c
@@ -292,7 +293,7 @@ if(ARCH STREQUAL "i386")
     target_link_libraries(freeldr_pe mini_hal)
 endif()
 
-target_link_libraries(freeldr_pe freeldr_common cportlib cmlib rtl libcntpr)
+target_link_libraries(freeldr_pe freeldr_common cportlib cmlib blrtl libcntpr)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)

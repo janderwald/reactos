@@ -24,6 +24,19 @@ typedef struct _KNOWN_COMPOUND_ACE
     ULONG SidStart;
 } KNOWN_COMPOUND_ACE, *PKNOWN_COMPOUND_ACE;
 
+typedef struct _ACCESS_CHECK_RIGHTS
+{
+    ACCESS_MASK RemainingAccessRights;
+    ACCESS_MASK GrantedAccessRights;
+    ACCESS_MASK DeniedAccessRights;
+} ACCESS_CHECK_RIGHTS, *PACCESS_CHECK_RIGHTS;
+
+typedef enum _ACCESS_CHECK_RIGHT_TYPE
+{
+    AccessCheckMaximum,
+    AccessCheckRegular
+} ACCESS_CHECK_RIGHT_TYPE;
+
 typedef struct _TOKEN_AUDIT_POLICY_INFORMATION
 {
     ULONG PolicyCount;
@@ -33,6 +46,10 @@ typedef struct _TOKEN_AUDIT_POLICY_INFORMATION
         UCHAR Value;
     } Policies[1];
 } TOKEN_AUDIT_POLICY_INFORMATION, *PTOKEN_AUDIT_POLICY_INFORMATION;
+
+#define TOKEN_CREATE_METHOD    0xCUL
+#define TOKEN_DUPLICATE_METHOD 0xDUL
+#define TOKEN_FILTER_METHOD    0xFUL
 
 FORCEINLINE
 PSID
@@ -496,6 +513,12 @@ SepReleaseSid(
     _In_ PSID CapturedSid,
     _In_ KPROCESSOR_MODE AccessMode,
     _In_ BOOLEAN CaptureIfKernel);
+
+PSID
+NTAPI
+SepGetSidFromAce(
+    _In_ UCHAR AceType,
+    _In_ PACE Ace);
 
 NTSTATUS
 NTAPI

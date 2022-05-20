@@ -1,6 +1,15 @@
 #ifndef _MSPAINT_H
 #define _MSPAINT_H
 
+#ifdef NDEBUG
+    #undef DBG
+    #undef _DEBUG
+#endif
+
+#if DBG && !defined(_DEBUG)
+    #define _DEBUG
+#endif
+
 #include <stdarg.h>
 
 #include <windef.h>
@@ -20,6 +29,9 @@
 #include <stdlib.h>
 #include <shellapi.h>
 #include <htmlhelp.h>
+
+#define NDEBUG
+#include <debug.h>
 
 #define WM_TOOLSMODELTOOLCHANGED         (WM_APP + 0)
 #define WM_TOOLSMODELSETTINGSCHANGED     (WM_APP + 1)

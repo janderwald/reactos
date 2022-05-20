@@ -191,6 +191,7 @@ AddDisplayDevice(IN PSETTINGS_DATA pData, IN const DISPLAY_DEVICE *DisplayDevice
     newEntry->InitialSettings.dmPelsWidth = newEntry->CurrentSettings->dmPelsWidth;
     newEntry->InitialSettings.dmPelsHeight = newEntry->CurrentSettings->dmPelsHeight;
     newEntry->InitialSettings.dmBitsPerPel = newEntry->CurrentSettings->dmBitsPerPel;
+    newEntry->InitialSettings.dmDisplayFrequency = newEntry->CurrentSettings->dmDisplayFrequency;
 
     /* Count different resolutions */
     for (Current = newEntry->Settings; Current != NULL; Current = Current->Flink)
@@ -300,6 +301,9 @@ OnDisplayDeviceChanged(IN HWND hwndDlg, IN PSETTINGS_DATA pData, IN PDISPLAY_DEV
         }
     }
 
+    /* Fill device description */
+    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_DEVICE, WM_SETTEXT, 0, (LPARAM)pDeviceEntry->DeviceDescription);
+
     /* Fill resolutions slider */
     SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_CLEARTICS, TRUE, 0);
     SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_SETRANGE, TRUE, MAKELONG(0, pDeviceEntry->ResolutionsCount - 1));
@@ -354,7 +358,6 @@ SettingsOnInitDialog(IN HWND hwndDlg)
         MONSL_MONINFO monitors;
 
         /* Single video adapter */
-        SendDlgItemMessage(hwndDlg, IDC_SETTINGS_DEVICE, WM_SETTEXT, 0, (LPARAM)pData->DisplayDeviceList->DeviceDescription);
         OnDisplayDeviceChanged(hwndDlg, pData, pData->DisplayDeviceList);
 
         monitors.Position.x = monitors.Position.y = 0;
@@ -372,7 +375,6 @@ SettingsOnInitDialog(IN HWND hwndDlg)
         PMONSL_MONINFO pMonitors;
         DWORD i;
 
-        SendDlgItemMessage(hwndDlg, IDC_SETTINGS_DEVICE, WM_SETTEXT, 0, (LPARAM)pData->DisplayDeviceList->DeviceDescription);
         OnDisplayDeviceChanged(hwndDlg, pData, pData->DisplayDeviceList);
 
         pMonitors = (PMONSL_MONINFO)HeapAlloc(GetProcessHeap(), 0, sizeof(MONSL_MONINFO) * Result);
@@ -769,6 +771,7 @@ ApplyDisplaySettings(HWND hwndDlg, PSETTINGS_DATA pData)
         pData->CurrentDisplayDevice->InitialSettings.dmPelsWidth = pData->CurrentDisplayDevice->CurrentSettings->dmPelsWidth;
         pData->CurrentDisplayDevice->InitialSettings.dmPelsHeight = pData->CurrentDisplayDevice->CurrentSettings->dmPelsHeight;
         pData->CurrentDisplayDevice->InitialSettings.dmBitsPerPel = pData->CurrentDisplayDevice->CurrentSettings->dmBitsPerPel;
+        pData->CurrentDisplayDevice->InitialSettings.dmDisplayFrequency = pData->CurrentDisplayDevice->CurrentSettings->dmDisplayFrequency;
     }
     else
     {
@@ -788,6 +791,7 @@ ApplyDisplaySettings(HWND hwndDlg, PSETTINGS_DATA pData)
                 pData->CurrentDisplayDevice->CurrentSettings->dmPelsWidth = pData->CurrentDisplayDevice->InitialSettings.dmPelsWidth;
                 pData->CurrentDisplayDevice->CurrentSettings->dmPelsHeight = pData->CurrentDisplayDevice->InitialSettings.dmPelsHeight;
                 pData->CurrentDisplayDevice->CurrentSettings->dmBitsPerPel = pData->CurrentDisplayDevice->InitialSettings.dmBitsPerPel;
+                pData->CurrentDisplayDevice->CurrentSettings->dmDisplayFrequency = pData->CurrentDisplayDevice->InitialSettings.dmDisplayFrequency;
                 UpdateDisplay(hwndDlg, pData, TRUE);
                 break;
 
@@ -877,6 +881,15 @@ SettingsPageProc(IN HWND hwndDlg, IN UINT uMsg, IN WPARAM wParam, IN LPARAM lPar
                     /* Apply new settings */
                     ApplyDisplaySettings(hwndDlg, pData);
                 }
+            }
+            else if (lpnm->code == MSLN_MONITORCHANGED)
+            {
+                PMONSL_MONNMMONITORCHANGING lpnmi = (PMONSL_MONNMMONITORCHANGING)lParam;
+                PDISPLAY_DEVICE_ENTRY Current = pData->DisplayDeviceList;
+                ULONG i;
+                for (i = 0; i < lpnmi->hdr.Index; i++)
+                    Current = Current->Flink;
+                OnDisplayDeviceChanged(hwndDlg, pData, Current);
             }
             break;
         }

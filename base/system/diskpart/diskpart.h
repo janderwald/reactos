@@ -20,6 +20,8 @@
 #include <winreg.h>
 #include <wincon.h>
 
+#include <errno.h>
+
 #include <conutils.h>
 
 /*
@@ -50,10 +52,12 @@
 
 typedef struct _COMMAND
 {
-    LPWSTR name;
+    PWSTR cmd1;
+    PWSTR cmd2;
+    PWSTR cmd3;
     BOOL (*func)(INT, WCHAR**);
     INT help;
-    INT help_desc;
+    INT help_detail;
 } COMMAND, *PCOMMAND;
 
 extern COMMAND cmds[];
@@ -150,8 +154,9 @@ typedef struct _DISKENTRY
 
     ULONG DiskNumber;
     USHORT Port;
-    USHORT Bus;
-    USHORT Id;
+    USHORT PathId;
+    USHORT TargetId;
+    USHORT Lun;
 
     /* Has the partition list been modified? */
     BOOLEAN Dirty;
@@ -170,14 +175,32 @@ typedef struct _DISKENTRY
 
 } DISKENTRY, *PDISKENTRY;
 
+typedef struct _VOLENTRY
+{
+    LIST_ENTRY ListEntry;
+
+    ULONG VolumeNumber;
+    WCHAR VolumeName[MAX_PATH];
+
+    WCHAR DriveLetter;
+
+    PWSTR pszLabel;
+    PWSTR pszFilesystem;
+    UINT DriveType;
+    ULARGE_INTEGER Size;
+
+} VOLENTRY, *PVOLENTRY;
+
 
 /* GLOBAL VARIABLES ***********************************************************/
 
 extern LIST_ENTRY DiskListHead;
 extern LIST_ENTRY BiosDiskListHead;
+extern LIST_ENTRY VolumeListHead;
 
 extern PDISKENTRY CurrentDisk;
 extern PPARTENTRY CurrentPartition;
+extern PVOLENTRY  CurrentVolume;
 
 /* PROTOTYPES *****************************************************************/
 
@@ -212,7 +235,20 @@ BOOL compact_main(INT argc, LPWSTR *argv);
 BOOL convert_main(INT argc, LPWSTR *argv);
 
 /* create.c */
-BOOL create_main(INT argc, LPWSTR *argv);
+BOOL
+CreateExtendedPartition(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+CreateLogicalPartition(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+CreatePrimaryPartition(
+    INT argc,
+    PWSTR *argv);
 
 /* delete.c */
 BOOL delete_main(INT argc, LPWSTR *argv);
@@ -221,9 +257,25 @@ BOOL delete_main(INT argc, LPWSTR *argv);
 BOOL detach_main(INT argc, LPWSTR *argv);
 
 /* detail.c */
-BOOL detail_main(INT argc, LPWSTR *argv);
+BOOL
+DetailDisk(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+DetailPartition(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+DetailVolume(
+    INT argc,
+    PWSTR *argv);
 
 /* diskpart.c */
+
+/* dump.c */
+BOOL dump_main(INT argc, LPWSTR *argv);
 
 /* expand.c */
 BOOL expand_main(INT argc, LPWSTR *argv);
@@ -242,7 +294,8 @@ BOOL gpt_main(INT argc, LPWSTR *argv);
 
 /* help.c */
 BOOL help_main(INT argc, LPWSTR *argv);
-VOID help_cmdlist(VOID);
+VOID HelpCommandList(VOID);
+BOOL HelpCommand(PCOMMAND pCommand);
 
 /* import. c */
 BOOL import_main(INT argc, LPWSTR *argv);
@@ -256,10 +309,49 @@ BOOL InterpretCmd(INT argc, LPWSTR *argv);
 VOID InterpretMain(VOID);
 
 /* list.c */
-BOOL list_main(INT argc, LPWSTR *argv);
+BOOL
+ListDisk(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+ListPartition(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+ListVolume(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+ListVirtualDisk(
+    INT argc,
+    PWSTR *argv);
 
 /* merge.c */
 BOOL merge_main(INT argc, LPWSTR *argv);
+
+/* misc.c */
+BOOL
+IsDecString(
+    _In_ PWSTR pszDecString);
+
+BOOL
+IsHexString(
+    _In_ PWSTR pszHexString);
+
+BOOL
+HasPrefix(
+    _In_ PWSTR pszString,
+    _In_ PWSTR pszPrefix,
+    _Out_opt_ PWSTR *pszSuffix);
+
+ULONGLONG
+RoundingDivide(
+    _In_ ULONGLONG Dividend,
+    _In_ ULONGLONG Divisor);
+
 
 /* offline.c */
 BOOL offline_main(INT argc, LPWSTR *argv);
@@ -273,6 +365,12 @@ CreatePartitionList(VOID);
 
 VOID
 DestroyPartitionList(VOID);
+
+NTSTATUS
+CreateVolumeList(VOID);
+
+VOID
+DestroyVolumeList(VOID);
 
 /* recover.c */
 BOOL recover_main(INT argc, LPWSTR *argv);
@@ -293,8 +391,26 @@ BOOL retain_main(INT argc, LPWSTR *argv);
 BOOL san_main(INT argc, LPWSTR *argv);
 
 /* select.c */
-BOOL select_main(INT argc, LPWSTR *argv);
+BOOL
+SelectDisk(
+    INT argc,
+    PWSTR *argv);
 
+BOOL
+SelectPartition(
+    INT argc,
+    PWSTR *argv);
+
+BOOL
+SelectVolume(
+    INT argc,
+    PWSTR *argv);
+/*
+BOOL
+SelectVirtualDisk(
+    INT argc,
+    PWSTR *argv);
+*/
 /* setid.c */
 BOOL setid_main(INT argc, LPWSTR *argv);
 
@@ -302,6 +418,9 @@ BOOL setid_main(INT argc, LPWSTR *argv);
 BOOL shrink_main(INT argc, LPWSTR *argv);
 
 /* uniqueid.c */
-BOOL uniqueid_main(INT argc, LPWSTR *argv);
+BOOL
+UniqueIdDisk(
+    _In_ INT argc,
+    _In_ PWSTR *argv);
 
 #endif /* DISKPART_H */

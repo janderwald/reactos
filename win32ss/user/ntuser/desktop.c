@@ -128,6 +128,14 @@ IntDesktopObjectParse(IN PVOID ParseObject,
                             (PVOID*)&Desktop);
     if (!NT_SUCCESS(Status)) return Status;
 
+    /* Assign security to the desktop we have created */
+    Status = IntAssignDesktopSecurityOnParse(WinStaObject, Desktop, AccessState);
+    if (!NT_SUCCESS(Status))
+    {
+        ObDereferenceObject(Desktop);
+        return Status;
+    }
+
     /* Initialize the desktop */
     Status = UserInitializeDesktop(Desktop, RemainingName, WinStaObject);
     if (!NT_SUCCESS(Status))
@@ -555,6 +563,7 @@ IntResolveDesktop(
     LUID ProcessLuid;
     USHORT StrSize;
     SIZE_T MemSize;
+    PSECURITY_DESCRIPTOR ServiceSD = NULL;
     POBJECT_ATTRIBUTES ObjectAttributes = NULL;
     PUNICODE_STRING ObjectName;
     UNICODE_STRING WinStaName, DesktopName;
@@ -1013,15 +1022,28 @@ IntResolveDesktop(
             ObjectName->Length = (USHORT)(wcslen(ObjectName->Buffer) * sizeof(WCHAR));
 
             /*
+             * Set up a security descriptor for the service.
+             * A service is generally based upon a desktop
+             * and a window station. The newly created window
+             * station and desktop will get this security descriptor
+             * if such objects weren't created before.
+             */
+            Status = IntCreateServiceSecurity(&ServiceSD);
+            if (!NT_SUCCESS(Status))
+            {
+                ERR("Failed to create a security descriptor for default window station, Status 0x%08lx\n", Status);
+                goto Quit;
+            }
+
+            /*
              * Create or open the non-interactive window station.
              * NOTE: The non-interactive window station handle is never inheritable.
              */
-            // FIXME: Set security!
             InitializeObjectAttributes(ObjectAttributes,
                                        ObjectName,
                                        OBJ_CASE_INSENSITIVE | OBJ_OPENIF,
                                        NULL,
-                                       NULL);
+                                       ServiceSD);
 
             Status = IntCreateWindowStation(&hWinSta,
                                             ObjectAttributes,
@@ -1054,8 +1076,11 @@ IntResolveDesktop(
             }
             ObjectName->Length = (USHORT)(wcslen(ObjectName->Buffer) * sizeof(WCHAR));
 
-            /* NOTE: The non-interactive desktop handle is never inheritable. */
-            // FIXME: Set security!
+            /*
+             * NOTE: The non-interactive desktop handle is never inheritable.
+             * The security descriptor is inherited from the newly created
+             * window station for the desktop.
+             */
             InitializeObjectAttributes(ObjectAttributes,
                                        ObjectName,
                                        OBJ_CASE_INSENSITIVE | OBJ_OPENIF,
@@ -1175,6 +1200,8 @@ Quit:
     {
         *phWinSta  = hWinSta;
         *phDesktop = hDesktop;
+
+        IntFreeSecurityBuffer(ServiceSD);
         return STATUS_SUCCESS;
     }
     else
@@ -1190,6 +1217,9 @@ Quit:
             ObCloseHandle(hDesktop, UserMode);
         if (hWinSta)
             ObCloseHandle(hWinSta, UserMode);
+
+        if (ServiceSD)
+            IntFreeSecurityBuffer(ServiceSD);
 
         SetLastNtError(Status);
         return Status;
@@ -1355,6 +1385,7 @@ HWND FASTCALL IntGetDesktopWindow(VOID)
     return pdo->DesktopWindow;
 }
 
+// Win: _GetDesktopWindow
 PWND FASTCALL UserGetDesktopWindow(VOID)
 {
     PDESKTOP pdo = IntGetActiveDesktop();
@@ -1380,6 +1411,7 @@ HWND FASTCALL IntGetMessageWindow(VOID)
     return pdo->spwndMessage->head.h;
 }
 
+// Win: _GetMessageWindow
 PWND FASTCALL UserGetMessageWindow(VOID)
 {
     PDESKTOP pdo = IntGetActiveDesktop();
@@ -1550,7 +1582,7 @@ UserGetDesktopDC(ULONG DcType, BOOL bAltDc, BOOL ValidatehWnd)
     /* This can be called from GDI/DX, so acquire the USER lock */
     UserEnterExclusive();
 
-    if (DcType == DC_TYPE_DIRECT)
+    if (DcType == DCTYPE_DIRECT)
     {
         DesktopObject = UserGetDesktopWindow();
         DesktopHDC = (HDC)UserGetWindowDC(DesktopObject);

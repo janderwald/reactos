@@ -13,19 +13,10 @@
 
 /* FUNCTIONS ******************************************************************/
 
-static
-ULONGLONG
-RoundingDivide(
-   IN ULONGLONG Dividend,
-   IN ULONGLONG Divisor)
-{
-    return (Dividend + Divisor / 2) / Divisor;
-}
-
-
-static
-VOID
-ListDisk(VOID)
+BOOL
+ListDisk(
+    INT argc,
+    PWSTR *argv)
 {
     PLIST_ENTRY Entry;
     PDISKENTRY DiskEntry;
@@ -78,11 +69,15 @@ ListDisk(VOID)
     }
 
     ConPuts(StdOut, L"\n\n");
+
+    return TRUE;
 }
 
-static
-VOID
-ListPartition(VOID)
+
+BOOL
+ListPartition(
+    INT argc,
+    PWSTR *argv)
 {
     PLIST_ENTRY Entry;
     PPARTENTRY PartEntry;
@@ -95,7 +90,7 @@ ListPartition(VOID)
     if (CurrentDisk == NULL)
     {
         ConResPuts(StdOut, IDS_LIST_PARTITION_NO_DISK);
-        return;
+        return TRUE;
     }
 
     /* Header labels */
@@ -215,45 +210,68 @@ ListPartition(VOID)
     }
 
     ConPuts(StdOut, L"\n");
+
+    return TRUE;
 }
 
-static
-VOID
-ListVolume(VOID)
-{
-    ConResPuts(StdOut, IDS_LIST_VOLUME_HEAD);
-}
-
-static
-VOID
-ListVdisk(VOID)
-{
-    ConPuts(StdOut, L"List VDisk!!\n");
-}
 
 BOOL
-list_main(
+ListVolume(
     INT argc,
-    LPWSTR *argv)
+    PWSTR *argv)
 {
-    /* gets the first word from the string */
-    if (argc == 1)
+    PLIST_ENTRY Entry;
+    PVOLENTRY VolumeEntry;
+    ULONGLONG VolumeSize;
+    LPWSTR lpSizeUnit;
+
+    ConResPuts(StdOut, IDS_LIST_VOLUME_HEAD);
+    ConResPuts(StdOut, IDS_LIST_VOLUME_LINE);
+
+    Entry = VolumeListHead.Flink;
+    while (Entry != &VolumeListHead)
     {
-        ConResPuts(StdOut, IDS_HELP_CMD_LIST);
-        return TRUE;
+        VolumeEntry = CONTAINING_RECORD(Entry, VOLENTRY, ListEntry);
+
+        VolumeSize = VolumeEntry->Size.QuadPart;
+        if (VolumeSize >= 10737418240) /* 10 GB */
+        {
+            VolumeSize = RoundingDivide(VolumeSize, 1073741824);
+            lpSizeUnit = L"GB";
+        }
+        else if (VolumeSize >= 10485760) /* 10 MB */
+        {
+            VolumeSize = RoundingDivide(VolumeSize, 1048576);
+            lpSizeUnit = L"MB";
+        }
+        else
+        {
+            VolumeSize = RoundingDivide(VolumeSize, 1024);
+            lpSizeUnit = L"KB";
+        }
+
+        ConResPrintf(StdOut, IDS_LIST_VOLUME_FORMAT,
+                     VolumeEntry->VolumeNumber,
+                     VolumeEntry->DriveLetter,
+                     (VolumeEntry->pszLabel) ? VolumeEntry->pszLabel : L"",
+                     (VolumeEntry->pszFilesystem) ? VolumeEntry->pszFilesystem : L"",
+                     VolumeEntry->DriveType,
+                     VolumeSize, lpSizeUnit);
+
+        Entry = Entry->Flink;
     }
 
-    /* determines which to list (disk, partition, etc.) */
-    if (!wcsicmp(argv[1], L"disk"))
-        ListDisk();
-    else if (!wcsicmp(argv[1], L"partition"))
-        ListPartition();
-    else if (!wcsicmp(argv[1], L"volume"))
-        ListVolume();
-    else if (!wcsicmp(argv[1], L"vdisk"))
-        ListVdisk();
-    else
-        ConResPuts(StdOut, IDS_HELP_CMD_LIST);
+    ConPuts(StdOut, L"\n\n");
 
+    return TRUE;
+}
+
+
+BOOL
+ListVirtualDisk(
+    INT argc,
+    PWSTR *argv)
+{
+    ConPuts(StdOut, L"ListVirtualDisk()!\n");
     return TRUE;
 }

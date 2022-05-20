@@ -173,7 +173,7 @@ _tWinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPTSTR lpszArgument
     /* initialize common controls library */
     INITCOMMONCONTROLSEX iccx;
     iccx.dwSize = sizeof(iccx);
-    iccx.dwICC = ICC_STANDARD_CLASSES | ICC_USEREX_CLASSES;
+    iccx.dwICC = ICC_STANDARD_CLASSES | ICC_USEREX_CLASSES | ICC_BAR_CLASSES;
     InitCommonControlsEx(&iccx);
 
     LoadString(hThisInstance, IDS_DEFAULTFILENAME, filepathname, _countof(filepathname));
@@ -344,7 +344,8 @@ _tWinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPTSTR lpszArgument
         if (fontsDialog.IsWindow() && IsDialogMessage(fontsDialog, &messages))
             continue;
 
-        TranslateAccelerator(hwnd, haccel, &messages);
+        if (TranslateAccelerator(hwnd, haccel, &messages))
+            continue;
 
         /* Translate virtual-key messages into character messages */
         TranslateMessage(&messages);
