@@ -32,7 +32,7 @@ static BOOL s_bAbort;
 
 static DWORD s_dwFlags;
 static WCHAR s_szName[MAX_PATH];
-static DWORD s_cbName;
+static DWORD s_cchName;
 static const WCHAR s_empty[] = L"";
 static const WCHAR s_backslash[] = L"\\";
 
@@ -160,9 +160,6 @@ BOOL RegFindRecurse(
     if (lResult != ERROR_SUCCESS)
         return FALSE;
 
-    if (pszValueName == NULL)
-        pszValueName = s_empty;
-
     lResult = RegQueryInfoKeyW(hSubKey, NULL, NULL, NULL, NULL, NULL, NULL,
                               &c, NULL, NULL, NULL, NULL);
     if (lResult != ERROR_SUCCESS)
@@ -177,8 +174,8 @@ BOOL RegFindRecurse(
         if (DoEvents())
             goto err;
 
-        s_cbName = MAX_PATH * sizeof(WCHAR);
-        lResult = RegEnumValueW(hSubKey, i, s_szName, &s_cbName, NULL, NULL,
+        s_cchName = _countof(s_szName);
+        lResult = RegEnumValueW(hSubKey, i, s_szName, &s_cchName, NULL, NULL,
                                NULL, &cb);
         if (lResult == ERROR_NO_MORE_ITEMS)
         {
@@ -187,13 +184,16 @@ BOOL RegFindRecurse(
         }
         if (lResult != ERROR_SUCCESS)
             goto err;
-        if (s_cbName >= MAX_PATH * sizeof(WCHAR))
+        if (s_cchName >= _countof(s_szName))
             continue;
 
         ppszNames[i] = _wcsdup(s_szName);
     }
 
     qsort(ppszNames, c, sizeof(LPWSTR), compare);
+
+    if (pszValueName == NULL)
+        pszValueName = ppszNames[0];
 
     for(i = 0; i < c; i++)
     {
@@ -267,8 +267,8 @@ BOOL RegFindRecurse(
         if (DoEvents())
             goto err;
 
-        s_cbName = MAX_PATH * sizeof(WCHAR);
-        lResult = RegEnumKeyExW(hSubKey, i, s_szName, &s_cbName, NULL, NULL,
+        s_cchName = _countof(s_szName);
+        lResult = RegEnumKeyExW(hSubKey, i, s_szName, &s_cchName, NULL, NULL,
                                NULL, NULL);
         if (lResult == ERROR_NO_MORE_ITEMS)
         {
@@ -277,7 +277,7 @@ BOOL RegFindRecurse(
         }
         if (lResult != ERROR_SUCCESS)
             goto err;
-        if (s_cbName >= MAX_PATH * sizeof(WCHAR))
+        if (s_cchName >= _countof(s_szName))
             continue;
 
         ppszNames[i] = _wcsdup(s_szName);
@@ -370,12 +370,13 @@ BOOL RegFindWalk(
     LPWSTR *ppszNames = NULL;
 
     hBaseKey = *phKey;
+
+    if (wcslen(pszSubKey) >= _countof(szSubKey))
+        return FALSE;
+
     if (RegFindRecurse(hBaseKey, pszSubKey, pszValueName, ppszFoundSubKey,
                        ppszFoundValueName))
         return TRUE;
-
-    if (wcslen(pszSubKey) >= MAX_PATH)
-        return FALSE;
 
     wcscpy(szSubKey, pszSubKey);
     while(szSubKey[0] != 0)
@@ -415,8 +416,8 @@ BOOL RegFindWalk(
             if (DoEvents())
                 goto err;
 
-            s_cbName = MAX_PATH * sizeof(WCHAR);
-            lResult = RegEnumKeyExW(hSubKey, i, s_szName, &s_cbName,
+            s_cchName = _countof(s_szName);
+            lResult = RegEnumKeyExW(hSubKey, i, s_szName, &s_cchName,
                                     NULL, NULL, NULL, NULL);
             if (lResult == ERROR_NO_MORE_ITEMS)
             {
@@ -685,12 +686,20 @@ BOOL FindNext(HWND hWnd)
 
     if (fSuccess)
     {
-        GetKeyName(szFullKey, COUNT_OF(szFullKey), hKeyRoot, pszFoundSubKey);
+        GetKeyName(szFullKey, ARRAY_SIZE(szFullKey), hKeyRoot, pszFoundSubKey);
         SelectNode(g_pChildWnd->hTreeWnd, szFullKey);
-        SetValueName(g_pChildWnd->hListWnd, pszFoundValueName);
         free(pszFoundSubKey);
-        free(pszFoundValueName);
-        SetFocus(g_pChildWnd->hListWnd);
+
+        if (pszFoundValueName != NULL)
+        {
+            SetValueName(g_pChildWnd->hListWnd, pszFoundValueName);
+            free(pszFoundValueName);
+            SetFocus(g_pChildWnd->hListWnd);
+        }
+        else
+        {
+            SetFocus(g_pChildWnd->hTreeWnd);
+        }
     }
     return fSuccess || s_bAbort;
 }
@@ -776,7 +785,7 @@ static INT_PTR CALLBACK FindDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 
                 hControl = GetDlgItem(hDlg, IDC_FINDWHAT);
                 if (hControl)
-                    GetWindowTextW(hControl, s_szFindWhat, COUNT_OF(s_szFindWhat));
+                    GetWindowTextW(hControl, s_szFindWhat, ARRAY_SIZE(s_szFindWhat));
                 EndDialog(hDlg, 1);
                 break;
 
@@ -790,7 +799,7 @@ static INT_PTR CALLBACK FindDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
             switch(LOWORD(wParam))
             {
             case IDC_FINDWHAT:
-                GetWindowTextW((HWND) lParam, s_szSavedFindValue, COUNT_OF(s_szSavedFindValue));
+                GetWindowTextW((HWND) lParam, s_szSavedFindValue, ARRAY_SIZE(s_szSavedFindValue));
                 hControl = GetDlgItem(hDlg, IDOK);
                 if (hControl)
                 {
@@ -816,8 +825,8 @@ void FindNextMessageBox(HWND hWnd)
     {
         WCHAR msg[128], caption[128];
 
-        LoadStringW(hInst, IDS_FINISHEDFIND, msg, COUNT_OF(msg));
-        LoadStringW(hInst, IDS_APP_TITLE, caption, COUNT_OF(caption));
+        LoadStringW(hInst, IDS_FINISHEDFIND, msg, ARRAY_SIZE(msg));
+        LoadStringW(hInst, IDS_APP_TITLE, caption, ARRAY_SIZE(caption));
         MessageBoxW(hWnd, msg, caption, MB_ICONINFORMATION);
     }
 }

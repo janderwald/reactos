@@ -4,6 +4,7 @@
 #include <apitest.h>
 
 extern void func_AttachThreadInput(void);
+extern void func_CharFuncs(void);
 extern void func_CloseWindow(void);
 extern void func_CreateDialog(void);
 extern void func_CreateIconFromResourceEx(void);
@@ -25,6 +26,7 @@ extern void func_GetSystemMetrics(void);
 extern void func_GetUserObjectInformation(void);
 extern void func_GetWindowPlacement(void);
 extern void func_InitializeLpkHooks(void);
+extern void func_KbdLayout(void);
 extern void func_keybd_event(void);
 extern void func_LoadImage(void);
 extern void func_LookupIconIdFromDirectoryEx(void);
@@ -50,12 +52,14 @@ extern void func_ShowWindow(void);
 extern void func_SwitchToThisWindow(void);
 extern void func_SystemParametersInfo(void);
 extern void func_TrackMouseEvent(void);
+extern void func_VirtualKey(void);
 extern void func_WndProc(void);
 extern void func_wsprintf(void);
 
 const struct test winetest_testlist[] =
 {
     { "AttachThreadInput", func_AttachThreadInput },
+    { "CharFuncs", func_CharFuncs },
     { "CloseWindow", func_CloseWindow },
     { "CreateDialog", func_CreateDialog },
     { "CreateIconFromResourceEx", func_CreateIconFromResourceEx },
@@ -77,6 +81,7 @@ const struct test winetest_testlist[] =
     { "GetUserObjectInformation", func_GetUserObjectInformation },
     { "GetWindowPlacement", func_GetWindowPlacement },
     { "InitializeLpkHooks", func_InitializeLpkHooks },
+    { "KbdLayout", func_KbdLayout },
     { "keybd_event", func_keybd_event },
     { "LoadImage", func_LoadImage },
     { "LookupIconIdFromDirectoryEx", func_LookupIconIdFromDirectoryEx },
@@ -102,6 +107,7 @@ const struct test winetest_testlist[] =
     { "SwitchToThisWindow", func_SwitchToThisWindow },
     { "SystemParametersInfo", func_SystemParametersInfo },
     { "TrackMouseEvent", func_TrackMouseEvent },
+    { "VirtualKey", func_VirtualKey },
     { "WndProc", func_WndProc },
     { "wsprintfApi", func_wsprintf },
     { 0, 0 }

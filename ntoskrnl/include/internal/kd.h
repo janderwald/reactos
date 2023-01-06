@@ -27,18 +27,7 @@ KdPortPutByteEx(
     UCHAR ByteToSend
 );
 
-/* SYMBOL ROUTINES **********************************************************/
-
 #ifdef _NTOSKRNL_
-
-#ifdef KDBG
-# define KdbInit()                                  KdbpCliInit()
-# define KdbModuleLoaded(FILENAME)                  KdbpCliModuleLoaded(FILENAME)
-#else
-# define KdbInit()                                      do { } while (0)
-# define KdbEnter()                                     do { } while (0)
-# define KdbModuleLoaded(X)                             do { } while (0)
-#endif
 
 /* KD ROUTINES ***************************************************************/
 
@@ -64,13 +53,6 @@ VOID
 );
 
 /* INIT ROUTINES *************************************************************/
-
-BOOLEAN
-NTAPI
-KdInitSystem(
-    ULONG Reserved,
-    PLOADER_PARAMETER_BLOCK LoaderBlock
-);
 
 VOID
 KdpScreenAcquire(VOID);
@@ -99,18 +81,16 @@ KdpDebugLogInit(
     ULONG BootPhase
 );
 
+#ifdef KDBG
 VOID
 NTAPI
 KdpKdbgInit(
     struct _KD_DISPATCH_TABLE *DispatchTable,
     ULONG BootPhase);
+#endif
 
 
 /* KD ROUTINES ***************************************************************/
-
-BOOLEAN
-NTAPI
-KdpDetectConflicts(PCM_RESOURCE_LIST DriverList);
 
 BOOLEAN
 NTAPI
@@ -203,7 +183,7 @@ extern KD_DISPATCH_TABLE DispatchTable[KdMax];
 /* The KD Native Provider List */
 extern LIST_ENTRY KdProviders;
 
-#endif
+#endif // _NTOSKRNL_
 
 #if DBG && defined(_M_IX86) && !defined(_WINKD_) // See ke/i386/traphdlr.c
 #define ID_Win32PreServiceHook 'WSH0'

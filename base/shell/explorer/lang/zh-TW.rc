@@ -3,7 +3,7 @@
  * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
  * PURPOSE:     Chinese (Traditional) resource file
  * TRANSLATORS: Copyright 2015 Alvin Wong <alvinhochun@gmail.com>
- *              Copyright 2018 Luo Yufan <njlyf2011@hotmail.com>
+ *              Copyright 2018 Luke Luo <njlyf2011@hotmail.com>
  *              Copyright 2021 Chan Chilung <eason066.gmail.com>
  */
 
@@ -94,7 +94,7 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYS
 CAPTION "開始功能表"
 FONT 9, "新細明體", 0, 0, 0x1
 BEGIN
-CONTROL "", IDC_TASKBARPROP_STARTMENU_BITMAP, "Static", SS_BITMAP | SS_SUNKEN,7, 7, 183, 108
+    CONTROL "", IDC_TASKBARPROP_STARTMENU_BITMAP, "Static", SS_BITMAP | SS_SUNKEN,7, 7, 183, 108
     AUTORADIOBUTTON "開始功能表(&S)", IDC_TASKBARPROP_STARTMENU, 7, 135, 105, 10
     LTEXT "這個樣式讓你可以輕鬆存取您的資料夾、最愛的程式和搜尋資料。", IDC_TASKBARPROP_STARTMENUMODERNTEXT, 20, 145, 150, 24
     PUSHBUTTON "自訂(&C)...", IDC_TASKBARPROP_STARTMENUCUST, 192, 132, 53, 14
@@ -204,4 +204,6 @@ STRINGTABLE
 BEGIN
     IDS_TASKBAR_STARTMENU_PROP_CAPTION "工作列及開始功能表"
     IDS_RESTORE_ALL "顯示開啟的視窗(&S)"
+    IDS_TRAYWND_UNDO_CASCADE "&Undo Cascade"
+    IDS_TRAYWND_UNDO_TILE "&Undo Tile"
 END

@@ -124,7 +124,11 @@ NtUserCallNoParam(DWORD Routine)
             break;
 
         case NOPARAM_ROUTINE_UPDATEPERUSERIMMENABLING:
-            gpsi->dwSRVIFlags |= SRVINFO_IMM32; // Always set.
+            if (UserIsIMMEnabled())
+                gpsi->dwSRVIFlags |= SRVINFO_IMM32;
+            else
+                gpsi->dwSRVIFlags &= ~SRVINFO_IMM32;
+
             Result = TRUE; // Always return TRUE.
             break;
 
@@ -666,7 +670,7 @@ NtUserCallHwndLock(
             break;
 
         case HWNDLOCK_ROUTINE_CHECKIMESHOWSTATUSINTHRD:
-            // TODO:
+            IntCheckImeShowStatusInThread(Window);
             break;
     }
 

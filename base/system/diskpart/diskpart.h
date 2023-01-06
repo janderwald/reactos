@@ -19,8 +19,10 @@
 #include <winbase.h>
 #include <winreg.h>
 #include <wincon.h>
+#include <winioctl.h>
 
 #include <errno.h>
+#include <strsafe.h>
 
 #include <conutils.h>
 
@@ -57,7 +59,7 @@ typedef struct _COMMAND
     PWSTR cmd3;
     BOOL (*func)(INT, WCHAR**);
     INT help;
-    INT help_detail;
+    DWORD help_detail;
 } COMMAND, *PCOMMAND;
 
 extern COMMAND cmds[];
@@ -83,6 +85,14 @@ typedef enum _FORMATSTATE
     Formatted
 } FORMATSTATE, *PFORMATSTATE;
 
+typedef enum _VOLUME_TYPE
+{
+    VOLUME_TYPE_CDROM,
+    VOLUME_TYPE_PARTITION,
+    VOLUME_TYPE_REMOVABLE,
+    VOLUME_TYPE_UNKNOWN
+} VOLUME_TYPE, *PVOLUME_TYPE;
+
 typedef struct _PARTENTRY
 {
     LIST_ENTRY ListEntry;
@@ -94,13 +104,14 @@ typedef struct _PARTENTRY
 
     BOOLEAN BootIndicator;
     UCHAR PartitionType;
-    ULONG HiddenSectors;
+    ULONG OnDiskPartitionNumber;
     ULONG PartitionNumber;
     ULONG PartitionIndex;
 
     CHAR DriveLetter;
     CHAR VolumeLabel[17];
     CHAR FileSystemName[9];
+    FORMATSTATE FormatState;
 
     BOOLEAN LogicalPartition;
 
@@ -112,8 +123,6 @@ typedef struct _PARTENTRY
 
     /* Partition was created automatically. */
     BOOLEAN AutoCreate;
-
-    FORMATSTATE FormatState;
 
     /* Partition must be checked */
     BOOLEAN NeedsCheck;
@@ -181,13 +190,16 @@ typedef struct _VOLENTRY
 
     ULONG VolumeNumber;
     WCHAR VolumeName[MAX_PATH];
+    WCHAR DeviceName[MAX_PATH];
 
     WCHAR DriveLetter;
 
     PWSTR pszLabel;
     PWSTR pszFilesystem;
-    UINT DriveType;
+    VOLUME_TYPE VolumeType;
     ULARGE_INTEGER Size;
+
+    PVOLUME_DISK_EXTENTS pExtents;
 
 } VOLENTRY, *PVOLENTRY;
 
@@ -237,21 +249,35 @@ BOOL convert_main(INT argc, LPWSTR *argv);
 /* create.c */
 BOOL
 CreateExtendedPartition(
-    INT argc,
-    PWSTR *argv);
+    _In_ INT argc,
+    _In_ PWSTR *argv);
 
 BOOL
 CreateLogicalPartition(
-    INT argc,
-    PWSTR *argv);
+    _In_ INT argc,
+    _In_ PWSTR *argv);
 
 BOOL
 CreatePrimaryPartition(
-    INT argc,
-    PWSTR *argv);
+    _In_ INT argc,
+    _In_ PWSTR *argv);
 
 /* delete.c */
-BOOL delete_main(INT argc, LPWSTR *argv);
+BOOL
+DeleteDisk(
+    _In_ INT argc,
+    _In_ PWSTR *argv);
+
+BOOL
+DeletePartition(
+    _In_ INT argc,
+    _In_ PWSTR *argv);
+
+BOOL
+DeleteVolume(
+    _In_ INT argc,
+    _In_ PWSTR *argv);
+
 
 /* detach.c */
 BOOL detach_main(INT argc, LPWSTR *argv);
@@ -275,7 +301,16 @@ DetailVolume(
 /* diskpart.c */
 
 /* dump.c */
-BOOL dump_main(INT argc, LPWSTR *argv);
+BOOL
+DumpDisk(
+    _In_ INT argc,
+    _In_ LPWSTR *argv);
+
+BOOL
+DumpPartition(
+    _In_ INT argc,
+    _In_ LPWSTR *argv);
+
 
 /* expand.c */
 BOOL expand_main(INT argc, LPWSTR *argv);
@@ -329,6 +364,14 @@ ListVirtualDisk(
     INT argc,
     PWSTR *argv);
 
+VOID
+PrintDisk(
+    _In_ PDISKENTRY DiskEntry);
+
+VOID
+PrintVolume(
+    _In_ PVOLENTRY VolumeEntry);
+
 /* merge.c */
 BOOL merge_main(INT argc, LPWSTR *argv);
 
@@ -352,6 +395,13 @@ RoundingDivide(
     _In_ ULONGLONG Dividend,
     _In_ ULONGLONG Divisor);
 
+PWSTR
+DuplicateQuotedString(
+    _In_ PWSTR pszInString);
+
+PWSTR
+DuplicateString(
+    _In_ PWSTR pszInString);
 
 /* offline.c */
 BOOL offline_main(INT argc, LPWSTR *argv);
@@ -360,6 +410,11 @@ BOOL offline_main(INT argc, LPWSTR *argv);
 BOOL online_main(INT argc, LPWSTR *argv);
 
 /* partlist.c */
+ULONGLONG
+AlignDown(
+    _In_ ULONGLONG Value,
+    _In_ ULONG Alignment);
+
 NTSTATUS
 CreatePartitionList(VOID);
 
@@ -371,6 +426,39 @@ CreateVolumeList(VOID);
 
 VOID
 DestroyVolumeList(VOID);
+
+NTSTATUS
+WritePartitions(
+    _In_ PDISKENTRY DiskEntry);
+
+VOID
+UpdateDiskLayout(
+    _In_ PDISKENTRY DiskEntry);
+
+PPARTENTRY
+GetPrevUnpartitionedEntry(
+    _In_ PPARTENTRY PartEntry);
+
+PPARTENTRY
+GetNextUnpartitionedEntry(
+    _In_ PPARTENTRY PartEntry);
+
+ULONG
+GetPrimaryPartitionCount(
+    _In_ PDISKENTRY DiskEntry);
+
+NTSTATUS
+DismountVolume(
+    _In_ PPARTENTRY PartEntry);
+
+PVOLENTRY
+GetVolumeFromPartition(
+    _In_ PPARTENTRY PartEntry);
+
+VOID
+RemoveVolume(
+    _In_ PVOLENTRY VolumeEntry);
+
 
 /* recover.c */
 BOOL recover_main(INT argc, LPWSTR *argv);

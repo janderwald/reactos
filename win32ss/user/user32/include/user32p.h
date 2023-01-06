@@ -60,7 +60,7 @@ extern Imm32ApiTable gImmApiEntries;
 
 /* FIXME: move to a correct header */
 /* undocumented gdi32 definitions */
-BOOL WINAPI GdiDllInitialize(HANDLE, DWORD, LPVOID);
+BOOL WINAPI GdiDllInitialize(HANDLE, ULONG, PVOID);
 LONG WINAPI GdiGetCharDimensions(HDC, LPTEXTMETRICW, LONG *);
 
 /* definitions for spy.c */
@@ -130,5 +130,7 @@ HANDLE FASTCALL UserGetProp(HWND hWnd, ATOM Atom, BOOLEAN SystemProp);
 BOOL WINAPI InitializeImmEntryTable(VOID);
 HRESULT User32GetImmFileName(_Out_ LPWSTR lpBuffer, _In_ size_t cchBuffer);
 BOOL WINAPI UpdatePerUserImmEnabling(VOID);
+VOID APIENTRY CliImmInitializeHotKeys(DWORD dwAction, HKL hKL);
+VOID IntLoadPreloadKeyboardLayouts(VOID);
 
 /* EOF */

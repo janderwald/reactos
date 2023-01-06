@@ -1,7 +1,7 @@
 /*
  *    AutoComplete interfaces implementation.
  *
- *    Copyright 2004    Maxime Bellengé <maxime.bellenge@laposte.net>
+ *    Copyright 2004    Maxime BellengÃ© <maxime.bellenge@laposte.net>
  *    Copyright 2009  Andrew Hill
  *    Copyright 2020-2021 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
  *
@@ -1126,18 +1126,12 @@ CAutoComplete::Init(HWND hwndEdit, IUnknown *punkACL,
     ::GetWindowRect(m_hwndEdit, &m_rcEdit);
 
     // get an IEnumString
-    ATLASSERT(!m_pEnum);
     punkACL->QueryInterface(IID_IEnumString, (VOID **)&m_pEnum);
     TRACE("m_pEnum: %p\n", static_cast<void *>(m_pEnum));
-    if (m_pEnum)
-        m_pEnum->AddRef(); // hold not to be freed
 
     // get an IACList
-    ATLASSERT(!m_pACList);
     punkACL->QueryInterface(IID_IACList, (VOID **)&m_pACList);
     TRACE("m_pACList: %p\n", static_cast<void *>(m_pACList));
-    if (m_pACList)
-        m_pACList->AddRef(); // hold not to be freed
 
     UpdateDropDownState(); // create/hide the drop-down window if necessary
 
@@ -1555,7 +1549,7 @@ LRESULT CAutoComplete::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &b
     m_hFont = reinterpret_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT));
     m_hwndList.SetFont(m_hFont);
 
-    // add reference to CAutoComplete::m_hWnd
+    // add reference so we won't be deleted during message processing
     AddRef();
     return 0; // success
 }
@@ -1581,9 +1575,17 @@ LRESULT CAutoComplete::OnNCDestroy(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL
 
     // clean up
     m_hwndCombo = NULL;
-    // remove reference to CAutoComplete::m_hWnd
-    Release();
+
+    // Tell ATL to clean up
+    bHandled = 0;
+
     return 0;
+}
+
+VOID CAutoComplete::OnFinalMessage(HWND)
+{
+    // The message loop is finished, now we can safely destruct!
+    Release();
 }
 
 // WM_EXITSIZEMOVE

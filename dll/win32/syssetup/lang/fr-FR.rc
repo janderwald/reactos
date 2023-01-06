@@ -92,10 +92,10 @@ BEGIN
     ICON IDI_ICON3, IDC_STATIC, 21, 10, 20, 20
     LTEXT "Date et Heure :", IDC_STATIC, 53, 7, 253, 8
     CONTROL "", IDC_DATEPICKER, "SysDateTimePick32", DTS_LONGDATEFORMAT | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 53, 17, 137, 14
-    CONTROL "", IDC_TIMEPICKER, "SysDateTimePick32", DTS_TIMEFORMAT | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 200, 17, 54, 14
+    CONTROL "", IDC_TIMEPICKER, "SysDateTimePick32", DTS_TIMEFORMAT | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 220, 17, 74, 14
     LTEXT "Fuseau horaire :", IDC_STATIC, 53, 42, 253, 8
-    COMBOBOX IDC_TIMEZONELIST, 53, 52, 201, 93, CBS_DROPDOWNLIST | CBS_NOINTEGRALHEIGHT | WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL
-    AUTOCHECKBOX "Ajuster automatiquement l'horloge pour l'heure &d'été", IDC_AUTODAYLIGHT, 53, 124, 201, 10
+    COMBOBOX IDC_TIMEZONELIST, 53, 52, 241, 93, CBS_DROPDOWNLIST | CBS_NOINTEGRALHEIGHT | WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL
+    AUTOCHECKBOX "Ajuster automatiquement l'horloge pour l'heure &d'été", IDC_AUTODAYLIGHT, 53, 124, 230, 10
 END
 
 IDD_THEMEPAGE DIALOGEX 0, 0, 317, 143
@@ -178,12 +178,12 @@ BEGIN
     IDS_COMPUTERSUBTITLE "Vous devez fournir un nom et un mot de passe Administrateur pour votre ordinateur."
     IDS_LOCALETITLE "Options régionales"
     IDS_LOCALESUBTITLE "Vous pouvez modifier ReactOS pour différentes régions et langues."
-    IDS_LOCALETEXT "The Standards and formats are set to %s, and the location is set to %s."
-    IDS_LAYOUTTEXT "Your default text input language and method is: %s keyboard layout"
+    IDS_LOCALETEXT "Les standards et formats sont définis à %s, et la localisation à %s."
+    IDS_LAYOUTTEXT "Votre langage par défaut est : agencement clavier %s"
     IDS_DATETIMETITLE "Date et Heure"
     IDS_DATETIMESUBTITLE "Configurez la date et l'heure correcte pour votre ordinateur."
-    IDS_PROCESSTITLE "Finishing the Installation"
-    IDS_PROCESSSUBTITLE "Please wait while Setup completes the final steps."
+    IDS_PROCESSTITLE "Finalisation de l'installation"
+    IDS_PROCESSSUBTITLE "Veuillez patienter pendant que l'Installation termine les étapes finales."
     IDS_THEMESELECTIONTITLE "Apparence"
     IDS_THEMESELECTIONSUBTITLE "Sélectionnez le thème que vous préférez"
 END

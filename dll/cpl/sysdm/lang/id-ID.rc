@@ -3,7 +3,7 @@ LANGUAGE LANG_INDONESIAN, SUBLANG_DEFAULT
 IDD_PROPPAGEGENERAL DIALOGEX 0, 0, 256, 218
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Umum"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     CONTROL "", IDC_ROSIMG, "Static", SS_OWNERDRAW, 4, 5, 248, 111
     LTEXT "Sistem:", IDC_STATIC, 4, 116, 100, 9
@@ -26,7 +26,7 @@ END
 IDD_PROPPAGEHARDWARE DIALOGEX 0, 0, 256, 218
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Perangkat Keras"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     GROUPBOX "Manajer Perangkat", IDC_STATIC, 6, 7, 244, 61
     ICON IDI_DEVMGR, IDC_STATIC, 12, 18, 23, 21, SS_ICON
@@ -42,28 +42,28 @@ BEGIN
     PUSHBUTTON "Profil Hard&ware...", IDC_HARDWARE_PROFILE, 154, 190, 90, 14
 END
 
-IDD_PROPPAGEADVANCED DIALOGEX 0, 0, 256, 218
+IDD_PROPPAGEADVANCED DIALOGEX 0, 0, 256, 228
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Tingkat Lanjut"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT "Hak istimewa administrator diperlukan pada sebagian besar pengaturan ini.", IDC_STATIC, 12, 5, 236, 8
-    GROUPBOX "Performa", IDC_STATIC, 6, 18, 244, 50
-    LTEXT "Pilihan performa mengatur bagaimana aplikasi menggunakan memori, yang mempengaruhi kecepatan komputer anda.", IDC_STATIC, 16, 29, 210, 17
-    PUSHBUTTON "Pengaturan", IDC_PERFOR, 194, 48, 50, 15
-    GROUPBOX "Profil Pengguna", IDC_STATIC, 6, 75, 244, 48
-    LTEXT "Pengaturan desktop terhubung dengan cara masuk anda", IDC_STATIC, 16, 88, 210, 20
-    PUSHBUTTON "Pengaturan", IDC_USERPROFILE, 194, 103, 50, 15
-    GROUPBOX "Pemulaian dan perbaikan", IDC_STATIC, 6, 131, 244, 52
-    LTEXT "Pilihan Pemulaian dan perbaikan memberitahu komputer anda bagaimana cara memulai dan apa yang harus dilakukan jika suatu kesalahan menyebabkan komputer anda berhenti.", IDC_STATIC, 16, 144, 210, 19
-    PUSHBUTTON "Pengaturan", IDC_STAREC, 194, 162, 50, 15
-    PUSHBUTTON "Pengaturan Sistem", IDC_SYSSETTINGS, 6, 192, 80, 15
-    PUSHBUTTON "Variabel Lingkungan", IDC_ENVVAR, 88, 192, 80, 15
-    PUSHBUTTON "Pelaporan Kesalahan", IDC_ERRORREPORT, 170, 192, 80, 15
+    LTEXT "Hak istimewa administrator diperlukan pada sebagian besar pengaturan ini.", IDC_STATIC, 12, 5, 236, 17
+    GROUPBOX "Performa", IDC_STATIC, 6, 28, 244, 50
+    LTEXT "Pilihan performa mengatur bagaimana aplikasi menggunakan memori, yang mempengaruhi kecepatan komputer anda.", IDC_STATIC, 16, 39, 210, 17
+    PUSHBUTTON "Pengaturan", IDC_PERFOR, 194, 58, 50, 15
+    GROUPBOX "Profil Pengguna", IDC_STATIC, 6, 85, 244, 48
+    LTEXT "Pengaturan desktop terhubung dengan cara masuk anda", IDC_STATIC, 16, 98, 210, 20
+    PUSHBUTTON "Pengaturan", IDC_USERPROFILE, 194, 113, 50, 15
+    GROUPBOX "Pemulaian dan perbaikan", IDC_STATIC, 6, 141, 244, 52
+    LTEXT "Pilihan Pemulaian dan perbaikan memberitahu komputer anda bagaimana cara memulai dan apa yang harus dilakukan jika suatu kesalahan menyebabkan komputer anda berhenti.", IDC_STATIC, 16, 154, 210, 27
+    PUSHBUTTON "Pengaturan", IDC_STAREC, 194, 172, 50, 15
+    PUSHBUTTON "Pengaturan Sistem", IDC_SYSSETTINGS, 6, 202, 80, 15
+    PUSHBUTTON "Variabel Lingkungan", IDC_ENVVAR, 88, 202, 80, 15
+    PUSHBUTTON "Pelaporan Kesalahan", IDC_ERRORREPORT, 170, 202, 80, 15
 END
 
 IDD_SYSSETTINGS DIALOGEX 0, 0, 221, 106
-STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Pengaturan Sistem"
 FONT 8, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
@@ -142,8 +142,8 @@ BEGIN
     LTEXT "", IDC_RENPROFEDITFROM, 30, 10, 160, 10
     LTEXT "Ke:", IDC_STATIC, 5, 30, 20, 8
     EDITTEXT IDC_RENPROFEDITTO, 30, 30, 160, 12
-    DEFPUSHBUTTON "OK", IDOK, 196, 6, 50, 14
-    PUSHBUTTON "Batal", IDCANCEL, 196, 24, 50, 14
+    DEFPUSHBUTTON "OK", IDOK, 199, 9, 50, 14
+    PUSHBUTTON "Batal", IDCANCEL, 199, 30, 50, 14
 END
 
 IDD_USERPROFILE DIALOGEX 0, 0, 256, 218
@@ -152,7 +152,7 @@ CAPTION "Profil Pengguna"
 FONT 8, "MS Shell Dlg"
 BEGIN
     ICON IDI_USERPROF, IDC_STATIC, 6, 11, 16, 16, SS_ICON
-    LTEXT "Profil pengguna berisi pengaturan desktop dan informasi lain yang terkait dengan cara masuk Anda. Profil yang berbeda dapat dibuat di setiap komputer yang anda gunakan, atau anda dapat memilih profil roaming yang sama di setiap komputer yang anda gunakan.", IDC_STATIC, 40, 11, 204, 35
+    LTEXT "Profil pengguna berisi pengaturan desktop dan informasi lain yang terkait dengan cara masuk Anda. Profil yang berbeda dapat dibuat di setiap komputer yang anda gunakan, atau anda dapat memilih profil roaming yang sama di setiap komputer yang anda gunakan.", IDC_STATIC, 40, 6, 204, 44
     LTEXT "Profi tersimpan di komputer ini:", IDC_STATIC, 16, 51, 204, 9
     CONTROL "", IDC_USERPROFILE_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
             LVS_SHOWSELALWAYS | LVS_SORTASCENDING | WS_BORDER | WS_TABSTOP, 6, 66, 244, 85, WS_EX_CLIENTEDGE
@@ -228,7 +228,7 @@ END
 IDD_VIRTMEM DIALOGEX 6, 6, 223, 248
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "Memori Virtual"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Drive  [Label Volume]", IDC_STATIC, 12, 5, 96, 9
     LTEXT "Ukuran halaman berkas (MB)", IDC_STATIC, 115, 5, 96, 9
@@ -260,7 +260,7 @@ END
 IDD_ENVIRONMENT_VARIABLES DIALOGEX 6, 18, 252, 245
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Variabel Lingkungan"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 245, 238, 7, 7, SBS_SIZEGRIP
     GROUPBOX "Variabel Pengguna", IDC_USER_VARIABLE_GROUP, 7, 12, 238, 100
@@ -282,7 +282,7 @@ END
 IDD_EDIT_VARIABLE DIALOGEX 10, 15, 372, 71
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Edit Variabel"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 365, 64, 7, 7, SBS_SIZEGRIP
     LTEXT "&Nama Variabel:", IDC_STATIC, 7, 14, 50, 8
@@ -298,7 +298,7 @@ END
 IDD_EDIT_VARIABLE_FANCY DIALOGEX 10, 15, 300, 250
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Edit Variabel"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 293, 243, 7, 7, SBS_SIZEGRIP
     CONTROL "", IDC_LIST_VARIABLE_VALUE, "SysListView32", LVS_NOCOLUMNHEADER | LVS_EDITLABELS | LVS_SHOWSELALWAYS |
@@ -316,7 +316,7 @@ END
 
 IDD_LICENCE DIALOGEX 6, 5, 267, 159
 CAPTION "Lisensi"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 STYLE DS_SHELLFONT | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 BEGIN
     EDITTEXT IDC_LICENCEEDIT, 6, 3, 255, 131, WS_VSCROLL | ES_READONLY | ES_MULTILINE
@@ -333,7 +333,7 @@ BEGIN
     IDS_PETABYTE "PB RAM"
     IDS_MEGAHERTZ "MHz"
     IDS_GIGAHERTZ "GHz"
-    IDS_UPTIME_FORMAT "%u Hari, %02u:%02u:%02u"
+    IDS_UPTIME_FORMAT "%lu Hari, %02lu:%02lu:%02lu"
     IDS_VARIABLE "Variabel"
     IDS_VALUE "Nilai"
     IDS_NO_DUMP "(Tidak ada)"
@@ -356,9 +356,9 @@ BEGIN
     IDS_MESSAGEBOXTITLE "Applet panel kontrol sistem"
     IDS_WARNINITIALSIZE "Masukkan nilai numerik untuk ukuran awal halaman berkas."
     IDS_WARNMAXIMUMSIZE "Masukkan nilai numerik untuk ukuran maksimum halaman berkas."
-    IDS_WARNINITIALRANGE "Ukuran awal halaman berkas tidak boleh lebih kecil dari 2 MB dan tidak boleh melebihi ruang yang tersedia pada drive yang dipilih."
-    IDS_WARNMAXIMUMRANGE "Ukuran maksimum halaman berkas tidak boleh lebih kecil dari ukuran awal, maupun lebih besar dari 4095 MB dan tidak boleh melebihi ruang yang tersedia pada drive yang dipilih."
-    IDS_PAGEFILE_MB "%u MB"
+    IDS_WARNINITIALRANGE "Ukuran awal halaman berkas tidak boleh lebih kecil dari 2 MB dan %lu MB pada drive yang dipilih."
+    IDS_WARNMAXIMUMRANGE "Ukuran maksimum halaman berkas harus lebih besar atau sama persis dari ukuran awal, dan kurang dari %lu MB pada drive yang dipilih."
+    IDS_PAGEFILE_MB "%lu MB"
     IDS_PAGEFILE_NONE "Tidak ada"
     IDS_PAGEFILE_SYSTEM "Diatur Sistem"
     IDS_INFOREBOOT "Anda harus memulai ulang komputer untuk menerapkan perubahan."

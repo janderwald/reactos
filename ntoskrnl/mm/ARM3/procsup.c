@@ -35,9 +35,17 @@ MiCreatePebOrTeb(IN PEPROCESS Process,
     ULONG AlignedSize;
     LARGE_INTEGER CurrentTime;
 
+    Status = PsChargeProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     /* Allocate a VAD */
     Vad = ExAllocatePoolWithTag(NonPagedPool, sizeof(MMVAD_LONG), 'ldaV');
-    if (!Vad) return STATUS_NO_MEMORY;
+    if (!Vad)
+    {
+        Status = STATUS_NO_MEMORY;
+        goto FailPath;
+    }
 
     /* Setup the primary flags with the size, and make it commited, private, RW */
     Vad->u.LongFlags = 0;
@@ -94,18 +102,18 @@ MiCreatePebOrTeb(IN PEPROCESS Process,
     if (!NT_SUCCESS(Status))
     {
         ExFreePoolWithTag(Vad, 'ldaV');
-        return STATUS_NO_MEMORY;
+        Status = STATUS_NO_MEMORY;
+        goto FailPath;
     }
 
-    Status = PsChargeProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
-    if (!NT_SUCCESS(Status))
-    {
-        ExFreePoolWithTag(Vad, 'ldaV');
-        return Status;
-    }
 
     /* Success */
     return STATUS_SUCCESS;
+
+FailPath:
+    PsReturnProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
+
+    return Status;
 }
 
 VOID
@@ -859,12 +867,23 @@ MiInsertSharedUserPageVad(
     ULONG_PTR BaseAddress;
     NTSTATUS Status;
 
+    if (Process->QuotaBlock != NULL)
+    {
+        Status = PsChargeProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("Ran out of quota.\n");
+            return Status;
+        }
+    }
+
     /* Allocate a VAD */
     Vad = ExAllocatePoolWithTag(NonPagedPool, sizeof(MMVAD_LONG), 'ldaV');
     if (Vad == NULL)
     {
         DPRINT1("Failed to allocate VAD for shared user page\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto FailPath;
     }
 
     /* Setup the primary flags with the size, and make it private, RO */
@@ -898,20 +917,17 @@ MiInsertSharedUserPageVad(
     {
         DPRINT1("Failed to insert shared user VAD\n");
         ExFreePoolWithTag(Vad, 'ldaV');
-        return Status;
+        goto FailPath;
     }
-
-    Status = PsChargeProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Ran out of quota.\n");
-        ExFreePoolWithTag(Vad, 'ldaV');
-        return Status;
-    }
-
 
     /* Success */
     return STATUS_SUCCESS;
+
+FailPath:
+    if (Process->QuotaBlock != NULL)
+        PsReturnProcessNonPagedPoolQuota(Process, sizeof(MMVAD_LONG));
+
+    return Status;
 }
 #endif
 
@@ -1254,11 +1270,16 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
     PMM_AVL_TABLE VadTree;
     PETHREAD Thread = PsGetCurrentThread();
 
-    /* Only support this */
-    ASSERT(Process->AddressSpaceInitialized == 2);
-
     /* Remove from the session */
     MiSessionRemoveProcess();
+
+    /* Abort early, when the address space wasn't fully initialized */
+    if (Process->AddressSpaceInitialized < 2)
+    {
+        DPRINT1("Incomplete address space for Process %p. Might leak resources.\n",
+                Process);
+        return;
+    }
 
     /* Lock the process address space from changes */
     MmLockAddressSpace(&Process->Vm);
@@ -1358,7 +1379,8 @@ MmDeleteProcessAddressSpace(IN PEPROCESS Process)
 
     /* Remove us from the list */
     OldIrql = MiAcquireExpansionLock();
-    RemoveEntryList(&Process->Vm.WorkingSetExpansionLinks);
+    if (Process->Vm.WorkingSetExpansionLinks.Flink != NULL)
+        RemoveEntryList(&Process->Vm.WorkingSetExpansionLinks);
     MiReleaseExpansionLock(OldIrql);
 
     /* Acquire the PFN lock */
@@ -1400,8 +1422,8 @@ MmDeleteProcessAddressSpace(IN PEPROCESS Process)
     }
     else
     {
-        /* A partly-initialized process should never exit through here */
-        ASSERT(FALSE);
+        DPRINT1("Deleting partially initialized address space of Process %p. Might leak resources.\n",
+                Process);
     }
 
     /* Release the PFN lock */

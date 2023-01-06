@@ -52,8 +52,10 @@ list(APPEND SOURCE
 #    ntuser/NtUserEnumDisplayMonitors.c
     ntuser/NtUserEnumDisplaySettings.c
     ntuser/NtUserFindExistingCursorIcon.c
+    ntuser/NtUserGetAsyncKeyState.c
     ntuser/NtUserGetClassInfo.c
 #    ntuser/NtUserGetIconInfo.c
+    ntuser/NtUserGetKeyboardLayoutName.c
     ntuser/NtUserGetThreadState.c
     ntuser/NtUserGetTitleBarInfo.c
     ntuser/NtUserProcessConnect.c

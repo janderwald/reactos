@@ -23,7 +23,7 @@ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Ambiente de trabalho"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    CONTROL "", IDC_BACKGROUND_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74, 0
+    CONTROL "", IDC_BACKGROUND_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
     CONTROL "", IDC_BACKGROUND_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
             LVS_NOCOLUMNHEADER | LVS_SHAREIMAGELISTS | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 104, 174, 86
     LTEXT "&Plano de fundo:", IDC_STATIC, 8, 93, 230, 9
@@ -31,15 +31,16 @@ BEGIN
     PUSHBUTTON "&Cor...", IDC_COLOR_BUTTON, 188, 167, 55, 15
     LTEXT "Po&sição:", IDC_STATIC, 188, 128, 55, 9
     COMBOBOX IDC_PLACEMENT_COMBO, 188, 139, 55, 54, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "&Personalizar...", IDC_DESKTOP_CUSTOM, 8, 194, 90, 15
 END
 
-IDD_SCREENSAVER DIALOGEX 0, 0, 246, 202
+IDD_SCREENSAVER DIALOGEX 0, 0, 246, 216
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Protecção de ecrã"
 FONT 8, "MS Shell Dlg", 0, 0
 BEGIN
-    CONTROL "", IDC_SCREENS_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 70, WS_EX_STATICEDGE
-    GROUPBOX "Protecção de &ecrã", IDC_SCREENS_DUMMY, 8, 92, 230, 75
+    CONTROL "", IDC_SCREENS_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
+    GROUPBOX "Protecção de &ecrã", IDC_SCREENS_DUMMY, 8, 92, 230, 64
     COMBOBOX IDC_SCREENS_LIST, 14, 103, 100, 100, CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON "&Definições", IDC_SCREENS_SETTINGS, 120, 102, 50, 15, WS_GROUP
     PUSHBUTTON "&Pré-visualizar", IDC_SCREENS_TESTSC, 175, 102, 50, 15
@@ -49,10 +50,10 @@ BEGIN
             UDS_AUTOBUDDY | UDS_ARROWKEYS | WS_BORDER | WS_GROUP, 56, 123, 12, 13
     LTEXT "minutos", IDC_MINTEXT, 80, 125, 26, 9
     CONTROL "Ao reiniciar, &proteger por palavra-passe", IDC_SCREENS_USEPASSCHK, "button",
-            BS_AUTOCHECKBOX | WS_TABSTOP, 30, 145, 200, 19
-    GROUPBOX "Energia do monitor", IDC_SCREENS_DUMMY2, 8, 175, 230, 41
-    LTEXT "Para ajustar as definições de energia do monitor e poupar energia, clique em 'Energia'.", IDC_STATIC, 16, 185, 146, 27
-    PUSHBUTTON "&Energia...", IDC_SCREENS_POWER_BUTTON, 167, 190, 61, 15
+            BS_AUTOCHECKBOX | WS_TABSTOP, 30, 140, 200, 11
+    GROUPBOX "Energia do monitor", IDC_SCREENS_DUMMY2, 8, 164, 230, 41
+    LTEXT "Para ajustar as definições de energia do monitor e poupar energia, clique em 'Energia'.", IDC_STATIC, 16, 174, 146, 27
+    PUSHBUTTON "&Energia...", IDC_SCREENS_POWER_BUTTON, 167, 179, 61, 15
 END
 
 IDD_APPEARANCE DIALOGEX 0, 0, 246, 212
@@ -139,7 +140,8 @@ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Definições"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT "Arraste os ícones dos monitores, para que correspondam à disposição física dos seus monitores.", -1, 3, 3, 240, 20
+    CONTROL "", IDC_RESOLUTION_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
+    LTEXT "Arraste os ícones dos monitores, para que correspondam à disposição física dos seus monitores.", IDC_SETTINGS_MONTEXT, 3, 3, 240, 20
     CONTROL "", IDC_SETTINGS_MONSEL, "MONITORSELWNDCLASS", WS_CHILD | WS_VISIBLE |
             WS_TABSTOP, 3, 23, 250, 82, WS_EX_CLIENTEDGE
     LTEXT "Monitor:", 1820, 3, 107, 70, 9
@@ -155,21 +157,42 @@ BEGIN
     PUSHBUTTON "&Avançadas...", IDC_SETTINGS_ADVANCED, 170, 199, 70, 15
 END
 
+IDD_DESKTOP_GENERAL DIALOGEX 0, 0, 224, 202
+STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
+CAPTION "Geral"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    GROUPBOX "Icones", IDC_STATIC, 6, 4, 212, 40
+    CONTROL "Os Meus &Documentos", IDC_ICONS_MYDOCS, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 14, 14, 100, 12
+    CONTROL "Os Meus Locais da &Rede", IDC_ICONS_MYNET, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 116, 14, 100, 12
+    CONTROL "O Meu &Computador", IDC_ICONS_MYCOMP, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 14, 28, 100, 12
+    CONTROL "&Navegador de Internet", IDC_ICONS_INTERNET, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 116, 28, 100, 12
+    CONTROL "", IDC_ICONS_LISTVIEW, "SysListView32",
+            LVS_ICON | LVS_ALIGNLEFT | LVS_AUTOARRANGE | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP | WS_HSCROLL,
+            6, 60, 212, 56
+    PUSHBUTTON "&Alterar Icone...", IDC_ICONS_CHANGEICON, 86, 120, 64, 15
+    PUSHBUTTON "&Predefinições", IDC_ICONS_SETDEFAULT, 154, 120, 64, 15
+END
+
 IDD_ADVANCED_GENERAL DIALOGEX 0, 0, 253, 204
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Geral"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    GROUPBOX "Visualização", -1, 7, 6, 237, 105, WS_GROUP
-    LTEXT "Se a resolução do ecrã tornar os items demasiado pequenos para ver confortavelmente, pode aumentar o valor ppp para compensar. Para alterar apenas o tamanho do tipo de letra, clique em ""Cancelar"" e vá até ao separador ""Aspecto"".", -1, 14, 20, 220, 45
-    LTEXT "Definição do valor ppp:", -1, 14, 65, 222, 9
-    COMBOBOX IDC_FONTSIZE_COMBO, 14, 75, 223, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    LTEXT "", IDC_FONTSIZE_CUSTOM, 14, 91, 223, 12
-    GROUPBOX "Compatibilidade", -1, 7, 115, 237, 100
-     LTEXT "Alguns programas podem não funcionar correctamente se não reiniciar o computador após alterar as definições de visualização.\n\nApós alterar as definições de visualização:", -1, 12, 130, 228, 34
-    AUTORADIOBUTTON "&Reiniciar o computador antes de aplicar as novas definições", IDC_RESTART_RB, 14, 165, 228, 10
-    AUTORADIOBUTTON "&Aplicar as novas definições sem reiniciar", IDC_WITHOUTREBOOT_RB, 14, 180, 228, 10
-    AUTORADIOBUTTON "&Perguntar antes de aplicar as novas definições de visualização", IDC_ASKME_RB, 14, 195, 228, 10
+    GROUPBOX "Visualização", -1, 7, 6, 237, 56, WS_GROUP
+    //LTEXT "Se a resolução do ecrã tornar os items demasiado pequenos para ver confortavelmente, pode aumentar o valor ppp para compensar. Para alterar apenas o tamanho do tipo de letra, clique em ""Cancelar"" e vá até ao separador ""Aspecto"".", -1, 14, 20, 220, 45
+    LTEXT "Definição do valor ppp:", -1, 14, 20, 222, 9
+    COMBOBOX IDC_FONTSIZE_COMBO, 14, 30, 223, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT "", IDC_FONTSIZE_CUSTOM, 14, 46, 223, 12
+    GROUPBOX "Compatibilidade", -1, 7, 67, 237, 100
+    LTEXT "Alguns programas podem não funcionar correctamente se não reiniciar o computador após alterar as definições de visualização.\n\nApós alterar as definições de visualização:", -1, 12, 78, 228, 34
+    AUTORADIOBUTTON "&Reiniciar o computador antes de aplicar as novas definições", IDC_RESTART_RB, 14, 116, 228, 10
+    AUTORADIOBUTTON "&Aplicar as novas definições sem reiniciar", IDC_WITHOUTREBOOT_RB, 14, 131, 228, 10
+    AUTORADIOBUTTON "&Perguntar antes de aplicar as novas definições de visualização", IDC_ASKME_RB, 14, 146, 228, 10
 END
 
 IDD_CONFIRMSETTINGS DIALOGEX 20, 30, 233, 57
@@ -212,6 +235,11 @@ STRINGTABLE
 BEGIN
     IDS_STANDARDEFFECT "Padrão"
     IDS_CLEARTYPEEFFECT "FreeType Antialiased"
+END
+
+STRINGTABLE
+BEGIN
+    IDS_DESKTOP_ITEMS "Items do Ambiente de trabalho"
 END
 
 STRINGTABLE

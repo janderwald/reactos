@@ -28,7 +28,10 @@ HelpCommandList(VOID)
     /* List all the commands and the basic descriptions */
     for (cmdptr = cmds; cmdptr->cmd1; cmdptr++)
     {
-        if (cmdptr->cmd1 != NULL && cmdptr->cmd2 == NULL && cmdptr->cmd3 == NULL)
+        if ((cmdptr->cmd1 != NULL) &&
+            (cmdptr->cmd2 == NULL) &&
+            (cmdptr->cmd3 == NULL) &&
+            (cmdptr->help != IDS_NONE))
         {
             K32LoadStringW(GetModuleHandle(NULL), cmdptr->help, szOutput, ARRAYSIZE(szOutput));
             ConPrintf(StdOut, szFormat, cmdptr->cmd1, szOutput);
@@ -57,7 +60,10 @@ HelpCommand(
     {
         if (pCommand->cmd1 != NULL && pCommand->cmd2 == NULL && pCommand->cmd3 == NULL)
         {
-            if (wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0 && cmdptr->cmd2 != NULL && cmdptr->cmd3 == NULL)
+            if ((cmdptr->cmd1 != NULL && wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0) &&
+                (cmdptr->cmd2 != NULL) &&
+                (cmdptr->cmd3 == NULL) &&
+                (cmdptr->help != IDS_NONE))
             {
                 K32LoadStringW(GetModuleHandle(NULL), cmdptr->help, szOutput, ARRAYSIZE(szOutput));
                 ConPrintf(StdOut, szFormat, cmdptr->cmd2, szOutput);
@@ -66,9 +72,10 @@ HelpCommand(
         }
         else if (pCommand->cmd1 != NULL && pCommand->cmd2 != NULL && pCommand->cmd3 == NULL)
         {
-            if ((wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0) &&
-                (wcsicmp(pCommand->cmd2, cmdptr->cmd2) == 0) &&
-                (cmdptr->cmd3 != NULL))
+            if ((cmdptr->cmd1 != NULL && wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0) &&
+                (cmdptr->cmd2 != NULL && wcsicmp(pCommand->cmd2, cmdptr->cmd2) == 0) &&
+                (cmdptr->cmd3 != NULL) &&
+                (cmdptr->help != IDS_NONE))
             {
                 K32LoadStringW(GetModuleHandle(NULL), cmdptr->help, szOutput, ARRAYSIZE(szOutput));
                 ConPrintf(StdOut, szFormat, cmdptr->cmd3, szOutput);
@@ -77,17 +84,28 @@ HelpCommand(
         }
         else if (pCommand->cmd1 != NULL && pCommand->cmd2 != NULL && pCommand->cmd3 != NULL)
         {
-            if ((wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0) &&
-                (wcsicmp(pCommand->cmd2, cmdptr->cmd2) == 0) &&
-                (wcsicmp(pCommand->cmd3, cmdptr->cmd3) == 0) &&
-                (cmdptr->help_detail != IDS_NONE))
-                ConResPuts(StdOut, cmdptr->help_detail);
+            if ((cmdptr->cmd1 != NULL && wcsicmp(pCommand->cmd1, cmdptr->cmd1) == 0) &&
+                (cmdptr->cmd2 != NULL && wcsicmp(pCommand->cmd2, cmdptr->cmd2) == 0) &&
+                (cmdptr->cmd3 != NULL && wcsicmp(pCommand->cmd3, cmdptr->cmd3) == 0) &&
+                (cmdptr->help_detail != MSG_NONE))
+            {
+                ConMsgPuts(StdOut,
+                           FORMAT_MESSAGE_FROM_HMODULE,
+                           NULL,
+                           cmdptr->help_detail,
+                           LANG_USER_DEFAULT);
+                bSubCommands = TRUE;
+            }
         }
     }
 
-    if ((bSubCommands == FALSE) && (pCommand->help_detail != IDS_NONE))
+    if ((bSubCommands == FALSE) && (pCommand->help_detail != MSG_NONE))
     {
-        ConResPuts(StdOut, pCommand->help_detail);
+        ConMsgPuts(StdOut,
+                   FORMAT_MESSAGE_FROM_HMODULE,
+                   NULL,
+                   pCommand->help_detail,
+                   LANG_USER_DEFAULT);
     }
 
     ConPuts(StdOut, L"\n");
@@ -116,21 +134,27 @@ BOOL help_main(INT argc, LPWSTR *argv)
     for (cmdptr = cmds; cmdptr->cmd1; cmdptr++)
     {
         if ((cmdptr1 == NULL) &&
-            (wcsicmp(argv[1], cmdptr->cmd1) == 0))
+            (cmdptr->cmd1 != NULL && wcsicmp(argv[1], cmdptr->cmd1) == 0))
+        {
             cmdptr1 = cmdptr;
+        }
 
         if ((cmdptr2 == NULL) &&
             (argc >= 3) &&
-            (wcsicmp(argv[1], cmdptr->cmd1) == 0) &&
-            (wcsicmp(argv[2], cmdptr->cmd2) == 0))
+            (cmdptr->cmd1 != NULL && wcsicmp(argv[1], cmdptr->cmd1) == 0) &&
+            (cmdptr->cmd2 != NULL && wcsicmp(argv[2], cmdptr->cmd2) == 0))
+        {
             cmdptr2 = cmdptr;
-
+        }
+        
         if ((cmdptr3 == NULL) &&
             (argc >= 4) &&
-            (wcsicmp(argv[1], cmdptr->cmd1) == 0) &&
-            (wcsicmp(argv[2], cmdptr->cmd2) == 0) &&
-            (wcsicmp(argv[3], cmdptr->cmd3) == 0))
+            (cmdptr->cmd1 != NULL && wcsicmp(argv[1], cmdptr->cmd1) == 0) &&
+            (cmdptr->cmd2 != NULL && wcsicmp(argv[2], cmdptr->cmd2) == 0) &&
+            (cmdptr->cmd3 != NULL && wcsicmp(argv[3], cmdptr->cmd3) == 0))
+        {
             cmdptr3 = cmdptr;
+        }
     }
 
     if (cmdptr3 != NULL)

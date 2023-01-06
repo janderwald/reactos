@@ -52,9 +52,11 @@ extern void func_NtUserCreateWindowEx(void);
 //extern void func_NtUserEnumDisplayMonitors(void);
 extern void func_NtUserEnumDisplaySettings(void);
 extern void func_NtUserFindExistingCursorIcon(void);
+extern void func_NtUserGetAsyncKeyState(void);
 extern void func_NtUserGetClassInfo(void);
-extern void func_NtUserGetThreadState(void);
 //extern void func_NtUserGetIconInfo(void);
+extern void func_NtUserGetKeyboardLayoutName(void);
+extern void func_NtUserGetThreadState(void);
 extern void func_NtUserGetTitleBarInfo(void);
 extern void func_NtUserProcessConnect(void);
 extern void func_NtUserRedrawWindow(void);
@@ -119,9 +121,11 @@ const struct test winetest_testlist[] =
     //{ "NtUserEnumDisplayMonitors", func_NtUserEnumDisplayMonitors },
     { "NtUserEnumDisplaySettings", func_NtUserEnumDisplaySettings },
     { "NtUserFindExistingCursorIcon", func_NtUserFindExistingCursorIcon },
+    { "NtUserGetAsyncKeyState", func_NtUserGetAsyncKeyState },
     { "NtUserGetClassInfo", func_NtUserGetClassInfo },
-    { "NtUserGetThreadState", func_NtUserGetThreadState },
     //{ "NtUserGetIconInfo", func_NtUserGetIconInfo },
+    { "NtUserGetKeyboardLayoutName", func_NtUserGetKeyboardLayoutName },
+    { "NtUserGetThreadState", func_NtUserGetThreadState },
     { "NtUserGetTitleBarInfo", func_NtUserGetTitleBarInfo },
     { "NtUserProcessConnect", func_NtUserProcessConnect },
     { "NtUserRedrawWindow", func_NtUserRedrawWindow },

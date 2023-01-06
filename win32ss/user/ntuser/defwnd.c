@@ -91,6 +91,7 @@ DefWndHandleWindowPosChanging(PWND pWnd, WINDOWPOS* Pos)
     return 0;
 }
 
+/* Win: xxxHandleWindowPosChanged */
 LRESULT FASTCALL
 DefWndHandleWindowPosChanged(PWND pWnd, WINDOWPOS* Pos)
 {
@@ -120,6 +121,7 @@ DefWndHandleWindowPosChanged(PWND pWnd, WINDOWPOS* Pos)
 //
 // Handle a WM_SYSCOMMAND message. Called from DefWindowProc().
 //
+// Win: xxxSysCommand
 LRESULT FASTCALL
 DefWndHandleSysCommand(PWND pWnd, WPARAM wParam, LPARAM lParam)
 {
@@ -360,6 +362,7 @@ DefWndHandleSetCursor(PWND pWnd, WPARAM wParam, LPARAM lParam)
    return FALSE;
 }
 
+/* Win: xxxDWPPrint */
 VOID FASTCALL DefWndPrint( PWND pwnd, HDC hdc, ULONG uFlags)
 {
   /*
@@ -430,6 +433,7 @@ UserPaintCaption(PWND pWnd, INT Flags)
 }
 
 // WM_SETICON
+/* Win: xxxDWP_SetIcon */
 LRESULT FASTCALL
 DefWndSetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
 {
@@ -468,6 +472,7 @@ DefWndSetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
     return (LRESULT)hIconOld;
 }
 
+/* Win: DWP_GetIcon */
 LRESULT FASTCALL
 DefWndGetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
 {
@@ -527,6 +532,7 @@ DefWndScreenshot(PWND pWnd)
 /*
    Win32k counterpart of User DefWindowProc
  */
+/* Win: xxxRealDefWindowProc */
 LRESULT FASTCALL
 IntDefWindowProc(
    PWND Wnd,
@@ -944,6 +950,24 @@ IntDefWindowProc(
                    }
                    wParamTmp = UserGetKeyState(VK_SHIFT) & 0x8000 ? SC_PREVWINDOW : SC_NEXTWINDOW;
                    co_IntSendMessage( Active, WM_SYSCOMMAND, wParamTmp, wParam );
+                }
+                else if (wParam == VK_SHIFT) // Alt+Shift
+                {
+                    RTL_ATOM ClassAtom = 0;
+                    UNICODE_STRING ustrClass, ustrWindow;
+                    HWND hwndSwitch;
+
+                    RtlInitUnicodeString(&ustrClass, L"kbswitcher");
+                    RtlInitUnicodeString(&ustrWindow, L"");
+
+                    IntGetAtomFromStringOrAtom(&ustrClass, &ClassAtom);
+
+                    hwndSwitch = IntFindWindow(UserGetDesktopWindow(), NULL, ClassAtom, &ustrWindow);
+                    if (hwndSwitch)
+                    {
+#define ID_NEXTLAYOUT 10003
+                        UserPostMessage(hwndSwitch, WM_COMMAND, ID_NEXTLAYOUT, (LPARAM)UserHMGetHandle(Wnd));
+                    }
                 }
             }
             else if( wParam == VK_F10 )

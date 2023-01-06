@@ -1,6 +1,10 @@
 /*
- * Translators: Petru Dimitriu (petrimetri at gmail dot com)
- *              Ștefan Fulea (stefan dot fulea at mail dot com)
+ * PROJECT:     ReactOS Display Control Panel
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+ * PURPOSE:     Romanian resource file
+ * TRANSLATORS: Copyright 2009 Petru Dimitriu <petrimetri@gmail.com>
+ *              Copyright 2011-2019 Ștefan Fulea <stefan.fulea@mail.com>
+ *              Copyright 2022 Andrei Miloiu <miloiuandrei@gmail.com>
  */
 
 LANGUAGE LANG_ROMANIAN, SUBLANG_NEUTRAL
@@ -10,11 +14,11 @@ CAPTION "Themes"
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT "A theme is a background plus a set of sounds, icons, and other elements to help you personalize your computer with one click.", IDC_STATIC, 5, 5, 235, 30
-    LTEXT "Theme:", IDC_STATIC, 5, 42, 55, 10
+    LTEXT "O temă este un fundal plus un set de sunete, pictograme și alte elemente care vă ajută să vă personalizați calculatorul cu un singur clic.", IDC_STATIC, 5, 5, 235, 30
+    LTEXT "Temă:", IDC_STATIC, 5, 42, 55, 10
     COMBOBOX IDC_THEMES_COMBOBOX, 5, 52, 160, 300, CBS_HASSTRINGS | CBS_AUTOHSCROLL | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "Save &As...", IDC_THEMES_SAVE_AS, 170, 52, 70, 14
-    PUSHBUTTON "&Delete", IDC_THEMES_DELETE, 170, 70, 70, 14
+    PUSHBUTTON "Păstrare &ca…", IDC_THEMES_SAVE_AS, 170, 52, 70, 14
+    PUSHBUTTON "Șt&erge", IDC_THEMES_DELETE, 170, 70, 70, 14
     CONTROL "", IDC_THEMES_PREVIEW, "STATIC", SS_BITMAP, 5, 90, 235, 115, WS_EX_CLIENTEDGE
 END
 
@@ -23,7 +27,7 @@ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Fundal"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    CONTROL "", IDC_BACKGROUND_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74, 0
+    CONTROL "", IDC_BACKGROUND_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
     CONTROL "", IDC_BACKGROUND_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
             LVS_NOCOLUMNHEADER | LVS_SHAREIMAGELISTS | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 8, 104, 174, 86
     LTEXT "Alegeți o imagine pentru a o folosi ca decor de birou.", IDC_STATIC, 8, 93, 230, 9
@@ -31,6 +35,7 @@ BEGIN
     PUSHBUTTON "C&uloare…", IDC_COLOR_BUTTON, 188, 167, 55, 15
     LTEXT "Amplasament", IDC_STATIC, 188, 128, 55, 9
     COMBOBOX IDC_PLACEMENT_COMBO, 188, 139, 55, 54, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "Customize &Desktop...", IDC_DESKTOP_CUSTOM, 8, 194, 90, 15
 END
 
 IDD_SCREENSAVER DIALOGEX 0, 0, 246, 202
@@ -38,18 +43,18 @@ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Regim de inactivitate"
 FONT 8, "MS Shell Dlg", 0, 0
 BEGIN
-    CONTROL "", IDC_SCREENS_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 70, WS_EX_STATICEDGE
+    CONTROL "", IDC_SCREENS_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
     GROUPBOX "Ani&mație de ecran inactiv", IDC_SCREENS_DUMMY, 8, 92, 230, 52
     COMBOBOX IDC_SCREENS_LIST, 14, 103, 100, 100, CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON "&Opțiuni", IDC_SCREENS_SETTINGS, 120, 102, 50, 15, WS_GROUP
     PUSHBUTTON "Pre&vizionare", IDC_SCREENS_TESTSC, 175, 102, 50, 15
-    LTEXT "În vigoare &după:", IDC_WAITTEXT, 14, 125, 20, 9
-    EDITTEXT IDC_SCREENS_TIMEDELAY, 36, 123, 32, 13, ES_RIGHT | WS_GROUP
+    LTEXT "În vigoare &după", IDC_WAITTEXT, 14, 125, 54, 9
+    EDITTEXT IDC_SCREENS_TIMEDELAY, 68, 123, 32, 13, ES_RIGHT | WS_GROUP
     CONTROL "", IDC_SCREENS_TIME, UPDOWN_CLASS, UDS_SETBUDDYINT | UDS_ALIGNRIGHT |
-            UDS_AUTOBUDDY | UDS_ARROWKEYS | WS_BORDER | WS_GROUP, 56, 123, 12, 13
-    LTEXT "minute", IDC_MINTEXT, 70, 125, 26, 9
+            UDS_AUTOBUDDY | UDS_ARROWKEYS | WS_BORDER | WS_GROUP, 88, 123, 12, 13
+    LTEXT "minute", IDC_MINTEXT, 102, 125, 23, 9
     CONTROL "Solicită pa&rolă la revenire", IDC_SCREENS_USEPASSCHK, "button",
-            BS_AUTOCHECKBOX | WS_TABSTOP, 108, 120, 117, 19
+            BS_AUTOCHECKBOX | WS_TABSTOP, 129, 120, 96, 19
     GROUPBOX "Me&canisme de gestiune a consumului", IDC_SCREENS_DUMMY2, 8, 150, 230, 41
     LTEXT "Aici veți putea ajusta parametrii actuali pentru gestiunea consumului de energie.", IDC_STATIC, 16, 161, 146, 27
     PUSHBUTTON "&Energie…", IDC_SCREENS_POWER_BUTTON, 167, 165, 61, 15
@@ -81,7 +86,7 @@ CAPTION "Opțiuni avansate"
 FONT 8, "MS Shell Dlg"
 BEGIN
     CONTROL "", IDC_APPEARANCE_PREVIEW, "PreviewWndClass", WS_VISIBLE | WS_BORDER, 7, 7, 232, 120
-    LTEXT "If you select a theme other than ReactOS classic, it will override the following settings, except in some older programs.", IDC_ADVAPPEARANCE_DISCLAIMER, 7, 133, 232, 30, BS_MULTILINE
+    LTEXT "Dacă selectați o temă alta decât ReactOS clasic, va suprascrie următoarele configurații, cu excepția unor programe mai vechi.", IDC_ADVAPPEARANCE_DISCLAIMER, 7, 133, 232, 30, BS_MULTILINE
     LTEXT "&Element", 8, 5, 160, 50, 9
     COMBOBOX IDC_ADVAPPEARANCE_ELEMENT, 5, 170, 130, 90, CBS_DROPDOWNLIST |
              CBS_HASSTRINGS | CBS_SORT | WS_CHILD | WS_VSCROLL | WS_TABSTOP
@@ -128,10 +133,10 @@ BEGIN
             "button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 110, 267, 19
     CONTROL "&Amână sublinierea literelor navigării din tastatură până la apăsarea tastei «Alt»",
             IDC_EFFAPPEARANCE_KEYBOARDCUES, "button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 125, 267, 19
-    CONTROL "Use &flat menus", IDC_EFFAPPEARANCE_FLATMENUS,
+    CONTROL "F&olosește meniuri plate", IDC_EFFAPPEARANCE_FLATMENUS,
             "button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 140, 267, 19
-    PUSHBUTTON "A&nulează", IDCANCEL, 130, 165, 50, 14
-    DEFPUSHBUTTON "Con&firmă", IDOK, 77, 165, 50, 14
+    PUSHBUTTON "A&nulează", IDCANCEL, 226, 165, 50, 14
+    DEFPUSHBUTTON "Con&firmă", IDOK, 172, 165, 50, 14
 END
 
 IDD_SETTINGS DIALOGEX 0, 0, 246, 202
@@ -139,10 +144,11 @@ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Configurare"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT "Mișcați miniaturile ecranelor până vor corespunde cu amplasamentul fizic al ecranelor (opțiune pentru ecrane multiple).", -1, 3, 3, 240, 20
+    CONTROL "", IDC_RESOLUTION_PREVIEW, "Static", SS_OWNERDRAW, 70, 10, 105, 74
+    LTEXT "Mișcați miniaturile ecranelor până vor corespunde cu amplasamentul fizic al ecranelor (opțiune pentru ecrane multiple).", IDC_SETTINGS_MONTEXT, 3, 3, 240, 20
     CONTROL "", IDC_SETTINGS_MONSEL, "MONITORSELWNDCLASS", WS_CHILD | WS_VISIBLE |
             WS_TABSTOP, 3, 23, 240, 82, WS_EX_CLIENTEDGE
-    LTEXT "&Dispozitive de afișare", 1820, 3, 107, 70, 9
+    LTEXT "&Dispozitive de afișare:", 1820, 3, 107, 75, 9
     LTEXT "<nespecificat>", IDC_SETTINGS_DEVICE, 3, 116, 224, 9
     GROUPBOX "Re&zoluție ecran", 1818, 3, 127, 115, 43
     CONTROL "", IDC_SETTINGS_RESOLUTION, "msctls_trackbar32", TBS_AUTOTICKS | WS_TABSTOP, 30, 137, 58, 17
@@ -155,13 +161,34 @@ BEGIN
     PUSHBUTTON "A&vansate…", IDC_SETTINGS_ADVANCED, 170, 174, 70, 15
 END
 
+IDD_DESKTOP_GENERAL DIALOGEX 0, 0, 224, 202
+STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
+CAPTION "General"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    GROUPBOX "Desktop icons", IDC_STATIC, 6, 4, 212, 40
+    CONTROL "My &Documents", IDC_ICONS_MYDOCS, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 14, 14, 100, 12
+    CONTROL "My &Network Places", IDC_ICONS_MYNET, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 116, 14, 100, 12
+    CONTROL "&My Computer", IDC_ICONS_MYCOMP, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 14, 28, 100, 12
+    CONTROL "&Internet Browser", IDC_ICONS_INTERNET, "button",
+            BS_AUTOCHECKBOX | WS_TABSTOP, 116, 28, 100, 12
+    CONTROL "", IDC_ICONS_LISTVIEW, "SysListView32",
+            LVS_ICON | LVS_ALIGNLEFT | LVS_AUTOARRANGE | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP | WS_HSCROLL,
+            6, 60, 212, 56
+    PUSHBUTTON "C&hange Icon...", IDC_ICONS_CHANGEICON, 86, 120, 64, 15
+    PUSHBUTTON "Re&store Default", IDC_ICONS_SETDEFAULT, 154, 120, 64, 15
+END
+
 IDD_ADVANCED_GENERAL DIALOGEX 0, 0, 253, 204
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Generale"
 FONT 8, "MS Shell Dlg"
 BEGIN
     GROUPBOX "Afișare", -1, 7, 6, 237, 56, WS_GROUP
-    LTEXT "Mărime font", -1, 14, 20, 222, 9
+    LTEXT "Mărime font:", -1, 14, 20, 222, 9
     COMBOBOX IDC_FONTSIZE_COMBO, 14, 30, 223, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT "", IDC_FONTSIZE_CUSTOM, 14, 46, 223, 12
     GROUPBOX "Compatibilitate", -1, 7, 67, 237, 97
@@ -211,6 +238,11 @@ STRINGTABLE
 BEGIN
     IDS_STANDARDEFFECT "Standard"
     IDS_CLEARTYPEEFFECT "FreeType Antialiased"
+END
+
+STRINGTABLE
+BEGIN
+    IDS_DESKTOP_ITEMS "Desktop Items"
 END
 
 STRINGTABLE

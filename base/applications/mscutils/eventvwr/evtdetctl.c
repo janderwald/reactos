@@ -1,11 +1,10 @@
 /*
- * PROJECT:         ReactOS Event Log Viewer
- * LICENSE:         GPL - See COPYING in the top level directory
- * FILE:            base/applications/mscutils/eventvwr/evtdetctl.c
- * PURPOSE:         Event Details Control
- * PROGRAMMERS:     Marc Piulachs (marc.piulachs at codexchange [dot] net)
- *                  Eric Kohl
- *                  Hermes Belusca-Maito
+ * PROJECT:     ReactOS Event Log Viewer
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+ * PURPOSE:     Event Details Control.
+ * COPYRIGHT:   Copyright 2007 Marc Piulachs <marc.piulachs@codexchange.net>
+ *              Copyright 2008-2016 Eric Kohl <eric.kohl@reactos.org>
+ *              Copyright 2016-2022 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
  */
 
 #include "eventvwr.h"
@@ -14,7 +13,8 @@
 #include <shellapi.h>
 
 // FIXME:
-#define EVENT_MESSAGE_EVENTTEXT_BUFFER  1024*10
+#define EVENT_MESSAGE_EVENTTEXT_BUFFER  (1024*10)
+extern WCHAR szTitle[];
 extern HWND hwndListView;
 extern BOOL
 GetEventMessage(IN LPCWSTR KeyName,
@@ -25,7 +25,9 @@ GetEventMessage(IN LPCWSTR KeyName,
 
 typedef struct _DETAILDATA
 {
+    /* Data initialized from EVENTDETAIL_INFO */
     PEVENTLOGFILTER EventLogFilter;
+    INT iEventItem;
 
     BOOL bDisplayWords;
     HFONT hMonospaceFont;
@@ -38,8 +40,16 @@ typedef struct _DETAILDATA
 
 static
 VOID
-DisplayEvent(HWND hDlg, PEVENTLOGFILTER EventLogFilter)
+DisplayEvent(
+    _In_ HWND hDlg,
+    _In_ PDETAILDATA pDetailData)
 {
+    PEVENTLOGFILTER EventLogFilter = pDetailData->EventLogFilter;
+    INT iItem = pDetailData->iEventItem;
+    LVITEMW li;
+    PEVENTLOGRECORD pevlr;
+    BOOL bEventData;
+
     WCHAR szEventType[MAX_PATH];
     WCHAR szTime[MAX_PATH];
     WCHAR szDate[MAX_PATH];
@@ -49,38 +59,22 @@ DisplayEvent(HWND hDlg, PEVENTLOGFILTER EventLogFilter)
     WCHAR szCategory[MAX_PATH];
     WCHAR szEventID[MAX_PATH];
     WCHAR szEventText[EVENT_MESSAGE_EVENTTEXT_BUFFER];
-    BOOL bEventData = FALSE;
-    LVITEMW li;
-    PEVENTLOGRECORD pevlr;
-    int iIndex;
-
-    /* Get index of selected item */
-    iIndex = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED | LVNI_FOCUSED);
-    if (iIndex == -1)
-    {
-        MessageBoxW(hDlg,
-                    L"No Items in ListView",
-                    L"Error",
-                    MB_OK | MB_ICONINFORMATION);
-        return;
-    }
 
     li.mask = LVIF_PARAM;
-    li.iItem = iIndex;
+    li.iItem = iItem;
     li.iSubItem = 0;
-
     ListView_GetItem(hwndListView, &li);
 
     pevlr = (PEVENTLOGRECORD)li.lParam;
 
-    ListView_GetItemText(hwndListView, iIndex, 0, szEventType, ARRAYSIZE(szEventType));
-    ListView_GetItemText(hwndListView, iIndex, 1, szDate, ARRAYSIZE(szDate));
-    ListView_GetItemText(hwndListView, iIndex, 2, szTime, ARRAYSIZE(szTime));
-    ListView_GetItemText(hwndListView, iIndex, 3, szSource, ARRAYSIZE(szSource));
-    ListView_GetItemText(hwndListView, iIndex, 4, szCategory, ARRAYSIZE(szCategory));
-    ListView_GetItemText(hwndListView, iIndex, 5, szEventID, ARRAYSIZE(szEventID));
-    ListView_GetItemText(hwndListView, iIndex, 6, szUser, ARRAYSIZE(szUser));
-    ListView_GetItemText(hwndListView, iIndex, 7, szComputer, ARRAYSIZE(szComputer));
+    ListView_GetItemText(hwndListView, iItem, 0, szEventType, ARRAYSIZE(szEventType));
+    ListView_GetItemText(hwndListView, iItem, 1, szDate, ARRAYSIZE(szDate));
+    ListView_GetItemText(hwndListView, iItem, 2, szTime, ARRAYSIZE(szTime));
+    ListView_GetItemText(hwndListView, iItem, 3, szSource, ARRAYSIZE(szSource));
+    ListView_GetItemText(hwndListView, iItem, 4, szCategory, ARRAYSIZE(szCategory));
+    ListView_GetItemText(hwndListView, iItem, 5, szEventID, ARRAYSIZE(szEventID));
+    ListView_GetItemText(hwndListView, iItem, 6, szUser, ARRAYSIZE(szUser));
+    ListView_GetItemText(hwndListView, iItem, 7, szComputer, ARRAYSIZE(szComputer));
 
     SetDlgItemTextW(hDlg, IDC_EVENTDATESTATIC, szDate);
     SetDlgItemTextW(hDlg, IDC_EVENTTIMESTATIC, szTime);
@@ -181,32 +175,23 @@ PrintWordDataLine(PWCHAR pBuffer, UINT uOffset, PULONG pData, UINT uLength)
 
 static
 VOID
-DisplayEventData(HWND hDlg, BOOL bDisplayWords)
+DisplayEventData(
+    _In_ HWND hDlg,
+    _In_ PDETAILDATA pDetailData)
 {
+    BOOL bDisplayWords = pDetailData->bDisplayWords;
+    INT iItem = pDetailData->iEventItem;
     LVITEMW li;
     PEVENTLOGRECORD pevlr;
-    int iIndex;
 
     LPBYTE pData;
     UINT i, uOffset;
     UINT uBufferSize, uLineLength;
     PWCHAR pTextBuffer, pLine;
 
-    /* Get index of selected item */
-    iIndex = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED | LVNI_FOCUSED);
-    if (iIndex == -1)
-    {
-        MessageBoxW(hDlg,
-                    L"No Items in ListView",
-                    L"Error",
-                    MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-
     li.mask = LVIF_PARAM;
-    li.iItem = iIndex;
+    li.iItem = iItem;
     li.iSubItem = 0;
-
     ListView_GetItem(hwndListView, &li);
 
     pevlr = (PEVENTLOGRECORD)li.lParam;
@@ -480,7 +465,8 @@ OnScroll(HWND hDlg, PDETAILDATA pData, INT nBar, WORD sbCode)
     }
 }
 
-static VOID
+static
+VOID
 OnSize(HWND hDlg, PDETAILDATA pData, INT cx, INT cy)
 {
     LONG_PTR dwStyle;
@@ -800,7 +786,12 @@ EventDetailsCtrl(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
             }
             SetWindowLongPtrW(hDlg, DWLP_USER, (LONG_PTR)pData);
 
-            pData->EventLogFilter = (PEVENTLOGFILTER)lParam;
+            if (lParam != 0)
+            {
+                PEVENTDETAIL_INFO DetailInfo = (PEVENTDETAIL_INFO)lParam;
+                pData->EventLogFilter = DetailInfo->EventLogFilter;
+                pData->iEventItem     = DetailInfo->iEventItem;
+            }
             pData->bDisplayWords  = FALSE;
             pData->hMonospaceFont = CreateMonospaceFont();
 
@@ -810,12 +801,6 @@ EventDetailsCtrl(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
             pData->scPos.x = pData->scPos.y = 0;
 
             InitDetailsDlgCtrl(hDlg, pData);
-
-#if 0
-            /* Show event info on dialog box */
-            DisplayEvent(hDlg, pData->EventLogFilter);
-            DisplayEventData(hDlg, pData->bDisplayWords);
-#endif
 
             // OnSize(hDlg, pData, pData->cxOld, pData->cyOld);
             return (INT_PTR)TRUE;
@@ -835,39 +820,76 @@ EventDetailsCtrl(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
             return (INT_PTR)TRUE;
 
         case EVT_DISPLAY:
+        {
+            pData->iEventItem = (INT)lParam;
             if (pData->EventLogFilter)
             {
-                /* Show event info on dialog box */
-                DisplayEvent(hDlg, pData->EventLogFilter);
-                DisplayEventData(hDlg, pData->bDisplayWords);
+                /* Show event info in control */
+                DisplayEvent(hDlg, pData);
+                DisplayEventData(hDlg, pData);
             }
             return (INT_PTR)TRUE;
+        }
 
         case WM_COMMAND:
             switch (LOWORD(wParam))
             {
                 case IDC_PREVIOUS:
-                {
-                    SendMessageW(hwndListView, WM_KEYDOWN, VK_UP, 0);
-
-                    /* Show event info on dialog box */
-                    if (pData->EventLogFilter)
-                    {
-                        DisplayEvent(hDlg, pData->EventLogFilter);
-                        DisplayEventData(hDlg, pData->bDisplayWords);
-                    }
-                    return (INT_PTR)TRUE;
-                }
-
                 case IDC_NEXT:
                 {
-                    SendMessageW(hwndListView, WM_KEYDOWN, VK_DOWN, 0);
+                    BOOL bPrev = (LOWORD(wParam) == IDC_PREVIOUS);
+                    INT iItem, iSel;
 
-                    /* Show event info on dialog box */
+                    /* Select the previous/next item from our current one */
+                    iItem = ListView_GetNextItem(hwndListView,
+                                                 pData->iEventItem,
+                                                 bPrev ? LVNI_ABOVE : LVNI_BELOW);
+                    if (iItem == -1)
+                    {
+                        // TODO: Localization.
+                        if (MessageBoxW(hDlg,
+                                        bPrev
+                                            ? L"You have reached the beginning of the event log. Do you want to continue from the end?"
+                                            : L"You have reached the end of the event log. Do you want to continue from the beginning?",
+                                        szTitle,
+                                        MB_YESNO | MB_ICONQUESTION)
+                            == IDNO)
+                        {
+                            break;
+                        }
+
+                        /* Determine from where to restart */
+                        if (bPrev)
+                            iItem = ListView_GetItemCount(hwndListView) - 1;
+                        else
+                            iItem = 0;
+                    }
+
+                    /*
+                     * Deselect the currently selected items in the list view.
+                     * (They may be different from our current one, if multiple
+                     * event details are being displayed concurrently!)
+                     */
+                    iSel = -1;
+                    while ((iSel = ListView_GetNextItem(hwndListView, iSel, LVNI_SELECTED)) != -1)
+                    {
+                        ListView_SetItemState(hwndListView, iSel,
+                                              0, LVIS_FOCUSED | LVIS_SELECTED);
+                    }
+
+                    /* Select the new item */
+                    ListView_SetItemState(hwndListView, iItem,
+                                          LVIS_FOCUSED | LVIS_SELECTED,
+                                          LVIS_FOCUSED | LVIS_SELECTED);
+                    ListView_EnsureVisible(hwndListView, iItem, FALSE);
+
+                    pData->iEventItem = iItem;
+
+                    /* Show event info in control */
                     if (pData->EventLogFilter)
                     {
-                        DisplayEvent(hDlg, pData->EventLogFilter);
-                        DisplayEventData(hDlg, pData->bDisplayWords);
+                        DisplayEvent(hDlg, pData);
+                        DisplayEventData(hDlg, pData);
                     }
                     return (INT_PTR)TRUE;
                 }
@@ -878,20 +900,15 @@ EventDetailsCtrl(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     return (INT_PTR)TRUE;
 
                 case IDC_BYTESRADIO:
-                    if (pData->EventLogFilter)
-                    {
-                        pData->bDisplayWords = FALSE;
-                        DisplayEventData(hDlg, pData->bDisplayWords);
-                    }
-                    return (INT_PTR)TRUE;
-
                 case IDC_WORDRADIO:
+                {
                     if (pData->EventLogFilter)
                     {
-                        pData->bDisplayWords = TRUE;
-                        DisplayEventData(hDlg, pData->bDisplayWords);
+                        pData->bDisplayWords = (LOWORD(wParam) == IDC_WORDRADIO);
+                        DisplayEventData(hDlg, pData);
                     }
                     return (INT_PTR)TRUE;
+                }
 
                 default:
                     break;
@@ -915,14 +932,14 @@ EventDetailsCtrl(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
         }
 
         case WM_HSCROLL:
-            OnScroll(hDlg, pData, SB_HORZ, LOWORD(wParam));
-            SetWindowLongPtrW(hDlg, DWLP_MSGRESULT, 0);
-            return (INT_PTR)TRUE;
-
         case WM_VSCROLL:
-            OnScroll(hDlg, pData, SB_VERT, LOWORD(wParam));
+        {
+            OnScroll(hDlg, pData,
+                     (uMsg == WM_HSCROLL) ? SB_HORZ : SB_VERT,
+                     LOWORD(wParam));
             SetWindowLongPtrW(hDlg, DWLP_MSGRESULT, 0);
             return (INT_PTR)TRUE;
+        }
 
         case WM_SIZE:
             OnSize(hDlg, pData, LOWORD(lParam), HIWORD(lParam));

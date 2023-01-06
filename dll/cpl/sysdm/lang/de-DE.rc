@@ -12,7 +12,7 @@ LANGUAGE LANG_GERMAN, SUBLANG_NEUTRAL
 IDD_PROPPAGEGENERAL DIALOGEX 0, 0, 256, 218
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Allgemein"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     CONTROL "", IDC_ROSIMG, "Static", SS_OWNERDRAW, 4, 5, 248, 111
     LTEXT "System:", IDC_STATIC, 4, 116, 100, 9
@@ -35,7 +35,7 @@ END
 IDD_PROPPAGEHARDWARE DIALOGEX 0, 0, 256, 218
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Hardware"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     GROUPBOX "Geräte-Manager", IDC_STATIC, 6, 7, 244, 61
     ICON IDI_DEVMGR, IDC_STATIC, 12, 18, 23, 21, SS_ICON
@@ -54,7 +54,7 @@ END
 IDD_PROPPAGEADVANCED DIALOGEX 0, 0, 256, 218
 STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Erweitert"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Administratorrechte werden für die meisten dieser Einstellungen benötigt.", IDC_STATIC, 12, 5, 242, 8
     GROUPBOX "Leistung", IDC_STATIC, 6, 18, 244, 50
@@ -72,7 +72,7 @@ BEGIN
 END
 
 IDD_SYSSETTINGS DIALOGEX 0, 0, 221, 106
-STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Systemeinstellungen"
 FONT 8, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
@@ -151,8 +151,8 @@ BEGIN
     LTEXT "", IDC_RENPROFEDITFROM, 30, 10, 160, 10
     LTEXT "Nach:", IDC_STATIC, 5, 30, 20, 8
     EDITTEXT IDC_RENPROFEDITTO, 30, 30, 160, 12
-    DEFPUSHBUTTON "OK", IDOK, 196, 6, 50, 14
-    PUSHBUTTON "Abbrechen", IDCANCEL, 196, 24, 50, 14
+    DEFPUSHBUTTON "OK", IDOK, 199, 9, 50, 14
+    PUSHBUTTON "Abbrechen", IDCANCEL, 199, 30, 50, 14
 END
 
 IDD_USERPROFILE DIALOGEX 0, 0, 256, 218
@@ -161,7 +161,7 @@ CAPTION "Benutzerprofile"
 FONT 8, "MS Shell Dlg"
 BEGIN
     ICON IDI_USERPROF, IDC_STATIC, 6, 11, 16, 16, SS_ICON
-    LTEXT "Benutzerprofile enthalten Desktopeinstellungen und andere Informationen bezüglich ihrer Anmeldung. Sie können unterschiedliche Profile für jeden Computer, den Sie benutzen einrichten oder ein einziges Profil wählen, welches auf jedem Computer gleich ist.", IDC_STATIC, 40, 7, 204, 40
+    LTEXT "Benutzerprofile enthalten Desktopeinstellungen und andere Informationen bezüglich ihrer Anmeldung. Sie können unterschiedliche Profile für jeden Computer, den Sie benutzen einrichten oder ein einziges Profil wählen, welches auf jedem Computer gleich ist.", IDC_STATIC, 40, 6, 204, 44
     LTEXT "Auf diesem Computer gespeicherte Profile:", IDC_STATIC, 16, 51, 204, 9
     CONTROL "", IDC_USERPROFILE_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
             LVS_SHOWSELALWAYS | LVS_SORTASCENDING | WS_BORDER | WS_TABSTOP, 6, 66, 244, 85, WS_EX_CLIENTEDGE
@@ -237,7 +237,7 @@ END
 IDD_VIRTMEM DIALOGEX 6, 6, 223, 248
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "Virtueller Arbeitsspeicher"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Laufwerk [Bezeichnung]", IDC_STATIC, 12, 5, 96, 9
     LTEXT "Auslagerungsdatei (MB)", IDC_STATIC, 115, 5, 96, 9
@@ -269,7 +269,7 @@ END
 IDD_ENVIRONMENT_VARIABLES DIALOGEX 6, 18, 252, 245
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Umgebungsvariablen"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 245, 238, 7, 7, SBS_SIZEGRIP
     GROUPBOX "Benutzerdefinierte Variablen", IDC_USER_VARIABLE_GROUP, 7, 12, 238, 100
@@ -291,12 +291,12 @@ END
 IDD_EDIT_VARIABLE DIALOGEX 10, 15, 372, 71
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Variable bearbeiten"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 365, 64, 7, 7, SBS_SIZEGRIP
-    LTEXT "Variablen-&Name:", IDC_STATIC, 7, 14, 50, 8
+    LTEXT "Variablen-&Name:", IDC_STATIC, 7, 14, 56, 8
     EDITTEXT IDC_VARIABLE_NAME, 75, 12, 289, 12, ES_AUTOHSCROLL
-    LTEXT "Variablen-&Wert:", IDC_STATIC, 7, 32, 50, 8
+    LTEXT "Variablen-&Wert:", IDC_STATIC, 7, 32, 56, 8
     EDITTEXT IDC_VARIABLE_VALUE, 75, 30, 289, 12, ES_AUTOHSCROLL
     DEFPUSHBUTTON "OK", IDOK, 260, 50, 50, 14
     PUSHBUTTON "Abbrechen", IDCANCEL, 314, 50, 50, 14
@@ -307,7 +307,7 @@ END
 IDD_EDIT_VARIABLE_FANCY DIALOGEX 10, 15, 300, 250
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CONTEXTHELP | WS_POPUPWINDOW | WS_CAPTION | WS_THICKFRAME | WS_VISIBLE
 CAPTION "Variable bearbeiten"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 BEGIN
     SCROLLBAR IDC_DIALOG_GRIP, 293, 243, 7, 7, SBS_SIZEGRIP
     CONTROL "", IDC_LIST_VARIABLE_VALUE, "SysListView32", LVS_NOCOLUMNHEADER | LVS_EDITLABELS | LVS_SHOWSELALWAYS |
@@ -325,7 +325,7 @@ END
 
 IDD_LICENCE DIALOGEX 6, 5, 267, 159
 CAPTION "Lizenz"
-FONT 8, "MS Shell Dlg", 0, 0, 0x0
+FONT 8, "MS Shell Dlg"
 STYLE DS_SHELLFONT | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 BEGIN
     EDITTEXT IDC_LICENCEEDIT, 6, 3, 255, 131, WS_VSCROLL | ES_READONLY | ES_MULTILINE
@@ -342,7 +342,7 @@ BEGIN
     IDS_PETABYTE "PB RAM"
     IDS_MEGAHERTZ "MHz"
     IDS_GIGAHERTZ "GHz"
-    IDS_UPTIME_FORMAT "%u Tage, %02u:%02u:%02u"
+    IDS_UPTIME_FORMAT "%lu Tage, %02lu:%02lu:%02lu"
     IDS_VARIABLE "Variable"
     IDS_VALUE "Wert"
     IDS_NO_DUMP "(Keine)"
@@ -365,9 +365,9 @@ BEGIN
     IDS_MESSAGEBOXTITLE "Systemsteuerungsoption ""System"""
     IDS_WARNINITIALSIZE "Geben Sie einen numerischen Wert für die Anfangsgröße der Auslagerungsdatei an."
     IDS_WARNMAXIMUMSIZE "Geben Sie einen numerischen Wert für die Maximalgröße der Auslagerungsdatei an."
-    IDS_WARNINITIALRANGE "Die Anfangsgröße der Auslagerungsdatei darf nicht kleiner als 2 MB sein und darf den verfügbaren Speicherplatz auf dem gewählten Laufwerk nicht überschreiten."
-    IDS_WARNMAXIMUMRANGE "Die Maximalgröße der Auslagerungsdatei darf nicht kleiner als die Anfangsgröße sein und darf den verfügbaren Speicherplatz auf dem gewählten Laufwerk nicht überschreiten."
-    IDS_PAGEFILE_MB "%u MB"
+    IDS_WARNINITIALRANGE "Die Anfangsgröße der Auslagerungsdatei muss zwischen 2 MB und %lu MB auf dem gewählten Laufwerk sein."
+    IDS_WARNMAXIMUMRANGE "Die Maximalgröße der Auslagerungsdatei darf nicht kleiner als die Anfangsgröße und muss kleiner als %lu MB auf dem gewählten Laufwerk sein."
+    IDS_PAGEFILE_MB "%lu MB"
     IDS_PAGEFILE_NONE "Keine"
     IDS_PAGEFILE_SYSTEM "Systemverwaltet"
     IDS_INFOREBOOT "Sie müssen den Computer neu starten, damit die Änderung wirksam wird."

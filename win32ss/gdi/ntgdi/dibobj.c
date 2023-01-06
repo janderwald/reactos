@@ -69,6 +69,11 @@ CreateDIBPalette(
                                     0,
                                     0,
                                     0);
+        if (ppal == NULL)
+        {
+            DPRINT1("Failed to allocate palette.\n");
+            return NULL;
+        }
 
         /* Check if the BITMAPINFO specifies how many colors to use */
         if ((pbmi->bmiHeader.biSize >= sizeof(BITMAPINFOHEADER)) &&
@@ -1573,7 +1578,13 @@ IntCreateDIBitmap(
             Surface = SURFACE_ShareLockSurface(handle);
             ASSERT(Surface);
             Palette = CreateDIBPalette(data, Dc, coloruse);
-            ASSERT(Palette);
+            if (Palette == NULL)
+            {
+                SURFACE_ShareUnlockSurface(Surface);
+                GreDeleteObject(handle);
+                return NULL;
+            }
+
             SURFACE_vSetPalette(Surface, Palette);
 
             PALETTE_ShareUnlockPalette(Palette);

@@ -33,14 +33,17 @@ endif()
 add_definitions(/D__STDC__=1)
 
 # Ignore any "standard" include paths, and do not use any default CRT library.
-if(NOT USE_CLANG_CL)
+if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(/X /Zl)
 endif()
 
 # Disable buffer security checks by default.
 add_compile_options(/GS-)
 
-if(USE_CLANG_CL)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    if(ARCH STREQUAL "amd64")
+        add_compile_options(-mcx16) # Generate CMPXCHG16B
+    endif()
     set(CMAKE_CL_SHOWINCLUDES_PREFIX "Note: including file: ")
 endif()
 
@@ -48,7 +51,7 @@ endif()
 # default for older compilers. See CORE-6507
 if(ARCH STREQUAL "i386")
     # Clang's IA32 means i386, which doesn't have cmpxchg8b
-    if(USE_CLANG_CL)
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         add_compile_options(-march=${OARCH})
     else()
         add_compile_options(/arch:IA32)
@@ -93,7 +96,7 @@ if (MSVC_IDE)
 endif()
 
 # On x86 Debug builds, if it's not Clang-CL or msbuild, treat all warnings as errors
-if ((ARCH STREQUAL "i386") AND (CMAKE_BUILD_TYPE STREQUAL "Debug") AND (NOT USE_CLANG_CL) AND (NOT MSVC_IDE))
+if ((ARCH STREQUAL "i386") AND (CMAKE_BUILD_TYPE STREQUAL "Debug") AND (CMAKE_C_COMPILER_ID STREQUAL "MSVC") AND (NOT MSVC_IDE))
     set(TREAT_ALL_WARNINGS_AS_ERRORS=TRUE)
 endif()
 
@@ -140,7 +143,7 @@ endif()
 # - C4115: named type definition in parentheses
 add_compile_options(/w14115)
 
-if(USE_CLANG_CL)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:-nostdinc;-Wno-multichar;-Wno-char-subscripts;-Wno-microsoft-enum-forward-reference;-Wno-pragma-pack;-Wno-microsoft-anon-tag;-Wno-parentheses-equality;-Wno-unknown-pragmas>")
 endif()
 
@@ -152,7 +155,7 @@ add_compile_definitions($<$<CONFIG:Release>:NDEBUG>)
 
 # Hotpatchable images
 if(ARCH STREQUAL "i386")
-    if(NOT USE_CLANG_CL)
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
         add_compile_options(/hotpatch)
     endif()
     set(_hotpatch_link_flag "/FUNCTIONPADMIN:5")
@@ -252,7 +255,7 @@ function(set_subsystem MODULE SUBSYSTEM)
     elseif(ARCH STREQUAL "arm")
         target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
     elseif(ARCH STREQUAL "arm64")
-        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.04")
+        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
     else()
         target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},5.01")
     endif()
@@ -432,7 +435,7 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
     get_defines(_defines)
     get_includes(_includes)
 
-    if(USE_CLANG_CL)
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         set(_no_std_includes_flag "-nostdinc")
     else()
         set(_no_std_includes_flag "/X")
@@ -472,21 +475,26 @@ macro(add_asm_files _target)
     get_includes(_directory_includes)
     get_directory_property(_defines COMPILE_DEFINITIONS)
     foreach(_source_file ${ARGN})
-        get_filename_component(_source_file_base_name ${_source_file} NAME_WE)
-        get_filename_component(_source_file_full_path ${_source_file} ABSOLUTE)
-        set(_preprocessed_asm_file ${CMAKE_CURRENT_BINARY_DIR}/asm/${_source_file_base_name}_${_target}.asm)
-        get_source_file_property(_defines_semicolon_list ${_source_file_full_path} COMPILE_DEFINITIONS)
-        unset(_source_file_defines)
-        foreach(_define ${_defines_semicolon_list})
-            if(NOT ${_define} STREQUAL "NOTFOUND")
-                list(APPEND _source_file_defines -D${_define})
-            endif()
-        endforeach()
-        add_custom_command(
-            OUTPUT ${_preprocessed_asm_file}
-            COMMAND cl /nologo /X /I${REACTOS_SOURCE_DIR}/sdk/include/asm /I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} /D__ASM__ /D_USE_ML /EP /c ${_source_file_full_path} > ${_preprocessed_asm_file}
-            DEPENDS ${_source_file_full_path})
-        list(APPEND ${_target} ${_preprocessed_asm_file})
+        get_filename_component(_extension ${_source_file} EXT)
+        if (("${_extension}" STREQUAL ".asm") OR ("${_extension}" STREQUAL ".inc"))
+            list(APPEND ${_target} ${_source_file})
+        else()
+            get_filename_component(_source_file_base_name ${_source_file} NAME_WE)
+            get_filename_component(_source_file_full_path ${_source_file} ABSOLUTE)
+            set(_preprocessed_asm_file ${CMAKE_CURRENT_BINARY_DIR}/asm/${_source_file_base_name}_${_target}.asm)
+            get_source_file_property(_defines_semicolon_list ${_source_file_full_path} COMPILE_DEFINITIONS)
+            unset(_source_file_defines)
+            foreach(_define ${_defines_semicolon_list})
+                if(NOT ${_define} STREQUAL "NOTFOUND")
+                    list(APPEND _source_file_defines -D${_define})
+                endif()
+            endforeach()
+            add_custom_command(
+                OUTPUT ${_preprocessed_asm_file}
+                COMMAND cl /nologo /X /I${REACTOS_SOURCE_DIR}/sdk/include/asm /I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} /D__ASM__ /D_USE_ML /EP /c ${_source_file_full_path} > ${_preprocessed_asm_file}
+                DEPENDS ${_source_file_full_path})
+            list(APPEND ${_target} ${_preprocessed_asm_file})
+        endif()
     endforeach()
 endmacro()
 
@@ -519,7 +527,7 @@ function(add_linker_script _target _linker_script_file)
 
     # Create the additional linker response file.
     set(_generated_file "${_generated_file_path_prefix}.rsp")
-    if(USE_CLANG_CL)
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         set(_no_std_includes_flag "-nostdinc")
     else()
         set(_no_std_includes_flag "/X")

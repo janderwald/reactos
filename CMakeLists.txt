@@ -76,8 +76,8 @@ add_definitions(
 
 # There doesn't seem to be a standard for __FILE__ being relative or absolute, so detect it at runtime.
 file(RELATIVE_PATH _PATH_PREFIX ${REACTOS_BINARY_DIR} ${REACTOS_SOURCE_DIR})
-if (GCC AND ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "8.0.0")
-    OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10.0.0"))))
+if (NOT MSVC AND ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "8.0.0")
+               OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10.0.0")))
     # Thankfully, GCC has this
     add_compile_options(-ffile-prefix-map=${REACTOS_SOURCE_DIR}=)
     add_compile_options(-ffile-prefix-map=${_PATH_PREFIX}=)
@@ -147,13 +147,11 @@ if(NOT CMAKE_CROSSCOMPILING)
     endif()
     add_subdirectory(sdk/include/host)
 
-    if(NOT MSVC)
-        add_subdirectory(dll/win32/dbghelp)
-    endif()
+    add_subdirectory(dll/win32/dbghelp)
     add_subdirectory(sdk/tools)
     add_subdirectory(sdk/lib)
 
-    set(NATIVE_TARGETS bin2c widl gendib cabman fatten hpp isohybrid mkhive mkisofs obj2bin spec2def geninc mkshelllink utf16le xml2sdb)
+    set(NATIVE_TARGETS asmpp bin2c widl gendib cabman fatten hpp isohybrid mkhive mkisofs obj2bin spec2def geninc mkshelllink utf16le xml2sdb)
     if(NOT MSVC)
         list(APPEND NATIVE_TARGETS rsym pefixup)
     endif()
@@ -217,19 +215,11 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         add_definitions(-DDBG=0)
     endif()
 
-    if(KDBG)
-        add_definitions(-DKDBG)
-    endif()
-
-    if(_WINKD_)
-        add_definitions(-D_WINKD_)
-    endif()
-
     if(ENABLE_CCACHE)
         message(WARNING "-- Disabling precompiled headers support (ccache).")
         option(PCH "Whether to use precompiled headers" OFF)
         set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    elseif(GCC)
+    elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         message(WARNING "-- Disabling precompiled headers on GCC by default CORE-17108.")
         option(PCH "Whether to use precompiled headers" OFF)
     else()
@@ -246,7 +236,8 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
 
     # Arch Options
     if(ARCH STREQUAL "i386")
-        if(NOT USE_CLANG_CL)
+        # clang-cl defines this one for itself
+        if(NOT (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang"))
             add_definitions(-D_M_IX86)
         endif()
         add_definitions(-D_X86_ -D__i386__ -Di386)

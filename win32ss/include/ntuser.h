@@ -126,6 +126,10 @@ RtlLargeStringToUnicodeString(
 
 #define NB_HOOKS (WH_MAXHOOK - WH_MINHOOK + 1)
 
+/*
+ * DESKTOPINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/DESKTOP
+ */
 typedef struct _DESKTOPINFO
 {
     PVOID pvDesktopBase;
@@ -157,6 +161,10 @@ typedef struct _DESKTOPINFO
 #define CTI_THREADSYSLOCK 0x0001
 #define CTI_INSENDMESSAGE 0x0002
 
+/*
+ * CLIENTTHREADINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/CLIENTTHREADINFO
+ */
 typedef struct _CLIENTTHREADINFO
 {
     DWORD CTI_flags;
@@ -297,6 +305,10 @@ typedef struct _CALLBACKWND
 #define CI_IMMACTIVATE       0x00000040
 #define CI_TFSDISABLED       0x00000400
 
+/*
+ * CLIENTINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/CLIENTINFO
+ */
 typedef struct _CLIENTINFO
 {
     ULONG_PTR CI_flags;
@@ -669,6 +681,10 @@ typedef struct _SBINFOEX
 #define WPF_MININIT 0x0008
 #define WPF_MAXINIT 0x0010
 
+/*
+ * WND structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/WND
+ */
 typedef struct _WND
 {
     THRDESKHEAD head;
@@ -975,6 +991,10 @@ typedef struct tagDPISERVERINFO
 #define PUSIF_LISTBOXSMOOTHSCROLLING 0x08
 #define PUSIF_KEYBOARDCUES           0x20
 
+/*
+ * PERUSERSERVERINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/SERVERINFO
+ */
 typedef struct _PERUSERSERVERINFO
 {
     INT aiSysMet[SM_CMETRICS];
@@ -1017,6 +1037,10 @@ typedef struct _PERUSERSERVERINFO
     DWORD dwRIPFlags;
 } PERUSERSERVERINFO, *PPERUSERSERVERINFO;
 
+/*
+ * SERVERINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/SERVERINFO
+ */
 typedef struct tagSERVERINFO
 {
     DWORD dwSRVIFlags;
@@ -1092,6 +1116,10 @@ typedef struct _WNDMSG
     PINT abMsgs;
 } WNDMSG, *PWNDMSG;
 
+/*
+ * SHAREDINFO structure.
+ * See also: https://reactos.org/wiki/Techwiki:Win32k/SHAREDINFO
+ */
 typedef struct _SHAREDINFO
 {
     PSERVERINFO psi;         /* Global Server Info */
@@ -1201,6 +1229,8 @@ typedef enum IMEINFOEXCLASS
 } IMEINFOEXCLASS;
 
 #define IS_IME_HKL(hkl) ((((ULONG_PTR)(hkl)) & 0xF0000000) == 0xE0000000)
+#define IS_IMM_MODE() (gpsi && (gpsi->dwSRVIFlags & SRVINFO_IMM32))
+#define IS_CICERO_MODE() (gpsi && (gpsi->dwSRVIFlags & SRVINFO_CICERO_ENABLED))
 
 typedef struct tagIMEUI
 {
@@ -1219,6 +1249,7 @@ typedef struct tagIMEUI
         UINT fCtrlShowStatus:1;
         UINT fFreeActiveEvent:1;
     };
+    DWORD dwLastStatus;
 } IMEUI, *PIMEUI;
 
 /* Window Extra data container. */
@@ -1294,7 +1325,7 @@ C_ASSERT(sizeof(IMEDPI) == 0xa8);
 #endif
 
 /* flags for IMEDPI.dwFlags */
-#define IMEDPI_FLAG_UNKNOWN 0x1
+#define IMEDPI_FLAG_UNLOADED 0x1
 #define IMEDPI_FLAG_LOCKED 0x2
 
 /* unconfirmed */
@@ -1323,10 +1354,10 @@ C_ASSERT(sizeof(CLIENTIMC) == 0x34);
 
 /* flags for CLIENTIMC */
 #define CLIENTIMC_WIDE 0x1
-#define CLIENTIMC_UNKNOWN5 0x2
+#define CLIENTIMC_ACTIVE 0x2
 #define CLIENTIMC_UNKNOWN4 0x20
 #define CLIENTIMC_DESTROY 0x40
-#define CLIENTIMC_UNKNOWN3 0x80
+#define CLIENTIMC_DISABLEIME 0x80
 #define CLIENTIMC_UNKNOWN2 0x100
 
 DWORD
@@ -1515,7 +1546,7 @@ NtUserTrackPopupMenuEx(
 HKL
 NTAPI
 NtUserActivateKeyboardLayout(
-    HKL hKl,
+    HKL hKL,
     ULONG Flags);
 
 DWORD
@@ -2431,7 +2462,7 @@ NtUserGetKeyboardLayoutList(
 BOOL
 NTAPI
 NtUserGetKeyboardLayoutName(
-    LPWSTR lpszName);
+    _Inout_ PUNICODE_STRING pustrName);
 
 DWORD
 NTAPI
@@ -3365,6 +3396,8 @@ NtUserSetWindowLongPtr(
     DWORD Index,
     LONG_PTR NewValue,
     BOOL Ansi);
+#else
+#define NtUserSetWindowLongPtr NtUserSetWindowLong
 #endif // _WIN64
 
 BOOL

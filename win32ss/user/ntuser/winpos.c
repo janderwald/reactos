@@ -379,6 +379,7 @@ BOOL FASTCALL can_activate_window( PWND Wnd OPTIONAL)
     if (!(style & WS_VISIBLE)) return FALSE;
     if (style & WS_MINIMIZE) return FALSE;
     if ((style & (WS_POPUP|WS_CHILD)) == WS_CHILD) return FALSE;
+    if (Wnd->ExStyle & WS_EX_NOACTIVATE) return FALSE;
     return TRUE;
     /* FIXME: This window could be disable because the child that closed
               was a popup. */
@@ -435,12 +436,12 @@ co_WinPosActivateOtherWindow(PWND Wnd)
 
    // Find any window to bring to top. Works Okay for wine since it does not see X11 windows.
    WndTo = UserGetDesktopWindow();
-   WndTo = WndTo->spwndChild;
-   if ( WndTo == NULL )
+   if ((WndTo == NULL) || (WndTo->spwndChild == NULL))
    {
       //ERR("WinPosActivateOtherWindow No window!\n");
       return;
    }
+   WndTo = WndTo->spwndChild;
    for (;;)
    {
       if (WndTo == Wnd)
@@ -1393,8 +1394,34 @@ WinPosDoOwnedPopups(PWND Window, HWND hWndInsertAfter)
 
                if (List[i] == Owner)
                {
-                  if (i > 0) hWndInsertAfter = List[i-1];
-                  else hWndInsertAfter = topmost ? HWND_TOPMOST : HWND_TOP;
+                  /* We found its Owner, so we must handle it here. */
+                  if (i > 0)
+                  {
+                     if (List[i - 1] != UserHMGetHandle(Window))
+                     {
+                        /*
+                         * If the popup to be inserted is not already just
+                         * before the Owner, insert it there. The modified
+                         * hWndInsertAfter will be handled below.
+                         *
+                         * (NOTE: Do not allow hWndInsertAfter to become equal
+                         * to the popup's window handle, as this would cause
+                         * the popup to link to itself).
+                         */
+                        hWndInsertAfter = List[i - 1];
+                     }
+                     else
+                     {
+                        /* If the popup to be inserted is already
+                         * before the Owner, we are done. */
+                        ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
+                        return hWndInsertAfter;
+                     }
+                  }
+                  else
+                  {
+                     hWndInsertAfter = topmost ? HWND_TOPMOST : HWND_TOP;
+                  }
                   break;
                }
 
@@ -1918,9 +1945,12 @@ co_WinPosSetWindowPos(
           (!(Window->ExStyle & WS_EX_TOOLWINDOW) && !Window->spwndOwner &&
            (!Window->spwndParent || UserIsDesktopWindow(Window->spwndParent))))
       {
-         co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)Window->head.h, 0);
-         if (!(WinPos.flags & SWP_NOACTIVATE))
-            UpdateShellHook(Window);
+         if (!UserIsDesktopWindow(Window))
+         {
+            co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)Window->head.h, 0);
+            if (!(WinPos.flags & SWP_NOACTIVATE))
+               UpdateShellHook(Window);
+         }
       }
 
       Window->style |= WS_VISIBLE; //IntSetStyle( Window, WS_VISIBLE, 0 );
