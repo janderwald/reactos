@@ -295,6 +295,9 @@ CSendToMenu::QueryContextMenu(HMENU hMenu,
     TRACE("%p %p %u %u %u %u\n", this,
           hMenu, indexMenu, idCmdFirst, idCmdLast, uFlags);
 
+    if (uFlags & (CMF_NOVERBS | CMF_VERBSONLY))
+        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, idCmdFirst);
+
     HMENU hSubMenu = CreateMenu();
     if (!hSubMenu)
     {
@@ -324,7 +327,7 @@ CSendToMenu::QueryContextMenu(HMENU hMenu,
     m_hSubMenu = hSubMenu;
     DestroyMenu(hOldSubMenu);
 
-    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, cItems);
+    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, idCmdFirst + cItems);
 }
 
 STDMETHODIMP

@@ -178,7 +178,7 @@ License: media/fonts/doc/DejaVu/LICENSE.txt
 URL: http://dejavu.sourceforge.net
 
 Title: Open Sans Fonts
-Path: media/fonts
+Path: media/fonts/trebuc*.ttf
 Used Version: 1.10
 License: Apache-2.0 (https://spdx.org/licenses/Apache-2.0.html)
 URL: http://www.google.com/fonts/specimen/Open+Sans
@@ -202,9 +202,9 @@ License:
 URL: http://www.catch22.net/tuts/cardlib
 
 Title: lwIP - A Lightweight TCP/IP stack
-Path: sdk/lib/drivers/lwip
+Path: drivers/network/tcpip/lwip
 Used Version: 1.4.1
-License: Modified BSD License (sdk/lib/drivers/lwip/COPYING)
+License: Modified BSD License (drivers/network/tcpip/lwip/COPYING)
 URL: https://savannah.nongnu.org/projects/lwip/
 
 Title: FreeType
@@ -251,7 +251,7 @@ URL: http://stlport.sourceforge.net/
 
 Title: ZLib
 Path: sdk/lib/3rdparty/zlib
-Used Version: 1.2.12
+Used Version: 1.2.13
 License: Zlib (https://spdx.org/licenses/Zlib.html)
 URL: http://www.zlib.net
 
