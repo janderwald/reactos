@@ -138,7 +138,7 @@ static void OnMenuSelect(HWND hWnd, UINT nItemID, UINT nFlags, HMENU hSysMenu)
 {
     WCHAR str[100];
 
-    wcscpy(str, L"");
+    str[0] = UNICODE_NULL;
     if (nFlags & MF_POPUP)
     {
         if (hSysMenu != GetMenu(hWnd))
@@ -230,8 +230,7 @@ static BOOL CheckCommDlgError(HWND hWnd)
     return TRUE;
 }
 
-WCHAR FileNameBuffer[_MAX_PATH];
-WCHAR FileTitleBuffer[_MAX_PATH];
+WCHAR FileNameBuffer[MAX_PATH];
 
 typedef struct
 {
@@ -255,9 +254,9 @@ BuildFilterStrings(WCHAR *Filter, PFILTERPAIR Pairs, int PairCount)
     Filter[++c] = L'\0';
 }
 
-static BOOL InitOpenFileName(HWND hWnd, OPENFILENAME* pofn)
+static BOOL InitOpenFileName(HWND hWnd, OPENFILENAME* pofn, BOOL bSave)
 {
-    FILTERPAIR FilterPairs[4];
+    FILTERPAIR FilterPairs[5];
     static WCHAR Filter[1024];
 
     memset(pofn, 0, sizeof(OPENFILENAME));
@@ -272,17 +271,31 @@ static BOOL InitOpenFileName(HWND hWnd, OPENFILENAME* pofn)
     FilterPairs[1].FilterID = IDS_FLT_HIVFILES_FLT;
     FilterPairs[2].DisplayID = IDS_FLT_REGEDIT4;
     FilterPairs[2].FilterID = IDS_FLT_REGEDIT4_FLT;
-    FilterPairs[3].DisplayID = IDS_FLT_ALLFILES;
-    FilterPairs[3].FilterID = IDS_FLT_ALLFILES_FLT;
-    BuildFilterStrings(Filter, FilterPairs, ARRAY_SIZE(FilterPairs));
+    if (bSave)
+    {
+        FilterPairs[3].DisplayID = IDS_FLT_TXTFILES;
+        FilterPairs[3].FilterID = IDS_FLT_TXTFILES_FLT;
+        FilterPairs[4].DisplayID = IDS_FLT_ALLFILES;
+        FilterPairs[4].FilterID = IDS_FLT_ALLFILES_FLT;
+    }
+    else
+    {
+        FilterPairs[3].DisplayID = IDS_FLT_ALLFILES;
+        FilterPairs[3].FilterID = IDS_FLT_ALLFILES_FLT;
+    }
+
+    BuildFilterStrings(Filter, FilterPairs, ARRAY_SIZE(FilterPairs) - !bSave);
 
     pofn->lpstrFilter = Filter;
     pofn->lpstrFile = FileNameBuffer;
-    pofn->nMaxFile = _MAX_PATH;
-    pofn->lpstrFileTitle = FileTitleBuffer;
-    pofn->nMaxFileTitle = _MAX_PATH;
+    pofn->nMaxFile = _countof(FileNameBuffer);
     pofn->Flags = OFN_EXPLORER | OFN_HIDEREADONLY;
     pofn->lpstrDefExt = L"reg";
+    if (bSave)
+        pofn->Flags |= OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    else
+        pofn->Flags |= OFN_FILEMUSTEXIST;
+
     return TRUE;
 }
 
@@ -354,7 +367,7 @@ static BOOL LoadHive(HWND hWnd)
     /* get the item key to load the hive in */
     pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hRootKey);
     /* initialize the "open file" dialog */
-    InitOpenFileName(hWnd, &ofn);
+    InitOpenFileName(hWnd, &ofn, FALSE);
     /* build the "All Files" filter up */
     filter.DisplayID = IDS_FLT_ALLFILES;
     filter.FilterID = IDS_FLT_ALLFILES_FLT;
@@ -364,7 +377,7 @@ static BOOL LoadHive(HWND hWnd)
     LoadStringW(hInst, IDS_LOAD_HIVE, Caption, ARRAY_SIZE(Caption));
     ofn.lpstrTitle = Caption;
     ofn.Flags |= OFN_ENABLESIZING;
-    /*    ofn.lCustData = ;*/
+
     /* now load the hive */
     if (GetOpenFileName(&ofn))
     {
@@ -383,7 +396,7 @@ static BOOL LoadHive(HWND hWnd)
                 /* refresh tree and list views */
                 RefreshTreeView(g_pChildWnd->hTreeWnd);
                 pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hRootKey);
-                RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath);
+                RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath, TRUE);
             }
             else
             {
@@ -421,7 +434,7 @@ static BOOL UnloadHive(HWND hWnd)
         /* refresh tree and list views */
         RefreshTreeView(g_pChildWnd->hTreeWnd);
         pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hRootKey);
-        RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath);
+        RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath, TRUE);
     }
     else
     {
@@ -442,11 +455,11 @@ static BOOL ImportRegistryFile(HWND hWnd)
     /* Figure out in which key path we are importing */
     pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hKeyRoot);
 
-    InitOpenFileName(hWnd, &ofn);
+    InitOpenFileName(hWnd, &ofn, FALSE);
     LoadStringW(hInst, IDS_IMPORT_REG_FILE, Caption, ARRAY_SIZE(Caption));
     ofn.lpstrTitle = Caption;
     ofn.Flags |= OFN_ENABLESIZING;
-    /*    ofn.lCustData = ;*/
+
     if (GetOpenFileName(&ofn))
     {
         /* Look at the extension of the file to determine its type */
@@ -518,7 +531,7 @@ static BOOL ImportRegistryFile(HWND hWnd)
     /* refresh tree and list views */
     RefreshTreeView(g_pChildWnd->hTreeWnd);
     pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hKeyRoot);
-    RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, pszKeyPath);
+    RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, pszKeyPath, TRUE);
 
     return bRet;
 }
@@ -567,7 +580,7 @@ static UINT_PTR CALLBACK ExportRegistryFile_OFNHookProc(HWND hdlg, UINT uiMsg, W
             {
                 GetWindowTextW(hwndExportBranchText, pszSelectedKey, _MAX_PATH);
             }
-            else
+            else if (pszSelectedKey)
             {
                 pszSelectedKey[0] = L'\0';
             }
@@ -590,7 +603,7 @@ BOOL ExportRegistryFile(HWND hWnd)
     pszKeyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hKeyRoot);
     GetKeyName(ExportKeyPath, ARRAY_SIZE(ExportKeyPath), hKeyRoot, pszKeyPath);
 
-    InitOpenFileName(hWnd, &ofn);
+    InitOpenFileName(hWnd, &ofn, TRUE);
     LoadStringW(hInst, IDS_EXPORT_REG_FILE, Caption, ARRAY_SIZE(Caption));
     ofn.lpstrTitle = Caption;
 
@@ -599,7 +612,7 @@ BOOL ExportRegistryFile(HWND hWnd)
     {
         ofn.lCustData = (LPARAM) ExportKeyPath;
     }
-    ofn.Flags = OFN_ENABLETEMPLATE | OFN_EXPLORER | OFN_ENABLEHOOK | OFN_OVERWRITEPROMPT;
+    ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK;
     ofn.lpfnHook = ExportRegistryFile_OFNHookProc;
     ofn.lpTemplateName = MAKEINTRESOURCEW(IDD_EXPORTRANGE);
     if (GetSaveFileName(&ofn))
@@ -675,6 +688,19 @@ BOOL ExportRegistryFile(HWND hWnd)
                     bRet = TRUE;
                 }
 
+                break;
+            }
+
+            case 4:  /* Text File */
+            {
+                bRet = txt_export_registry_key(ofn.lpstrFile, ExportKeyPath);
+                if (!bRet)
+                {
+                    /* Error creating the file */
+                    LoadStringW(hInst, IDS_APP_TITLE, szTitle, ARRAY_SIZE(szTitle));
+                    LoadStringW(hInst, IDS_EXPORT_ERROR, szText, ARRAY_SIZE(szText));
+                    InfoMessageBox(hWnd, MB_OK | MB_ICONERROR, szTitle, szText, ofn.lpstrFile);
+                }
                 break;
             }
         }
@@ -788,6 +814,7 @@ BOOL CopyKeyName(HWND hWnd, HKEY hRootKey, LPCWSTR keyName)
     WCHAR szBuffer[512];
     HGLOBAL hGlobal;
     LPWSTR s;
+    SIZE_T cbGlobal;
 
     if (!OpenClipboard(hWnd))
         goto done;
@@ -799,12 +826,13 @@ BOOL CopyKeyName(HWND hWnd, HKEY hRootKey, LPCWSTR keyName)
     if (!GetKeyName(szBuffer, ARRAY_SIZE(szBuffer), hRootKey, keyName))
         goto done;
 
-    hGlobal = GlobalAlloc(GMEM_MOVEABLE, (wcslen(szBuffer) + 1) * sizeof(WCHAR));
+    cbGlobal = (wcslen(szBuffer) + 1) * sizeof(WCHAR);
+    hGlobal = GlobalAlloc(GMEM_MOVEABLE, cbGlobal);
     if (!hGlobal)
         goto done;
 
     s = GlobalLock(hGlobal);
-    wcscpy(s, szBuffer);
+    StringCbCopyW(s, cbGlobal, szBuffer);
     GlobalUnlock(hGlobal);
 
     SetClipboardData(CF_UNICODETEXT, hGlobal);
@@ -877,7 +905,7 @@ static BOOL CreateNewValue(HKEY hRootKey, LPCWSTR pszKeyPath, DWORD dwType)
         return FALSE;
     }
 
-    RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath);
+    RefreshListView(g_pChildWnd->hListWnd, hRootKey, pszKeyPath, TRUE);
 
     /* locate the newly added value, and get ready to rename it */
     memset(&lvfi, 0, sizeof(lvfi));
@@ -885,7 +913,12 @@ static BOOL CreateNewValue(HKEY hRootKey, LPCWSTR pszKeyPath, DWORD dwType)
     lvfi.psz = szNewValue;
     iIndex = ListView_FindItem(g_pChildWnd->hListWnd, -1, &lvfi);
     if (iIndex >= 0)
+    {
+        ListView_SetItemState(g_pChildWnd->hListWnd, iIndex,
+                              LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_EnsureVisible(g_pChildWnd->hListWnd, iIndex, FALSE);
         (void)ListView_EditLabel(g_pChildWnd->hListWnd, iIndex);
+    }
 
     return TRUE;
 }
@@ -1128,11 +1161,11 @@ static BOOL _CmdWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case ID_EDIT_MODIFY:
         if (valueName && ModifyValue(hWnd, hKey, valueName, FALSE))
-            RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath);
+            RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath, FALSE);
         break;
     case ID_EDIT_MODIFY_BIN:
         if (valueName && ModifyValue(hWnd, hKey, valueName, TRUE))
-            RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath);
+            RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath, FALSE);
         break;
     case ID_EDIT_RENAME:
         if (GetFocus() == g_pChildWnd->hListWnd)
@@ -1180,7 +1213,7 @@ static BOOL _CmdWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         item = ni;
                     }
 
-                    RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath);
+                    RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath, FALSE);
                     if(errs > 0)
                     {
                         LoadStringW(hInst, IDS_ERR_DELVAL_CAPTION, caption, ARRAY_SIZE(caption));
@@ -1243,7 +1276,7 @@ static BOOL _CmdWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case ID_VIEW_REFRESH:
         RefreshTreeView(g_pChildWnd->hTreeWnd);
         keyPath = GetItemPath(g_pChildWnd->hTreeWnd, 0, &hKeyRoot);
-        RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath);
+        RefreshListView(g_pChildWnd->hListWnd, hKeyRoot, keyPath, TRUE);
         break;
         /*case ID_OPTIONS_TOOLBAR:*/
         /*	toggle_child(hWnd, LOWORD(wParam), hToolBar);*/

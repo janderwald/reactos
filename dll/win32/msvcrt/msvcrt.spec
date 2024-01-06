@@ -1,6 +1,6 @@
 # msvcrt.dll - MS VC++ Run Time Library
 
-@ cdecl -arch=x86_64 -version=0x502 $I10_OUTPUT() MSVCRT_I10_OUTPUT
+@ cdecl -arch=x86_64 -version=0x502 $I10_OUTPUT() I10_OUTPUT
 
 # **************** x86 C++ functions ****************
 @ cdecl -arch=i386 -norelay ??0__non_rtti_object@@QAE@ABV0@@Z(ptr) MSVCRT___non_rtti_object_copy_ctor # public: __thiscall __non_rtti_object::__non_rtti_object(class __non_rtti_object const &)
@@ -180,7 +180,7 @@
 
 
 # **************** Common functions ****************
-@ cdecl -arch=i386 $I10_OUTPUT() MSVCRT_I10_OUTPUT
+@ cdecl -arch=i386 $I10_OUTPUT() I10_OUTPUT
 @ cdecl -arch=i386 _CIacos()
 @ cdecl -arch=i386 _CIasin()
 @ cdecl -arch=i386 _CIatan()
@@ -199,10 +199,10 @@
 @ cdecl -arch=i386 _CItanh()
 @ stub -version=0x600+ _CrtCheckMemory
 @ stub -version=0x600+ _CrtDbgBreak
-@ stub -version=0x600+ _CrtDbgReport
-@ stub -version=0x600+ _CrtDbgReportV
-@ stub -version=0x600+ _CrtDbgReportW
-@ stub -version=0x600+ _CrtDbgReportWV
+@ cdecl -version=0x600+ _CrtDbgReport(long str long str str)
+@ cdecl -version=0x600+ _CrtDbgReportV(long str long str str ptr)
+@ cdecl -version=0x600+ _CrtDbgReportW(long wstr long wstr wstr)
+@ cdecl -version=0x600+ _CrtDbgReportWV(long wstr long wstr wstr ptr)
 @ stub -version=0x600+ _CrtDoForAllClientObjects
 @ stub -version=0x600+ _CrtDumpMemoryLeaks
 @ stub -version=0x600+ _CrtIsMemoryBlock
@@ -218,10 +218,10 @@
 @ stub -version=0x600+ _CrtSetDbgBlockType
 @ stub -version=0x600+ _CrtSetDbgFlag
 @ stub -version=0x600+ _CrtSetDumpClient
-@ stub -version=0x600+ _CrtSetReportFile
+@ cdecl -version=0x600+ _CrtSetReportFile(long ptr)
 @ stub -version=0x600+ _CrtSetReportHook
 @ stub -version=0x600+ _CrtSetReportHook2
-@ stub -version=0x600+ _CrtSetReportMode
+@ cdecl -version=0x600+ _CrtSetReportMode(long long)
 @ stdcall _CxxThrowException(long long)
 @ cdecl -arch=i386 -norelay _EH_prolog()
 @ cdecl _Getdays()
@@ -241,7 +241,8 @@
 @ cdecl -arch=i386 -norelay __CxxFrameHandler2(ptr ptr ptr ptr) __CxxFrameHandler
 @ cdecl -version=0x600+ -arch=x86_64 -norelay __CxxFrameHandler2(ptr ptr ptr ptr) __CxxFrameHandler
 @ cdecl -arch=arm -norelay __CxxFrameHandler3(ptr ptr ptr ptr)
-@ cdecl -version=0x600+ -arch=i386,x86_64 -norelay __CxxFrameHandler3(ptr ptr ptr ptr)
+@ cdecl -version=0x600+ -arch=i386 -norelay __CxxFrameHandler3(ptr ptr ptr ptr)
+@ cdecl -version=0x600+ -arch=x86_64 -norelay __CxxFrameHandler3(ptr ptr ptr ptr) __CxxFrameHandler
 @ stdcall -arch=i386 __CxxLongjmpUnwind(ptr)
 @ cdecl -arch=i386 __CxxQueryExceptionSize()
 @ cdecl -arch=i386 __CxxRegisterExceptionObject()
@@ -548,7 +549,7 @@
 @ stub -version=0x600+ _fwscanf_l
 @ stub -version=0x600+ _fwscanf_s_l
 @ cdecl _gcvt(double long str)
-@ stub -version=0x600+ _gcvt_s
+@ cdecl -version=0x600+ _gcvt_s(ptr ptr double long)
 @ cdecl -version=0x600+ _get_doserrno(ptr)
 @ stub -version=0x600+ _get_environ
 @ cdecl -version=0x600+ _get_errno(ptr)
@@ -709,8 +710,8 @@
 @ cdecl -arch=x86_64 _local_unwind(ptr ptr)
 @ cdecl -arch=i386 _local_unwind2(ptr long)
 @ cdecl -arch=i386 -version=0x600+ _local_unwind4(ptr ptr long)
-@ stub -version=0x600+ _localtime32
-@ stub -version=0x600+ _localtime32_s
+@ cdecl -version=0x600+ _localtime32(ptr)
+@ cdecl -version=0x600+ _localtime32_s(ptr ptr)
 @ cdecl _localtime64(ptr)
 @ cdecl -version=0x600+ _localtime64_s(ptr ptr)
 @ cdecl _lock(long)
@@ -933,7 +934,7 @@
 @ stub -version=0x600+ _scwprintf_p_l
 @ cdecl _searchenv(str str ptr)
 @ cdecl -version=0x600+ _searchenv_s(str str ptr long)
-@ stub -version=0x600+ -arch=i386 _seh_longjmp_unwind4
+@ stdcall -version=0x600+ -arch=i386 _seh_longjmp_unwind4(ptr)
 @ stdcall -arch=i386 _seh_longjmp_unwind(ptr)
 @ stub -arch=i386 _set_SSE2_enable
 @ stub -version=0x600+ _set_controlfp
@@ -1411,7 +1412,7 @@
 @ cdecl memchr(ptr long long)
 @ cdecl memcmp(ptr ptr long)
 @ cdecl memcpy(ptr ptr long)
-@ stub -version=0x600+ memcpy_s
+@ cdecl -version=0x600+ memcpy_s(ptr long)
 @ cdecl memmove(ptr ptr long)
 @ cdecl -version=0x600+ memmove_s(ptr long ptr long)
 @ cdecl memset(ptr long long)

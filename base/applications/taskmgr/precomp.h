@@ -1,3 +1,10 @@
+/*
+ * PROJECT:     ReactOS Task Manager
+ * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:     Precompiled Header.
+ * COPYRIGHT:   Copyright 1999-2001 Brian Palmer <brianp@reactos.org>
+ */
+
 #ifndef __PRECOMP_H
 #define __PRECOMP_H
 
@@ -20,6 +27,8 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
+
+#include <strsafe.h>
 
 #include "column.h"
 #include "taskmgr.h"

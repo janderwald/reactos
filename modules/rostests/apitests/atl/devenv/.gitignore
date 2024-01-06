@@ -1,7 +1,11 @@
 *.opendb
 *.db
+*.user
+*.filters
 x64/
 .vs/
+ipch/
+atlconv/
 CAtlArray/
 CAtlFileMapping/
 CAtlList/
@@ -14,3 +18,5 @@ CSimpleArray/
 CSimpleMap/
 CString/
 SubclassWindow/
+Debug/
+Release/

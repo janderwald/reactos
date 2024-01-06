@@ -42,6 +42,9 @@ IDR_BROWSE_MAIN_MENU MENU
 
 STRINGTABLE
 {
+    IDS_INTERNET "İnternet tarayıcısı"
+    IDS_INTERNET_DESCRIPTION "Opens a Web browser and displays information on the Internet."
+
     IDS_TB_BACK             "Geri"
     IDS_TB_FORWARD          "İleri"
     IDS_TB_STOP             "Dur"

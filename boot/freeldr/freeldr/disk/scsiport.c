@@ -3,7 +3,7 @@
  * LICENSE:         GPL - See COPYING in the top level directory
  * FILE:            boot/freeldr/freeldr/disk/scsiport.c
  * PURPOSE:         Interface for SCSI Emulation
- * PROGRAMMERS:     Hervé Poussineau  <hpoussin@reactos.org>
+ * PROGRAMMERS:     HervÃ© Poussineau  <hpoussin@reactos.org>
  */
 
 /* INCLUDES *******************************************************************/
@@ -455,8 +455,10 @@ SpiCreatePortConfig(
         ConfigInfo->AtdiskSecondaryClaimed = FALSE; // FIXME
 
         /* Initiator bus id is not set */
-        for (Bus = 0; Bus < 8; Bus++)
+        for (Bus = 0; Bus < RTL_NUMBER_OF(ConfigInfo->InitiatorBusId); Bus++)
+        {
             ConfigInfo->InitiatorBusId[Bus] = (CCHAR)SP_UNINITIALIZED_VALUE;
+        }
     }
 
     ConfigInfo->NumberOfPhysicalBreaks = 17;
@@ -589,11 +591,17 @@ ScsiPortGetDeviceBase(
 
     /* I/O space */
     if (AddressSpace != 0)
-        return (PVOID)TranslatedAddress.u.LowPart;
+        return (PVOID)(ULONG_PTR)TranslatedAddress.u.LowPart;
 
     // FIXME
+#if 0
+    return MmMapIoSpace(TranslatedAddress,
+                        NumberOfBytes,
+                        FALSE);
+#else
     UNIMPLEMENTED;
-    return (PVOID)IoAddress.LowPart;
+    return (PVOID)(ULONG_PTR)IoAddress.LowPart;
+#endif
 }
 
 PVOID
@@ -638,7 +646,7 @@ ScsiPortGetPhysicalAddress(
     else
     {
         /* Nothing */
-        PhysicalAddress.QuadPart = (LONGLONG)(SP_UNINITIALIZED_VALUE);
+        PhysicalAddress.QuadPart = (LONGLONG)SP_UNINITIALIZED_VALUE;
     }
 
     *Length = BufferLength;
@@ -842,7 +850,8 @@ SpiScanDevice(
     Status = ArcOpen(PartitionName, OpenReadOnly, &FileId);
     if (Status == ESUCCESS)
     {
-        ret = HALDISPATCH->HalIoReadPartitionTable((PDEVICE_OBJECT)FileId, 512, FALSE, &PartitionBuffer);
+        ret = HALDISPATCH->HalIoReadPartitionTable((PDEVICE_OBJECT)(ULONG_PTR)FileId,
+                                                   512, FALSE, &PartitionBuffer);
         if (NT_SUCCESS(ret))
         {
             for (i = 0; i < PartitionBuffer->PartitionCount; i++)
@@ -1702,7 +1711,7 @@ LoadBootDeviceDriver(VOID)
 
         while (((PIMAGE_THUNK_DATA)ThunkData)->u1.AddressOfData != 0)
         {
-            ThunkData->u1.Function = (ULONG)VaToPa((PVOID)ThunkData->u1.Function);
+            ThunkData->u1.Function = (ULONG_PTR)VaToPa((PVOID)ThunkData->u1.Function);
             ThunkData++;
         }
     }

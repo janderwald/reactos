@@ -99,6 +99,20 @@ VOID RestoreWindowPos()
     g_WindowPosBackup.RemoveAll();
 }
 
+BOOL CanBeMinimized(HWND hwnd)
+{
+    if (::IsWindowVisible(hwnd) && !::IsIconic(hwnd) && ::IsWindowEnabled(hwnd))
+    {
+        if (::GetClassLongPtrW(hwnd, GCW_ATOM) == (ULONG_PTR)WC_DIALOG)
+            return TRUE;
+
+        DWORD exstyle = (DWORD)::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if (!(exstyle & WS_EX_TOPMOST))
+            return TRUE;
+    }
+    return FALSE;
+}
+
 struct EFFECTIVE_INFO
 {
     HWND hwndFound;
@@ -113,7 +127,7 @@ FindEffectiveProc(HWND hwnd, LPARAM lParam)
 {
     EFFECTIVE_INFO *pei = (EFFECTIVE_INFO *)lParam;
 
-    if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+    if (!CanBeMinimized(hwnd))
         return TRUE;    // continue
 
     if (pei->hTrayWnd == hwnd || pei->hwndDesktop == hwnd ||
@@ -159,17 +173,16 @@ IsThereAnyEffectiveWindow(BOOL bMustBeInMonitor)
     ei.bMustBeInMonitor = bMustBeInMonitor;
 
     EnumWindows(FindEffectiveProc, (LPARAM)&ei);
-    if (ei.hwndFound && FALSE)
-    {
-        WCHAR szClass[64], szText[64];
-        GetClassNameW(ei.hwndFound, szClass, _countof(szClass));
-        GetWindowTextW(ei.hwndFound, szText, _countof(szText));
-        MessageBoxW(NULL, szText, szClass, 0);
-    }
     return ei.hwndFound != NULL;
 }
 
-CSimpleArray<HWND>  g_MinimizedAll;
+/* Minimized window position info */
+struct MINWNDPOS
+{
+    HWND hwnd;
+    WINDOWPLACEMENT wndpl;
+};
+CSimpleArray<MINWNDPOS>  g_MinimizedAll;
 
 /*
  * ITrayWindow
@@ -559,6 +572,7 @@ public:
             DWORD InSizeMove : 1;
             DWORD IsDragging : 1;
             DWORD NewPosSize : 1;
+            DWORD IgnorePulse : 1;
         };
     };
 
@@ -587,6 +601,7 @@ public:
         ZeroMemory(&m_TraySize, sizeof(m_TraySize));
         ZeroMemory(&m_AutoHideOffset, sizeof(m_AutoHideOffset));
         ZeroMemory(&m_MouseTrackingInfo, sizeof(m_MouseTrackingInfo));
+        IgnorePulse = TRUE;
     }
 
     virtual ~CTrayWindow()
@@ -835,10 +850,7 @@ public:
             break;
 
         case ID_LOCKTASKBAR:
-            if (SHRestricted(REST_CLASSICSHELL) == 0)
-            {
-                Lock(!g_TaskbarSettings.bLock);
-            }
+            HandleCommand(TRAYCMD_LOCK_TASKBAR);
             break;
 
         case ID_SHELL_CMD_OPEN_TASKMGR:
@@ -1008,6 +1020,7 @@ public:
                 if (SHRestricted(REST_CLASSICSHELL) == 0)
                 {
                     Lock(!g_TaskbarSettings.bLock);
+                    g_TaskbarSettings.Save();
                 }
                 break;
             case TRAYCMD_HELP_AND_SUPPORT:
@@ -1601,6 +1614,8 @@ GetPrimaryScreenRect:
 
             m_Monitor = m_DraggingMonitor;
             m_Position = m_DraggingPosition;
+            g_TaskbarSettings.sr.Position = m_Position;
+            g_TaskbarSettings.Save();
             IsDragging = FALSE;
 
             m_TrayRects[m_Position] = rcTray;
@@ -2460,6 +2475,22 @@ ChangePos:
         return bPrevLock;
     }
 
+    /* The task window is visible and non-WS_EX_TOOLWINDOW and
+       { has WS_EX_APPWINDOW style or has no owner } and is none of explorer's
+       special windows (such as the desktop or the tray window) */
+    BOOL STDMETHODCALLTYPE IsTaskWnd(HWND hWnd)
+    {
+        if (::IsWindow(hWnd) && ::IsWindowVisible(hWnd) && !IsSpecialHWND(hWnd))
+        {
+            DWORD exStyle = (DWORD)::GetWindowLongPtr(hWnd, GWL_EXSTYLE);
+            if (((exStyle & WS_EX_APPWINDOW) || ::GetWindow(hWnd, GW_OWNER) == NULL) &&
+                !(exStyle & WS_EX_TOOLWINDOW))
+            {
+                return TRUE;
+            }
+        }
+        return FALSE;
+    }
 
     /*
      *  IContextMenu
@@ -2500,15 +2531,6 @@ ChangePos:
         return m_ContextMenu->GetCommandString(idCmd, uType, pwReserved, pszName, cchMax);
     }
 
-    BOOL IsShowDesktopButtonNeeded() // Read the registry value
-    {
-        return SHRegGetBoolUSValueW(
-            L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-            L"TaskbarSd",
-            FALSE,
-            TRUE);
-    }
-
     /**********************************************************
      *    ##### message handling #####
      */
@@ -2525,7 +2547,7 @@ ChangePos:
         m_StartButton.Create(m_hWnd);
 
         /* Create the 'Show Desktop' button if necessary */
-        if (IsShowDesktopButtonNeeded())
+        if (g_TaskbarSettings.bShowDesktopButton)
             m_ShowDesktopButton.DoCreate(m_hWnd);
 
         /* Load the saved tray window settings */
@@ -2596,6 +2618,15 @@ ChangePos:
         return TRUE;
     }
 
+#define TIMER_ID_IGNOREPULSERESET 888
+#define TIMER_IGNOREPULSERESET_TIMEOUT 200
+
+    LRESULT OnDestroy(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+    {
+        KillTimer(TIMER_ID_IGNOREPULSERESET);
+        return 0;
+    }
+
     LRESULT OnThemeChanged(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
     {
         if (m_Theme)
@@ -2656,7 +2687,7 @@ ChangePos:
 
     LRESULT OnCopyData(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
     {
-        COPYDATASTRUCT *pCopyData = reinterpret_cast<COPYDATASTRUCT *>(lParam);
+        COPYDATASTRUCT *pCopyData = (COPYDATASTRUCT *)lParam;
         switch (pCopyData->dwData)
         {
             case TABDMC_APPBAR:
@@ -3098,7 +3129,7 @@ HandleTrayContextMenu:
 
     LRESULT OnNcLButtonDblClick(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
     {
-        /* Let the clock handle the double click */
+        /* Let the clock handle the double-click */
         ::SendMessageW(m_TrayNotify, uMsg, wParam, lParam);
 
         /* We "handle" this message so users can't cause a weird maximize/restore
@@ -3160,6 +3191,39 @@ HandleTrayContextMenu:
         return (LRESULT)m_TaskSwitch;
     }
 
+    void RestoreMinimizedNonTaskWnds(BOOL bDestroyed, HWND hwndActive)
+    {
+        for (INT i = g_MinimizedAll.GetSize() - 1; i >= 0; --i)
+        {
+            HWND hwnd = g_MinimizedAll[i].hwnd;
+            if (!hwnd || hwndActive == hwnd)
+                continue;
+
+            if (::IsWindowVisible(hwnd) && ::IsIconic(hwnd) &&
+                (!IsTaskWnd(hwnd) || !::IsWindowEnabled(hwnd)))
+            {
+                ::SetWindowPlacement(hwnd, &g_MinimizedAll[i].wndpl); // Restore
+            }
+        }
+
+        g_MinimizedAll.RemoveAll();
+
+        if (!bDestroyed)
+            ::SetForegroundWindow(hwndActive);
+    }
+
+    LRESULT OnPulse(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+    {
+        if (IgnorePulse)
+            return 0;
+
+        KillTimer(TIMER_ID_IGNOREPULSERESET);
+        IgnorePulse = TRUE;
+        RestoreMinimizedNonTaskWnds((BOOL)wParam, (HWND)lParam);
+        SetTimer(TIMER_ID_IGNOREPULSERESET, TIMER_IGNOREPULSERESET_TIMEOUT, NULL);
+        return 0;
+    }
+
     LRESULT OnHotkey(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
     {
         return HandleHotKey(wParam);
@@ -3170,8 +3234,7 @@ HandleTrayContextMenu:
         HWND hwndDesktop;
         HWND hTrayWnd;
         HWND hwndProgman;
-        BOOL bRet;
-        CSimpleArray<HWND> *pMinimizedAll;
+        CSimpleArray<MINWNDPOS> *pMinimizedAll;
         BOOL bShowDesktop;
     };
 
@@ -3185,11 +3248,9 @@ HandleTrayContextMenu:
     static BOOL CALLBACK MinimizeWindowsProc(HWND hwnd, LPARAM lParam)
     {
         MINIMIZE_INFO *info = (MINIMIZE_INFO *)lParam;
-        if (hwnd == info->hwndDesktop || hwnd == info->hTrayWnd ||
-            hwnd == info->hwndProgman)
-        {
-            return TRUE;
-        }
+        if (hwnd == info->hwndDesktop || hwnd == info->hTrayWnd || hwnd == info->hwndProgman)
+            return TRUE; // Ignore special windows
+
         if (!info->bShowDesktop)
         {
             if (!::IsWindowEnabled(hwnd) || IsDialog(hwnd))
@@ -3198,35 +3259,36 @@ HandleTrayContextMenu:
             if (hwndOwner && !::IsWindowEnabled(hwndOwner))
                 return TRUE;
         }
-        if (::IsWindowVisible(hwnd) && !::IsIconic(hwnd))
+
+        if (CanBeMinimized(hwnd))
         {
-            ::ShowWindowAsync(hwnd, SW_MINIMIZE);
-            info->bRet = TRUE;
-            info->pMinimizedAll->Add(hwnd);
+            MINWNDPOS mwp = { hwnd, { sizeof(mwp.wndpl) } };
+            if (::GetWindowPlacement(hwnd, &mwp.wndpl) && // Save the position and status
+                ::ShowWindowAsync(hwnd, SW_SHOWMINNOACTIVE)) // Minimize
+            {
+                info->pMinimizedAll->Add(mwp);
+            }
         }
+
         return TRUE;
     }
 
     VOID MinimizeAll(BOOL bShowDesktop = FALSE)
     {
+        IgnorePulse = TRUE;
+        KillTimer(TIMER_ID_IGNOREPULSERESET);
+
         MINIMIZE_INFO info;
         info.hwndDesktop = GetDesktopWindow();;
         info.hTrayWnd = FindWindowW(L"Shell_TrayWnd", NULL);
         info.hwndProgman = FindWindowW(L"Progman", NULL);
-        info.bRet = FALSE;
         info.pMinimizedAll = &g_MinimizedAll;
         info.bShowDesktop = bShowDesktop;
         EnumWindows(MinimizeWindowsProc, (LPARAM)&info);
 
-        // invalid handles should be cleared to avoid mismatch of handles
-        for (INT i = 0; i < g_MinimizedAll.GetSize(); ++i)
-        {
-            if (!::IsWindow(g_MinimizedAll[i]))
-                g_MinimizedAll[i] = NULL;
-        }
-
         ::SetForegroundWindow(m_DesktopWnd);
         ::SetFocus(m_DesktopWnd);
+        SetTimer(TIMER_ID_IGNOREPULSERESET, TIMER_IGNOREPULSERESET_TIMEOUT, NULL);
     }
 
     VOID ShowDesktop()
@@ -3236,15 +3298,18 @@ HandleTrayContextMenu:
 
     VOID RestoreAll()
     {
+        IgnorePulse = TRUE;
+        KillTimer(TIMER_ID_IGNOREPULSERESET);
+
         for (INT i = g_MinimizedAll.GetSize() - 1; i >= 0; --i)
         {
-            HWND hwnd = g_MinimizedAll[i];
+            HWND hwnd = g_MinimizedAll[i].hwnd;
             if (::IsWindowVisible(hwnd) && ::IsIconic(hwnd))
-            {
-                ::ShowWindowAsync(hwnd, SW_RESTORE);
-            }
+                ::SetWindowPlacement(hwnd, &g_MinimizedAll[i].wndpl);
         }
+
         g_MinimizedAll.RemoveAll();
+        SetTimer(TIMER_ID_IGNOREPULSERESET, TIMER_IGNOREPULSERESET_TIMEOUT, NULL);
     }
 
     LRESULT OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
@@ -3288,9 +3353,12 @@ HandleTrayContextMenu:
         {
             ProcessAutoHide();
         }
-
-        bHandled = FALSE;
-        return TRUE;
+        else if (wParam == TIMER_ID_IGNOREPULSERESET)
+        {
+            KillTimer(TIMER_ID_IGNOREPULSERESET);
+            IgnorePulse = FALSE;
+        }
+        return 0;
     }
 
     LRESULT OnNcActivate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
@@ -3448,6 +3516,20 @@ HandleTrayContextMenu:
             SetWindowPos(hWndInsertAfter, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         }
 
+        /* Toggle show desktop button */
+        if (newSettings->bShowDesktopButton != g_TaskbarSettings.bShowDesktopButton)
+        {
+            g_TaskbarSettings.bShowDesktopButton = newSettings->bShowDesktopButton;
+            if (!g_TaskbarSettings.bShowDesktopButton)
+                ::DestroyWindow(m_ShowDesktopButton.m_hWnd);
+            else if (!m_ShowDesktopButton.IsWindow())
+                m_ShowDesktopButton.DoCreate(m_hWnd);
+            AlignControls(NULL);
+        }
+
+        /* Adjust taskbar size */
+        CheckTrayWndPosition();
+
         g_TaskbarSettings.Save();
         return 0;
     }
@@ -3479,7 +3561,7 @@ HandleTrayContextMenu:
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_CREATE, OnCreate)
-        /*MESSAGE_HANDLER(WM_DESTROY, OnDestroy)*/
+        MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(WM_NCHITTEST, OnNcHitTest)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_SYSCOMMAND, OnSysCommand)
@@ -3512,6 +3594,7 @@ HandleTrayContextMenu:
         MESSAGE_HANDLER(TWM_OPENSTARTMENU, OnOpenStartMenu)
         MESSAGE_HANDLER(TWM_DOEXITWINDOWS, OnDoExitWindows)
         MESSAGE_HANDLER(TWM_GETTASKSWITCH, OnGetTaskSwitch)
+        MESSAGE_HANDLER(TWM_PULSE, OnPulse)
     ALT_MSG_MAP(1)
     END_MSG_MAP()
 

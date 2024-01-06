@@ -2,8 +2,7 @@
  * COPYRIGHT:         See COPYING in the top level directory
  * PROJECT:           ReactOS kernel
  * PURPOSE:           Window event handlers
- * FILE:              win32ss/user/ntuser/event.c
- * PROGRAMER:         James Tabor (james.tabor@rectos.org)
+ * PROGRAMER:         James Tabor <james.tabor@reactos.org>
  */
 
 #include <win32k.h>
@@ -372,7 +371,7 @@ NtUserSetWinEventHook(
       InsertTailList(&GlobalEvents->Events, &pEH->Chain);
       GlobalEvents->Counts++;
 
-      UserHMGetHandle(pEH) = Handle;
+      UserHMSetHandle(pEH, Handle);
       pEH->eventMin  = eventMin;
       pEH->eventMax  = eventMax;
       pEH->idProcess = idProcess; // These are cmp'ed

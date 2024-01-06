@@ -32,6 +32,9 @@
 #ifdef LANGUAGE_IT_IT
     #include "lang/it-IT.rc"
 #endif
+#ifdef LANGUAGE_JA_JP
+    #include "lang/ja-JP.rc"
+#endif
 #ifdef LANGUAGE_PL_PL
     #include "lang/pl-PL.rc"
 #endif
@@ -46,6 +49,9 @@
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/uk-UA.rc"
+#endif
+#ifdef LANGUAGE_ZH_CN
+    #include "lang/zh-CN.rc"
 #endif
 #ifdef LANGUAGE_ZH_HK
     #include "lang/zh-HK.rc"

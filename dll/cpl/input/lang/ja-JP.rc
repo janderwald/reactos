@@ -110,7 +110,7 @@ BEGIN
     IDS_CTRL_SHIFT "Ctrl+Shift"
     IDS_LEFT_ALT_SHIFT "左Alt+Shift"
     IDS_SWITCH_BET_INLANG "入力言語の切り替え"
-    IDS_REBOOT_NOW, "再起動しますか?"
+    IDS_REBOOT_NOW "設定を有効にするにはシステムを再起動する必要があります。今すぐ再起動しますか？"
 END
 
 STRINGTABLE
@@ -246,7 +246,7 @@ BEGIN
     IDS_UKRAINIAN_LAYOUT "ウクライナ語"
     IDS_UKRAINIAN_STUDENT_LAYOUT "ウクライナ語 (学生)"
     IDS_UNITED_KINGDOM_LAYOUT "英国"
-    IDS_UNITED_STATES_DVIRAK_LAYOUT "米国 - Dvorak"
+    IDS_UNITED_STATES_DVORAK_LAYOUT "米国 - Dvorak"
     IDS_UNITED_STATES_DVORAK_FOR_LEFT_HAND_LAYOUT "米国 - Dvorak左手用"
     IDS_UNITED_STATES_DVORAK_FOR_RIGHT_HAND_LAYOUT "米国 - Dvorak右手用"
     IDS_UNITED_STATES_INTERNATIONAL_LAYOUT "米国 - インターナショナル"

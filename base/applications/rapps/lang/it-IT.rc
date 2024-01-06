@@ -1,3 +1,12 @@
+/*
+ * PROJECT:     ReactOS Applications Manager
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+ * PURPOSE:     Italian resource file
+ * TRANSLATORS: Copyright 2010 Paolo Devoti <devotip@tiscali.it>
+ *              Copyright 2016 Carlo Bramini <carlo.bramix@libero.it>
+ *              Copyright 2017-2018 George Bișoc <george.bisoc@reactos.org>
+ */
+
 LANGUAGE LANG_ITALIAN, SUBLANG_NEUTRAL
 
 IDR_MAINMENU MENU
@@ -109,6 +118,7 @@ BEGIN
     IDS_TOOLTIP_INSTALL "Installa"
     IDS_TOOLTIP_UNINSTALL "Rimuovi"
     IDS_TOOLTIP_MODIFY "Modifica"
+    IDS_TOOLTIP_SELECT_ALL "Seleziona/Deseleziona Tutte"
     IDS_TOOLTIP_SETTINGS "Impostazioni"
     IDS_TOOLTIP_REFRESH "Aggiorna"
     IDS_TOOLTIP_UPDATE_DB "Aggiorna Database"
@@ -181,13 +191,10 @@ BEGIN
     IDS_APPTITLE "ReactOS Gestione applicazioni"
     IDS_APP_AUTHORS "Copyright 2009 Dmitry Chapyshev"
     IDS_SEARCH_TEXT "Cerca…"
-    IDS_INSTALL "Installa"
-    IDS_UNINSTALL "Rimuovi"
-    IDS_MODIFY "Modifica"
     IDS_APPS_COUNT "Numero applicazioni: %d; Selezionate: %d"
     IDS_WELCOME_TITLE "Benvenuto!\n\n"
     IDS_WELCOME_TEXT "Scegliere una categoria a sinistra, poi scegliere una applicazione da installare o disinstallare.\nReactOS Web Site: "
-    IDS_WELCOME_URL "https://reactos.org/"
+    IDS_WELCOME_URL "https://reactos.org"
     IDS_INSTALLED "Installato"
     IDS_AVAILABLEFORINST "Disponibile per l'installazione"
     IDS_UPDATES "Aggiornamenti"
@@ -206,7 +213,6 @@ BEGIN
     IDS_INTEG_CHECK_FAIL "Il pacchetto non ha superato il controllo di integrità, potrebbe essere stato danneggiato o manomesso durante lo scaricamento. L'esecuzione del software non è raccomandata."
     IDS_INTERRUPTED_DOWNLOAD "Lo scaricamento è stato interrotto. Verificare la connessione a Internet."
     IDS_UNABLE_TO_WRITE "Impossibile scrivere su disco: lo spazio libero potrebbe essere esaurito."
-    IDS_SELECT_ALL "Seleziona/Deseleziona Tutte"
     IDS_INSTALL_SELECTED "Installa le selezionate"
     IDS_SELECTEDFORINST "Selezionate per l'installazione"
     IDS_MISMATCH_CERT_INFO "Il certificato in uso è sconosciuto:\nSoggetto: %s\nEmittente: %s\nVuoi continuare comunque?"

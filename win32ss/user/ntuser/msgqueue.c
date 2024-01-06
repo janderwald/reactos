@@ -634,7 +634,7 @@ co_MsqInsertMouseMessage(MSG* Msg, DWORD flags, ULONG_PTR dwExtraInfo, BOOL Hook
    else
    {
        pwnd = IntTopLevelWindowFromPoint(Msg->pt.x, Msg->pt.y);
-       if (pwnd) Msg->hwnd = pwnd->head.h;
+       if (pwnd) Msg->hwnd = UserHMGetHandle(pwnd);
    }
 
    hdcScreen = IntGetScreenDC();
@@ -813,7 +813,7 @@ MsqRemoveWindowMessagesFromQueue(PWND Window)
    {
       PostedMessage = CONTAINING_RECORD(CurrentEntry, USER_MESSAGE, ListEntry);
 
-      if (PostedMessage->Msg.hwnd == Window->head.h)
+      if (PostedMessage->Msg.hwnd == UserHMGetHandle(Window))
       {
          if (PostedMessage->Msg.message == WM_QUIT && pti->QuitPosted == 0)
          {
@@ -837,7 +837,7 @@ MsqRemoveWindowMessagesFromQueue(PWND Window)
    {
       SentMessage = CONTAINING_RECORD(CurrentEntry, USER_SENT_MESSAGE, ListEntry);
 
-      if(SentMessage->Msg.hwnd == Window->head.h)
+      if(SentMessage->Msg.hwnd == UserHMGetHandle(Window))
       {
          ERR("Remove Window Messages %p From Sent Queue\n",SentMessage);
 #if 0 // Should mark these as invalid and allow the rest clean up, so far no harm by just commenting out. See CORE-9210.
@@ -1263,7 +1263,7 @@ co_MsqSendMessage(PTHREADINFO ptirec,
                Entry = Entry->Flink;
             }
 
-            ERR("MsqSendMessage timed out 2 Status %lx\n", WaitStatus);
+            WARN("MsqSendMessage timed out 2 Status %lx\n", WaitStatus);
             break;
          }
          // Receiving thread passed on and left us hanging with issues still pending.
@@ -1344,18 +1344,25 @@ MsqPostMessage(PTHREADINFO pti,
    PUSER_MESSAGE Message;
    PUSER_MESSAGE_QUEUE MessageQueue;
 
-   if ( pti->TIF_flags & TIF_INCLEANUP || pti->MessageQueue->QF_flags & QF_INDESTROY )
+   MessageQueue = pti->MessageQueue;
+
+   if ((pti->TIF_flags & TIF_INCLEANUP) || (MessageQueue->QF_flags & QF_INDESTROY))
    {
       ERR("Post Msg; Thread or Q is Dead!\n");
       return;
    }
 
-   if(!(Message = MsqCreateMessage(Msg)))
-   {
+   Message = MsqCreateMessage(Msg);
+   if (!Message)
       return;
-   }
 
-   MessageQueue = pti->MessageQueue;
+   if (Msg->message == WM_HOTKEY)
+      MessageBits |= QS_HOTKEY;
+
+   Message->dwQEvent = dwQEvent;
+   Message->ExtraInfo = ExtraInfo;
+   Message->QS_Flags = MessageBits;
+   Message->pti = pti;
 
    if (!HardwareMessage)
    {
@@ -1366,13 +1373,8 @@ MsqPostMessage(PTHREADINFO pti,
        InsertTailList(&MessageQueue->HardwareMessagesListHead, &Message->ListEntry);
    }
 
-   if (Msg->message == WM_HOTKEY) MessageBits |= QS_HOTKEY; // Justin Case, just set it.
-   Message->dwQEvent = dwQEvent;
-   Message->ExtraInfo = ExtraInfo;
-   Message->QS_Flags = MessageBits;
-   Message->pti = pti;
    MsqWakeQueue(pti, MessageBits, TRUE);
-   TRACE("Post Message %d\n",PostMsgCount);
+   TRACE("Post Message %d\n", PostMsgCount);
 }
 
 VOID FASTCALL
@@ -1533,7 +1535,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, BOOL* NotForUs, L
     }
     else
     {
-       ERR("Not the same cursor!\n");
+       WARN("Not the same cursor!\n");
     }
 
     msg->hwnd = UserHMGetHandle(pwndMsg);
@@ -1562,7 +1564,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, BOOL* NotForUs, L
     }
     msg->lParam = MAKELONG( pt.x, pt.y );
 
-    /* translate double clicks */
+    /* translate double-clicks */
 
     if ((msg->message == WM_LBUTTONDOWN) ||
         (msg->message == WM_RBUTTONDOWN) ||
@@ -1571,7 +1573,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, BOOL* NotForUs, L
     {
         BOOL update = *RemoveMessages;
 
-        /* translate double clicks -
+        /* translate double-clicks -
          * note that ...MOUSEMOVEs can slip in between
          * ...BUTTONDOWN and ...BUTTONDBLCLK messages */
 
@@ -1590,7 +1592,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, BOOL* NotForUs, L
                message += (WM_LBUTTONDBLCLK - WM_LBUTTONDOWN);
                if (update)
                {
-                   MessageQueue->msgDblClk.message = 0;  /* clear the double click conditions */
+                   MessageQueue->msgDblClk.message = 0;  /* clear the double-click conditions */
                    update = FALSE;
                }
            }
@@ -1602,7 +1604,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, BOOL* NotForUs, L
             return FALSE;
         }
 
-        /* update static double click conditions */
+        /* update static double-click conditions */
         if (update) MessageQueue->msgDblClk = *msg;
     }
     else
@@ -1768,7 +1770,6 @@ BOOL co_IntProcessKeyboardMessage(MSG* Msg, BOOL* RemoveMessages)
     PWND pWnd;
     UINT ImmRet;
     BOOL Ret = TRUE;
-    WPARAM wParam = Msg->wParam;
     PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
 
     if (Msg->message == VK_PACKET)
@@ -1846,69 +1847,6 @@ BOOL co_IntProcessKeyboardMessage(MSG* Msg, BOOL* RemoveMessages)
                 Ret = FALSE;
                 //// Skip the rest.
                 goto Exit;
-            }
-        }
-    }
-
-    if ( *RemoveMessages && (Msg->message == WM_SYSKEYDOWN || Msg->message == WM_KEYDOWN) )
-    {
-        if (gdwLanguageToggleKey < 3)
-        {
-            if (IS_KEY_DOWN(gafAsyncKeyState, gdwLanguageToggleKey == 1 ? VK_LMENU : VK_CONTROL)) // L Alt 1 or Ctrl 2 .
-            {
-                if ( wParam == VK_LSHIFT ) gLanguageToggleKeyState = INPUTLANGCHANGE_FORWARD;  // Left Alt - Left Shift, Next
-                //// FIXME : It seems to always be VK_LSHIFT.
-                if ( wParam == VK_RSHIFT ) gLanguageToggleKeyState = INPUTLANGCHANGE_BACKWARD; // Left Alt - Right Shift, Previous
-            }
-         }
-    }
-
-    //// Key Up!                             Alt Key                        Ctrl Key
-    if ( *RemoveMessages && (Msg->message == WM_SYSKEYUP || Msg->message == WM_KEYUP) )
-    {
-        // When initializing win32k: Reading from the registry hotkey combination
-        // to switch the keyboard layout and store it to global variable.
-        // Using this combination of hotkeys in this function
-
-        if ( gdwLanguageToggleKey < 3 &&
-             IS_KEY_DOWN(gafAsyncKeyState, gdwLanguageToggleKey == 1 ? VK_LMENU : VK_CONTROL) )
-        {
-            if ( Msg->wParam == VK_SHIFT && !(IS_KEY_DOWN(gafAsyncKeyState, VK_SHIFT)))
-            {
-                WPARAM wParamILR;
-                PKL pkl = pti->KeyboardLayout;
-
-                if (pWnd) UserDerefObjectCo(pWnd);
-
-                //// Seems to override message window.
-                if (!(pWnd = pti->MessageQueue->spwndFocus))
-                {
-                     pWnd = pti->MessageQueue->spwndActive;
-                }
-                if (pWnd) UserRefObjectCo(pWnd, &Ref);
-
-                if (pkl != NULL && gLanguageToggleKeyState)
-                {
-                    TRACE("Posting WM_INPUTLANGCHANGEREQUEST KeyState %d\n", gLanguageToggleKeyState );
-
-                    wParamILR = gLanguageToggleKeyState;
-                    // If system character set and font signature send flag.
-                    if ( gSystemFS & pkl->dwFontSigs )
-                    {
-                       wParamILR |= INPUTLANGCHANGE_SYSCHARSET;
-                    }
-
-                    UserPostMessage( UserHMGetHandle(pWnd),
-                                     WM_INPUTLANGCHANGEREQUEST,
-                                     wParamILR,
-                                    (LPARAM)pkl->hkl );
-
-                    gLanguageToggleKeyState = 0;
-                    //// Keep looping.
-                    Ret = FALSE;
-                    //// Skip the rest.
-                    goto Exit;
-                }
             }
         }
     }
@@ -2046,7 +1984,7 @@ co_MsqPeekHardwareMessage(IN PTHREADINFO pti,
  */
       if ( ( !Window || // 1
             ( Window == PWND_BOTTOM && CurrentMessage->Msg.hwnd == NULL ) || // 2
-            ( Window != PWND_BOTTOM && Window->head.h == CurrentMessage->Msg.hwnd ) || // 3
+            ( Window != PWND_BOTTOM && UserHMGetHandle(Window) == CurrentMessage->Msg.hwnd ) || // 3
             ( is_mouse_message(CurrentMessage->Msg.message) ) ) && // Null window for anything mouse.
             ( ( ( MsgFilterLow == 0 && MsgFilterHigh == 0 ) && CurrentMessage->QS_Flags & QSflags ) ||
               ( MsgFilterLow <= CurrentMessage->Msg.message && MsgFilterHigh >= CurrentMessage->Msg.message ) ) )
@@ -2134,7 +2072,7 @@ MsqPeekMessage(IN PTHREADINFO pti,
  */
       if ( ( !Window || // 1
             ( Window == PWND_BOTTOM && CurrentMessage->Msg.hwnd == NULL ) || // 2
-            ( Window != PWND_BOTTOM && Window->head.h == CurrentMessage->Msg.hwnd ) ) && // 3
+            ( Window != PWND_BOTTOM && UserHMGetHandle(Window) == CurrentMessage->Msg.hwnd ) ) && // 3
             ( ( ( MsgFilterLow == 0 && MsgFilterHigh == 0 ) && CurrentMessage->QS_Flags & QSflags ) ||
               ( MsgFilterLow <= CurrentMessage->Msg.message && MsgFilterHigh >= CurrentMessage->Msg.message ) ) )
       {

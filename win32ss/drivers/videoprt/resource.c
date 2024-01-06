@@ -190,6 +190,31 @@ IntVideoPortFilterResourceRequirements(
     return STATUS_SUCCESS;
 }
 
+VOID
+IntVideoPortReleaseResources(
+    _In_ PVIDEO_PORT_DEVICE_EXTENSION DeviceExtension)
+{
+    NTSTATUS Status;
+    BOOLEAN ConflictDetected;
+    // An empty CM_RESOURCE_LIST
+    UCHAR EmptyResourceList[FIELD_OFFSET(CM_RESOURCE_LIST, List)] = {0};
+
+    Status = IoReportResourceForDetection(
+                DeviceExtension->DriverObject,
+                NULL, 0, /* Driver List */
+                DeviceExtension->PhysicalDeviceObject,
+                (PCM_RESOURCE_LIST)EmptyResourceList,
+                sizeof(EmptyResourceList),
+                &ConflictDetected);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("VideoPortReleaseResources IoReportResource failed with 0x%08lx ; ConflictDetected: %s\n",
+                Status, ConflictDetected ? "TRUE" : "FALSE");
+    }
+    /* Ignore the returned status however... */
+}
+
 NTSTATUS NTAPI
 IntVideoPortMapPhysicalMemory(
    IN HANDLE Process,
@@ -551,20 +576,63 @@ VideoPortUnmapMemory(
    return NO_ERROR;
 }
 
-/*
- * @implemented
- */
-
-VP_STATUS NTAPI
+/**
+ * @brief
+ * Retrieves bus-relative (mainly PCI) hardware resources access ranges
+ * and, if possible, claims these resources for the caller.
+ *
+ * @param[in]   HwDeviceExtension
+ * The miniport device extension.
+ *
+ * @param[in]   NumRequestedResources
+ * The number of hardware resources in the @p RequestedResources array.
+ *
+ * @param[in]   RequestedResources
+ * An optional array of IO_RESOURCE_DESCRIPTOR elements describing hardware
+ * resources the miniport requires.
+ *
+ * @param[in]   NumAccessRanges
+ * The number of ranges in the @p AccessRanges array the miniport expects
+ * to retrieve.
+ *
+ * @param[out]  AccessRanges
+ * A pointer to an array of hardware resource ranges VideoPortGetAccessRanges
+ * fills with bus-relative device memory ACCESS_RANGE's for the adapter.
+ *
+ * @param[in]   VendorId
+ * For a PCI device, points to a USHORT-type value that identifies
+ * the PCI manufacturer of the adapter. Otherwise, should be NULL.
+ *
+ * @param[in]   DeviceId
+ * For a PCI device, points to a USHORT-type value that identifies
+ * a particular PCI adapter model, assigned by the manufacturer.
+ * Otherwise, should be NULL.
+ *
+ * @param[out]  Slot
+ * Points to a ULONG value that receives the logical slot / location of
+ * the adapter (bus-dependent). For a PCI adapter, @p Slot points to a
+ * @p PCI_SLOT_NUMBER structure that locates the adapter on the PCI bus.
+ *
+ * @return
+ * - NO_ERROR if the resources have been successfully claimed or released.
+ * - ERROR_INVALID_PARAMETER if an error or a conflict occurred.
+ * - ERROR_DEV_NOT_EXIST if the device is not found.
+ * - ERROR_MORE_DATA if there exist more device access ranges available
+ *     than what is specified by @p NumAccessRanges.
+ * - ERROR_NOT_ENOUGH_MEMORY if there is not enough memory available.
+ **/
+VP_STATUS
+NTAPI
 VideoPortGetAccessRanges(
-   IN PVOID HwDeviceExtension,
-   IN ULONG NumRequestedResources,
-   IN PIO_RESOURCE_DESCRIPTOR RequestedResources OPTIONAL,
-   IN ULONG NumAccessRanges,
-   IN PVIDEO_ACCESS_RANGE AccessRanges,
-   IN PVOID VendorId,
-   IN PVOID DeviceId,
-   OUT PULONG Slot)
+    _In_ PVOID HwDeviceExtension,
+    _In_opt_ ULONG NumRequestedResources,
+    _In_reads_opt_(NumRequestedResources)
+        PIO_RESOURCE_DESCRIPTOR RequestedResources,
+    _In_ ULONG NumAccessRanges,
+    _Out_writes_(NumAccessRanges) PVIDEO_ACCESS_RANGE AccessRanges,
+    _In_ PVOID VendorId,
+    _In_ PVOID DeviceId,
+    _Out_ PULONG Slot)
 {
     PCI_SLOT_NUMBER PciSlotNumber;
     ULONG DeviceNumber;
@@ -587,7 +655,8 @@ VideoPortGetAccessRanges(
     PIO_RESOURCE_REQUIREMENTS_LIST ResReqList;
     BOOLEAN DeviceAndVendorFound = FALSE;
 
-    TRACE_(VIDEOPRT, "VideoPortGetAccessRanges(%d, %p, %d, %p)\n", NumRequestedResources, RequestedResources, NumAccessRanges, AccessRanges);
+    TRACE_(VIDEOPRT, "VideoPortGetAccessRanges(%d, %p, %d, %p)\n",
+        NumRequestedResources, RequestedResources, NumAccessRanges, AccessRanges);
 
     DeviceExtension = VIDEO_PORT_GET_DEVICE_EXTENSION(HwDeviceExtension);
     DriverObject = DeviceExtension->DriverObject;
@@ -607,9 +676,9 @@ VideoPortGetAccessRanges(
                                                DeviceExtension->SystemIoBusNumber,
                                                PciSlotNumber.u.AsULONG,
                                                &Config,
-                                               sizeof(PCI_COMMON_CONFIG));
+                                               sizeof(Config));
 
-                if (ReturnedLength != sizeof(PCI_COMMON_CONFIG))
+                if (ReturnedLength != sizeof(Config))
                 {
                     return ERROR_NOT_ENOUGH_MEMORY;
                 }
@@ -643,9 +712,11 @@ VideoPortGetAccessRanges(
                                                        DeviceExtension->SystemIoBusNumber,
                                                        PciSlotNumber.u.AsULONG,
                                                        &Config,
-                                                       sizeof(PCI_COMMON_CONFIG));
+                                                       sizeof(Config));
+
                         INFO_(VIDEOPRT, "- Length of data: %x\n", ReturnedLength);
-                        if (ReturnedLength == sizeof(PCI_COMMON_CONFIG))
+
+                        if (ReturnedLength == sizeof(Config))
                         {
                             INFO_(VIDEOPRT, "- Slot 0x%02x (Device %d Function %d) VendorId 0x%04x "
                                   "DeviceId 0x%04x\n",
@@ -663,7 +734,8 @@ VideoPortGetAccessRanges(
                             }
                         }
                     }
-                    if (DeviceAndVendorFound) break;
+                    if (DeviceAndVendorFound)
+                        break;
                 }
                 if (FunctionNumber == PCI_MAX_FUNCTION)
                 {
@@ -680,7 +752,6 @@ VideoPortGetAccessRanges(
                                             DeviceExtension->SystemIoBusNumber,
                                             PciSlotNumber.u.AsULONG,
                                             &AllocatedResources);
-
             if (!NT_SUCCESS(Status))
             {
                 WARN_(VIDEOPRT, "HalAssignSlotResources failed with status %x.\n",Status);
@@ -698,7 +769,7 @@ VideoPortGetAccessRanges(
             if (NumAccessRanges < LegacyAccessRangeCount)
             {
                 ERR_(VIDEOPRT, "Too many legacy access ranges found\n");
-                return ERROR_NOT_ENOUGH_MEMORY;
+                return ERROR_NOT_ENOUGH_MEMORY; // ERROR_MORE_DATA;
             }
 
             RtlCopyMemory(AccessRanges, LegacyAccessRanges, LegacyAccessRangeCount * sizeof(VIDEO_ACCESS_RANGE));
@@ -709,7 +780,8 @@ VideoPortGetAccessRanges(
     {
         ListSize = sizeof(IO_RESOURCE_REQUIREMENTS_LIST) + (NumRequestedResources - 1) * sizeof(IO_RESOURCE_DESCRIPTOR);
         ResReqList = ExAllocatePool(NonPagedPool, ListSize);
-        if (!ResReqList) return ERROR_NOT_ENOUGH_MEMORY;
+        if (!ResReqList)
+            return ERROR_NOT_ENOUGH_MEMORY;
 
         ResReqList->ListSize = ListSize;
         ResReqList->InterfaceType = DeviceExtension->AdapterInterfaceType;
@@ -750,12 +822,14 @@ VideoPortGetAccessRanges(
     FullList = AllocatedResources->List;
     ASSERT(AllocatedResources->Count == 1);
     INFO_(VIDEOPRT, "InterfaceType %u BusNumber List %u Device BusNumber %u Version %u Revision %u\n",
-          FullList->InterfaceType, FullList->BusNumber, DeviceExtension->SystemIoBusNumber, FullList->PartialResourceList.Version, FullList->PartialResourceList.Revision);
+          FullList->InterfaceType, FullList->BusNumber, DeviceExtension->SystemIoBusNumber,
+          FullList->PartialResourceList.Version, FullList->PartialResourceList.Revision);
 
     ASSERT(FullList->InterfaceType == PCIBus);
     ASSERT(FullList->BusNumber == DeviceExtension->SystemIoBusNumber);
     ASSERT(1 == FullList->PartialResourceList.Version);
     ASSERT(1 == FullList->PartialResourceList.Revision);
+
     for (Descriptor = FullList->PartialResourceList.PartialDescriptors;
          Descriptor < FullList->PartialResourceList.PartialDescriptors + FullList->PartialResourceList.Count;
          Descriptor++)
@@ -765,7 +839,7 @@ VideoPortGetAccessRanges(
             AssignedCount >= NumAccessRanges)
         {
             ERR_(VIDEOPRT, "Too many access ranges found\n");
-            return ERROR_NOT_ENOUGH_MEMORY;
+            return ERROR_MORE_DATA;
         }
         else if (Descriptor->Type == CmResourceTypeMemory)
         {
@@ -776,7 +850,7 @@ VideoPortGetAccessRanges(
             AccessRanges[AssignedCount].RangeInIoSpace = 0;
             AccessRanges[AssignedCount].RangeVisible = 0; /* FIXME: Just guessing */
             AccessRanges[AssignedCount].RangeShareable =
-            (Descriptor->ShareDisposition == CmResourceShareShared);
+                (Descriptor->ShareDisposition == CmResourceShareShared);
             AccessRanges[AssignedCount].RangePassive = 0;
             AssignedCount++;
         }
@@ -789,7 +863,7 @@ VideoPortGetAccessRanges(
             AccessRanges[AssignedCount].RangeInIoSpace = 1;
             AccessRanges[AssignedCount].RangeVisible = 0; /* FIXME: Just guessing */
             AccessRanges[AssignedCount].RangeShareable =
-            (Descriptor->ShareDisposition == CmResourceShareShared);
+                (Descriptor->ShareDisposition == CmResourceShareShared);
             AccessRanges[AssignedCount].RangePassive = 0;
             if (Descriptor->Flags & CM_RESOURCE_PORT_10_BIT_DECODE)
                 AccessRanges[AssignedCount].RangePassive |= VIDEO_RANGE_10_BIT_DECODE;
@@ -806,6 +880,7 @@ VideoPortGetAccessRanges(
             else
                 DeviceExtension->InterruptShared = FALSE;
         }
+        // else if (Descriptor->Type == CmResourceTypeDma) // TODO!
         else
         {
             ASSERT(FALSE);
@@ -816,84 +891,113 @@ VideoPortGetAccessRanges(
     return NO_ERROR;
 }
 
-/*
- * @implemented
- */
-
-VP_STATUS NTAPI
+/**
+ * @brief
+ * Claims or releases a range of hardware resources and checks for conflicts.
+ *
+ * @param[in]   HwDeviceExtension
+ * The miniport device extension.
+ *
+ * @param[in]   NumAccessRanges
+ * The number of hardware resource ranges in the @p AccessRanges array.
+ * Specify zero to release the hardware resources held by the miniport.
+ *
+ * @param[in]   AccessRanges
+ * The array of hardware resource ranges to claim ownership.
+ * Specify NULL to release the hardware resources held by the miniport.
+ *
+ * @return
+ * - NO_ERROR if the resources have been successfully claimed or released.
+ * - ERROR_INVALID_PARAMETER if an error or a conflict occurred.
+ * - ERROR_NOT_ENOUGH_MEMORY if there is not enough memory available.
+ **/
+VP_STATUS
+NTAPI
 VideoPortVerifyAccessRanges(
-   IN PVOID HwDeviceExtension,
-   IN ULONG NumAccessRanges,
-   IN PVIDEO_ACCESS_RANGE AccessRanges)
+    _In_ PVOID HwDeviceExtension,
+    _In_opt_ ULONG NumAccessRanges,
+    _In_reads_opt_(NumAccessRanges) PVIDEO_ACCESS_RANGE AccessRanges)
 {
-   PVIDEO_PORT_DEVICE_EXTENSION DeviceExtension;
-   BOOLEAN ConflictDetected;
-   ULONG i;
-   PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDescriptor;
-   PCM_RESOURCE_LIST ResourceList;
-   ULONG ResourceListSize;
-   NTSTATUS Status;
+    PVIDEO_PORT_DEVICE_EXTENSION DeviceExtension;
+    BOOLEAN ConflictDetected;
+    ULONG ResourceListSize;
+    PCM_RESOURCE_LIST ResourceList;
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDescriptor;
+    ULONG i;
+    NTSTATUS Status;
 
-   TRACE_(VIDEOPRT, "VideoPortVerifyAccessRanges\n");
+    TRACE_(VIDEOPRT, "VideoPortVerifyAccessRanges\n");
 
-   DeviceExtension = VIDEO_PORT_GET_DEVICE_EXTENSION(HwDeviceExtension);
+    /* Verify parameters */
+    if (NumAccessRanges && !AccessRanges)
+        return ERROR_INVALID_PARAMETER;
 
-   /* Create the resource list */
-   ResourceListSize = sizeof(CM_RESOURCE_LIST)
-      + (NumAccessRanges - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
-   ResourceList = ExAllocatePool(PagedPool, ResourceListSize);
-   if (!ResourceList)
-   {
-      WARN_(VIDEOPRT, "ExAllocatePool() failed\n");
-      return ERROR_NOT_ENOUGH_MEMORY;
-   }
+    DeviceExtension = VIDEO_PORT_GET_DEVICE_EXTENSION(HwDeviceExtension);
 
-   /* Fill resource list */
-   ResourceList->Count = 1;
-   ResourceList->List[0].InterfaceType = DeviceExtension->AdapterInterfaceType;
-   ResourceList->List[0].BusNumber = DeviceExtension->SystemIoBusNumber;
-   ResourceList->List[0].PartialResourceList.Version = 1;
-   ResourceList->List[0].PartialResourceList.Revision = 1;
-   ResourceList->List[0].PartialResourceList.Count = NumAccessRanges;
-   for (i = 0; i < NumAccessRanges; i++, AccessRanges++)
-   {
-      PartialDescriptor = &ResourceList->List[0].PartialResourceList.PartialDescriptors[i];
-      if (AccessRanges->RangeInIoSpace)
-      {
-         PartialDescriptor->Type = CmResourceTypePort;
-         PartialDescriptor->u.Port.Start = AccessRanges->RangeStart;
-         PartialDescriptor->u.Port.Length = AccessRanges->RangeLength;
-      }
-      else
-      {
-         PartialDescriptor->Type = CmResourceTypeMemory;
-         PartialDescriptor->u.Memory.Start = AccessRanges->RangeStart;
-         PartialDescriptor->u.Memory.Length = AccessRanges->RangeLength;
-      }
-      if (AccessRanges->RangeShareable)
-         PartialDescriptor->ShareDisposition = CmResourceShareShared;
-      else
-         PartialDescriptor->ShareDisposition = CmResourceShareDeviceExclusive;
-      PartialDescriptor->Flags = 0;
-      if (AccessRanges->RangePassive & VIDEO_RANGE_PASSIVE_DECODE)
-         PartialDescriptor->Flags |= CM_RESOURCE_PORT_PASSIVE_DECODE;
-      if (AccessRanges->RangePassive & VIDEO_RANGE_10_BIT_DECODE)
-         PartialDescriptor->Flags |= CM_RESOURCE_PORT_10_BIT_DECODE;
-   }
+    if (NumAccessRanges == 0)
+    {
+        /* Release the resources and do nothing more for now... */
+        IntVideoPortReleaseResources(DeviceExtension);
+        return NO_ERROR;
+    }
 
-   /* Try to acquire all resource ranges */
-   Status = IoReportResourceForDetection(
-      DeviceExtension->DriverObject,
-      NULL, 0, /* Driver List */
-      DeviceExtension->PhysicalDeviceObject,
-      ResourceList, ResourceListSize,
-      &ConflictDetected);
-   ExFreePool(ResourceList);
+    /* Create the resource list */
+    ResourceListSize = sizeof(CM_RESOURCE_LIST)
+        + (NumAccessRanges - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
+    ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize, TAG_VIDEO_PORT);
+    if (!ResourceList)
+    {
+        WARN_(VIDEOPRT, "ExAllocatePool() failed\n");
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
 
-   if (!NT_SUCCESS(Status) || ConflictDetected)
-      return ERROR_INVALID_PARAMETER;
-   else
-      return NO_ERROR;
+    /* Fill resource list */
+    ResourceList->Count = 1;
+    ResourceList->List[0].InterfaceType = DeviceExtension->AdapterInterfaceType;
+    ResourceList->List[0].BusNumber = DeviceExtension->SystemIoBusNumber;
+    ResourceList->List[0].PartialResourceList.Version = 1;
+    ResourceList->List[0].PartialResourceList.Revision = 1;
+    ResourceList->List[0].PartialResourceList.Count = NumAccessRanges;
+    for (i = 0; i < NumAccessRanges; i++, AccessRanges++)
+    {
+        PartialDescriptor = &ResourceList->List[0].PartialResourceList.PartialDescriptors[i];
+        if (AccessRanges->RangeInIoSpace)
+        {
+            PartialDescriptor->Type = CmResourceTypePort;
+            PartialDescriptor->u.Port.Start = AccessRanges->RangeStart;
+            PartialDescriptor->u.Port.Length = AccessRanges->RangeLength;
+        }
+        else
+        {
+            PartialDescriptor->Type = CmResourceTypeMemory;
+            PartialDescriptor->u.Memory.Start = AccessRanges->RangeStart;
+            PartialDescriptor->u.Memory.Length = AccessRanges->RangeLength;
+        }
+        if (AccessRanges->RangeShareable)
+            PartialDescriptor->ShareDisposition = CmResourceShareShared;
+        else
+            PartialDescriptor->ShareDisposition = CmResourceShareDeviceExclusive;
+        PartialDescriptor->Flags = 0;
+        if (AccessRanges->RangePassive & VIDEO_RANGE_PASSIVE_DECODE)
+            PartialDescriptor->Flags |= CM_RESOURCE_PORT_PASSIVE_DECODE;
+        if (AccessRanges->RangePassive & VIDEO_RANGE_10_BIT_DECODE)
+            PartialDescriptor->Flags |= CM_RESOURCE_PORT_10_BIT_DECODE;
+    }
+
+    /* Try to acquire all resource ranges */
+    Status = IoReportResourceForDetection(
+                DeviceExtension->DriverObject,
+                NULL, 0, /* Driver List */
+                DeviceExtension->PhysicalDeviceObject,
+                ResourceList, ResourceListSize,
+                &ConflictDetected);
+
+    ExFreePoolWithTag(ResourceList, TAG_VIDEO_PORT);
+
+    if (!NT_SUCCESS(Status) || ConflictDetected)
+        return ERROR_INVALID_PARAMETER;
+    else
+        return NO_ERROR;
 }
 
 /*

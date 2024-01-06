@@ -385,8 +385,6 @@ Ki386PerfEnd(VOID)
 
 struct _KPCR;
 
-//VOID KiInitializeTss(IN PKTSS Tss, IN UINT64 Stack);
-
 DECLSPEC_NORETURN VOID KiSwitchToBootStack(IN ULONG_PTR InitialStack);
 VOID KiDivideErrorFault(VOID);
 VOID KiDebugTrapOrFault(VOID);
@@ -418,8 +416,11 @@ VOID Ki386InitializeLdt(VOID);
 VOID Ki386SetProcessorFeatures(VOID);
 VOID KiGetCacheInformation(VOID);
 VOID KiSetProcessorType(VOID);
-ULONG KiGetFeatureBits(VOID);
+ULONG64 KiGetFeatureBits(VOID);
 VOID KiInitializeCpuFeatures(VOID);
+#if DBG
+VOID KiReportCpuFeatures(IN PKPRCB Prcb);
+#endif
 
 ULONG KeAllocateGdtSelector(ULONG Desc[2]);
 VOID KeFreeGdtSelector(ULONG Entry);

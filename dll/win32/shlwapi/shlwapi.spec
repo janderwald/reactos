@@ -204,7 +204,7 @@
 204 stdcall -noname SHIsChildOrSelf(long long)
 205 stdcall -noname SHGetValueGoodBootA(long str str ptr ptr ptr)
 206 stdcall -noname SHGetValueGoodBootW(long wstr wstr ptr ptr ptr)
-207 stub -noname IContextMenu_Invoke
+207 stdcall -noname IContextMenu_Invoke(ptr ptr str long)
 208 stdcall -noname FDSA_Initialize(long long ptr ptr long)
 209 stdcall -noname FDSA_Destroy(ptr)
 210 stdcall -noname FDSA_InsertItem(ptr long ptr)
@@ -435,7 +435,7 @@
 435 stdcall -noname CLSIDFromProgIDWrap(wstr ptr) ole32.CLSIDFromProgID
 436 stdcall -noname CLSIDFromStringWrap(wstr ptr)
 437 stdcall -noname IsOS(long)
-438 stub -noname SHLoadRegUIStringA
+438 stdcall -noname SHLoadRegUIStringA(ptr str ptr long)
 439 stdcall -noname SHLoadRegUIStringW(ptr wstr ptr long)
 440 stdcall -noname SHGetWebFolderFilePathA(str ptr long)
 441 stdcall -noname SHGetWebFolderFilePathW(wstr ptr long)
@@ -468,13 +468,13 @@
 468 stub -noname RunIndirectRegCommand
 469 stub -noname RunRegCommand
 470 stub -noname IUnknown_ProfferServiceOld
-471 stdcall -noname SHCreatePropertyBagOnRegKey(long wstr long ptr ptr)
-472 stub -noname SHCreatePropertyBagOnProfileSelection
-473 stub -noname SHGetIniStringUTF7W
-474 stub -noname SHSetIniStringUTF7W
+471 stdcall -noname SHCreatePropertyBagOnRegKey(ptr wstr long ptr ptr)
+472 stdcall -noname SHCreatePropertyBagOnProfileSection(wstr wstr long ptr ptr)
+473 stdcall -noname SHGetIniStringUTF7W(wstr wstr ptr long wstr)
+474 stdcall -noname SHSetIniStringUTF7W(wstr wstr wstr wstr)
 475 stdcall -noname GetShellSecurityDescriptor(ptr long)
 476 stdcall -noname SHGetObjectCompatFlags(ptr ptr)
-477 stub -noname SHCreatePropertyBagOnMemory
+477 stdcall -noname SHCreatePropertyBagOnMemory(long ptr ptr)
 478 stdcall -noname IUnknown_TranslateAcceleratorIO(ptr ptr)
 479 stdcall -noname IUnknown_UIActivateIO(ptr long ptr)
 480 stdcall -noname UrlCrackW(wstr long long ptr) wininet.InternetCrackUrlW
@@ -490,22 +490,22 @@
 490 stdcall -noname GlobalFindAtomWrapW(wstr) kernel32.GlobalFindAtomW
 491 stdcall -noname SHGetShellKey(long long long)
 492 stub -noname PrettifyFileDescriptionW
-493 stub -noname SHPropertyBag_ReadType
-494 stub -noname SHPropertyBag_ReadStr
+493 stdcall -noname SHPropertyBag_ReadType(ptr wstr ptr long)
+494 stdcall -noname SHPropertyBag_ReadStr(ptr wstr ptr long)
 495 stdcall -noname SHPropertyBag_WriteStr(ptr wstr wstr)
 496 stdcall -noname SHPropertyBag_ReadLONG(ptr wstr ptr)
 497 stdcall -noname SHPropertyBag_WriteLONG(ptr wstr long)
-498 stub -noname SHPropertyBag_ReadBOOLOld
-499 stub -noname SHPropertyBag_WriteBOOL
+498 stdcall -noname SHPropertyBag_ReadBOOLOld(ptr wstr long)
+499 stdcall -noname SHPropertyBag_WriteBOOL(ptr wstr long)
 500 stdcall AssocGetPerceivedType(wstr ptr ptr ptr)
 501 stdcall AssocIsDangerous(wstr)
 502 stdcall AssocQueryKeyA(long long str str ptr)
 503 stdcall AssocQueryKeyW(long long wstr wstr ptr)
 504 stdcall AssocQueryStringA(long long str str ptr ptr)
-505 stub -noname SHPropertyBag_ReadGUID
-506 stub -noname SHPropertyBag_WriteGUID
-507 stdcall -stub -noname SHPropertyBag_ReadDWORD(ptr ptr ptr)
-508 stub -noname SHPropertyBag_WriteDWORD
+505 stdcall -noname SHPropertyBag_ReadGUID(ptr wstr ptr)
+506 stdcall -noname SHPropertyBag_WriteGUID(ptr wstr ptr)
+507 stdcall -noname SHPropertyBag_ReadDWORD(ptr wstr ptr)
+508 stdcall -noname SHPropertyBag_WriteDWORD(ptr wstr long)
 509 stdcall -noname IUnknown_OnFocusChangeIS(ptr ptr long)
 510 stdcall -noname SHLockSharedEx(ptr long long)
 511 stdcall -stub -noname PathFileExistsDefExtAndAttributesW(wstr long ptr)
@@ -517,23 +517,23 @@
 517 stdcall -noname SKSetValueW(long wstr wstr long ptr long)
 518 stdcall -noname SKDeleteValueW(long wstr wstr)
 519 stdcall -noname SKAllocValueW(long wstr wstr ptr ptr ptr)
-520 stub -noname SHPropertyBag_ReadBSTR
-521 stub -noname SHPropertyBag_ReadPOINTL
-522 stub -noname SHPropertyBag_WritePOINTL
-523 stub -noname SHPropertyBag_ReadRECTL
-524 stub -noname SHPropertyBag_WriteRECTL
-525 stub -noname SHPropertyBag_ReadPOINTS
-526 stub -noname SHPropertyBag_WritePOINTS
-527 stub -noname SHPropertyBag_ReadSHORT
-528 stub -noname SHPropertyBag_WriteSHORT
-529 stub -noname SHPropertyBag_ReadInt
-530 stub -noname SHPropertyBag_WriteInt
-531 stub -noname SHPropertyBag_ReadStream
-532 stub -noname SHPropertyBag_WriteStream
-533 stub -noname SHGetPerScreenResName
-534 stub -noname SHPropertyBag_ReadBOOL
-535 stub -noname SHPropertyBag_Delete
-536 stdcall -stub -noname IUnknown_QueryServicePropertyBag(ptr long ptr ptr)
+520 stdcall -noname SHPropertyBag_ReadBSTR(ptr wstr ptr)
+521 stdcall -noname SHPropertyBag_ReadPOINTL(ptr wstr ptr)
+522 stdcall -noname SHPropertyBag_WritePOINTL(ptr wstr ptr)
+523 stdcall -noname SHPropertyBag_ReadRECTL(ptr wstr ptr)
+524 stdcall -noname SHPropertyBag_WriteRECTL(ptr wstr ptr)
+525 stdcall -noname SHPropertyBag_ReadPOINTS(ptr wstr ptr)
+526 stdcall -noname SHPropertyBag_WritePOINTS(ptr wstr ptr)
+527 stdcall -noname SHPropertyBag_ReadSHORT(ptr wstr ptr)
+528 stdcall -noname SHPropertyBag_WriteSHORT(ptr wstr long)
+529 stdcall -noname SHPropertyBag_ReadInt(ptr wstr ptr) SHPropertyBag_ReadLONG
+530 stdcall -noname SHPropertyBag_WriteInt(ptr wstr long) SHPropertyBag_WriteLONG
+531 stdcall -noname SHPropertyBag_ReadStream(ptr wstr ptr)
+532 stdcall -noname SHPropertyBag_WriteStream(ptr wstr ptr)
+533 stdcall -noname SHGetPerScreenResName(ptr long long)
+534 stdcall -noname SHPropertyBag_ReadBOOL(ptr wstr ptr)
+535 stdcall -noname SHPropertyBag_Delete(ptr wstr)
+536 stdcall -noname IUnknown_QueryServicePropertyBag(ptr long ptr ptr)
 537 stub -noname SHBoolSystemParametersInfo
 538 stdcall -noname IUnknown_QueryServiceForWebBrowserApp(ptr ptr ptr)
 539 stub -noname IUnknown_ShowBrowserBar

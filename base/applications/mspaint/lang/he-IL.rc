@@ -1,6 +1,13 @@
+/*
+ * PROJECT:     PAINT for ReactOS
+ * LICENSE:     LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:     Hebrew resource file
+ * TRANSLATOR:  Copyright 2013-2018 Baruch Rutman <peterooch@gmail.com>
+ */
+
 LANGUAGE LANG_HEBREW, SUBLANG_DEFAULT
 
-//IDB_FONTSTOOLBAR BITMAP "icons/fontstoolbar-he-IL.bmp"
+//IDB_FONTSTOOLBAR BITMAP "img/fontstoolbar-he-IL.bmp"
 
 ID_MENU MENU
 BEGIN
@@ -70,7 +77,7 @@ BEGIN
     POPUP "ת&מונה"
     BEGIN
         MENUITEM "סובב/הפוך...\tCtrl+R", IDM_IMAGEROTATEMIRROR
-        MENUITEM "Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "&Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
         MENUITEM "חתוך", IDM_IMAGECROP
         MENUITEM "הפוך צבעים\tCtrl+I", IDM_IMAGEINVERTCOLORS
         MENUITEM "תכונות...\tCtrl+E", IDM_IMAGEATTRIBUTES
@@ -89,6 +96,25 @@ BEGIN
         MENUITEM "נושאי עזרה", IDM_HELPHELPTOPICS
         MENUITEM SEPARATOR
         MENUITEM "מידע", IDM_HELPINFO
+    END
+END
+
+ID_POPUPMENU MENU
+BEGIN
+    POPUP "Popup #0"
+    BEGIN
+        MENUITEM "גזור\tCtrl+X", IDM_EDITCUT
+        MENUITEM "העתק\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "הדבק\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "מחק בחירה\tDel", IDM_EDITDELETESELECTION
+        MENUITEM "בחר הכל\tCtrl+A", IDM_EDITSELECTALL
+        MENUITEM SEPARATOR
+        MENUITEM "העתק ל...", IDM_EDITCOPYTO
+        MENUITEM "הדבק מ...", IDM_EDITPASTEFROM
+        MENUITEM SEPARATOR
+        MENUITEM "סובב/הפוך...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "&Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "הפוך צבעים\tCtrl+I", IDM_IMAGEINVERTCOLORS
     END
 END
 
@@ -113,6 +139,10 @@ BEGIN
     "^I", IDM_IMAGEINVERTCOLORS
     "^E", IDM_IMAGEATTRIBUTES
     "N", IDM_IMAGEDELETEIMAGE, CONTROL, SHIFT, VIRTKEY
+    VK_ADD, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_SUBTRACT, IDM_CTRL_MINUS, CONTROL, VIRTKEY
+    VK_OEM_PLUS, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_OEM_MINUS, IDM_CTRL_MINUS, CONTROL, VIRTKEY
 END
 
 IDD_MIRRORROTATE DIALOGEX 100, 100, 180, 100
@@ -138,23 +168,23 @@ EXSTYLE WS_EX_LAYOUTRTL
 FONT 8, "MS Shell Dlg"
 CAPTION "תכונות"
 BEGIN
+    LTEXT "רוחב:", IDD_ATTRIBUTESTEXT1, 10, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT1, 48, 40, 35, 12
+    LTEXT "גובה:", IDD_ATTRIBUTESTEXT2, 90, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT2, 128, 40, 35, 12
-    LTEXT "רוחב:", IDD_ATTRIBUTESTEXT1, 10, 40, 35, 10
-    LTEXT "גובה:", IDD_ATTRIBUTESTEXT2, 90, 40, 35, 10
     LTEXT "תאריך קובץ:", IDD_ATTRIBUTESTEXT3, 10, 5, 60, 10
     LTEXT "גודל קובץ:", IDD_ATTRIBUTESTEXT4, 10, 15, 60, 10
     LTEXT "גודל תמונה:", IDD_ATTRIBUTESTEXT5, 10, 25, 60, 10
     LTEXT "לא זמין", IDD_ATTRIBUTESTEXT6, 60, 5, 90, 10
     LTEXT "לא זמין", IDD_ATTRIBUTESTEXT7, 60, 15, 90, 10
-    LTEXT "לא זמין", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10
+    LTEXT "ppcm", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10 /* This unit must match IDS_PRINTRES */
     GROUPBOX "יחידות מדידה", IDD_ATTRIBUTESGROUP1, 6, 57, 158, 27
     AUTORADIOBUTTON "אינצ'ים", IDD_ATTRIBUTESRB1, 12, 69, 45, 10, WS_GROUP
     AUTORADIOBUTTON "סנטימטרים", IDD_ATTRIBUTESRB2, 55, 69, 51, 10
     AUTORADIOBUTTON "פיקסלים", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
     GROUPBOX "צבעים", IDD_ATTRIBUTESGROUP2, 6, 88, 158, 27
     AUTORADIOBUTTON "שחור ולבן", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
-    AUTORADIOBUTTON "צבעוני", IDD_ATTRIBUTESRB5, 92, 100, 35, 10
+    AUTORADIOBUTTON "צבעוני", IDD_ATTRIBUTESRB5, 92, 100, 42, 10
     DEFPUSHBUTTON "אישור", IDOK, 170, 8, 48, 14
     PUSHBUTTON "ביטול", IDCANCEL, 170, 24, 48, 14
     PUSHBUTTON "ברירת מחדל", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
@@ -227,7 +257,6 @@ BEGIN
     IDS_ALLFILES "All Files"
     IDS_ALLPICTUREFILES "All Picture Files"
     IDS_FILESIZE "%d בתים"
-    IDS_PRINTRES, "%d x %d פיקסלים למטר"
     IDS_INTNUMBERS, "Please enter integral numbers only!"
     IDS_PERCENTAGE, "The percentage must be between 1 and 500."
     IDS_ANGLE, "The angle must be between -89 and 89."
@@ -237,4 +266,9 @@ BEGIN
     IDS_ITALIC "Italic"
     IDS_UNDERLINE "Underline"
     IDS_VERTICAL "Vertical"
+    IDS_PRINTRES "%d x %d pixel/cm"
+    IDS_CANTPASTE "Failed to paste from the clipboard. The data format is either incorrect or not supported."
+    IDS_SAVEERROR "Failed to save the bitmap to file:\n\n%s"
+    IDS_CANTSENDMAIL "Failed to send a mail."
+    IDS_LOSECOLOR "The color information will be lost in this operation. Are you sure to proceed?"
 END

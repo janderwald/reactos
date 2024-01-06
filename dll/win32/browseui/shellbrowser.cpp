@@ -292,12 +292,10 @@ private:
     CComPtr<IShellView>                     fCurrentShellView;          //
     LPITEMIDLIST                            fCurrentDirectoryPIDL;      //
     HWND                                    fStatusBar;
-    bool                                    fStatusBarVisible;
     CToolbarProxy                           fToolbarProxy;
     barInfo                                 fClientBars[3];
     CComPtr<ITravelLog>                     fTravelLog;
     HMENU                                   fCurrentMenuBar;
-    CABINETSTATE                            fCabinetState;
     GUID                                    fCurrentVertBar;             //The guid of the built in vertical bar that is being shown
     // The next three fields support persisted history for shell views.
     // They do not need to be reference counted.
@@ -306,6 +304,7 @@ private:
     IBindCtx                                *fHistoryBindContext;
     HDSA menuDsa;
     HACCEL m_hAccel;
+    ShellSettings m_settings;
 public:
 #if 0
     ULONG InternalAddRef()
@@ -329,7 +328,7 @@ public:
         FOLDERSETTINGS *folderSettings, long flags);
     HRESULT GetMenuBand(REFIID riid, void **shellMenu);
     HRESULT GetBaseBar(bool vertical, REFIID riid, void **theBaseBar);
-    BOOL IsBandLoaded(const CLSID clsidBand, bool verticali, DWORD *pdwBandID);
+    BOOL IsBandLoaded(const CLSID clsidBand, bool vertical, DWORD *pdwBandID);
     HRESULT ShowBand(const CLSID &classID, bool vertical);
     HRESULT NavigateToParent();
     HRESULT DoFolderOptions();
@@ -350,6 +349,8 @@ public:
     HRESULT UpdateUpState();
     void UpdateGotoMenu(HMENU theMenu);
     void UpdateViewMenu(HMENU theMenu);
+    void RefreshCabinetState();
+    void UpdateWindowTitle();
 
 /*    // *** IDockingWindowFrame methods ***
     virtual HRESULT STDMETHODCALLTYPE AddToolbar(IUnknown *punkSrc, LPCWSTR pwszItem, DWORD dwAddFlags);
@@ -623,6 +624,9 @@ public:
     LRESULT OnRefresh(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL &bHandled);
     LRESULT OnExplorerBar(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL &bHandled);
     LRESULT RelayCommands(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled);
+    LRESULT OnSettingsChange(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnGetSettingsPtr(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnAppCommand(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     HRESULT OnSearch();
 
     static ATL::CWndClassInfo& GetWndClassInfo()
@@ -673,6 +677,9 @@ public:
         COMMAND_RANGE_HANDLER(IDM_GOTO_TRAVEL_FIRSTTARGET, IDM_GOTO_TRAVEL_LASTTARGET, OnGoTravel)
         COMMAND_RANGE_HANDLER(IDM_EXPLORERBAND_BEGINCUSTOM, IDM_EXPLORERBAND_ENDCUSTOM, OnExplorerBar)
         MESSAGE_HANDLER(WM_COMMAND, RelayCommands)
+        MESSAGE_HANDLER(BWM_SETTINGCHANGE, OnSettingsChange)
+        MESSAGE_HANDLER(BWM_GETSETTINGSPTR, OnGetSettingsPtr)
+        MESSAGE_HANDLER(WM_APPCOMMAND, OnAppCommand)
     END_MSG_MAP()
 
     BEGIN_CONNECTION_POINT_MAP(CShellBrowser)
@@ -709,11 +716,12 @@ CShellBrowser::CShellBrowser()
     fCurrentShellViewWindow = NULL;
     fCurrentDirectoryPIDL = NULL;
     fStatusBar = NULL;
-    fStatusBarVisible = true;
     fCurrentMenuBar = NULL;
     fHistoryObject = NULL;
     fHistoryStream = NULL;
     fHistoryBindContext = NULL;
+    m_settings.Load();
+    gCabinetState.Load();
 }
 
 CShellBrowser::~CShellBrowser()
@@ -733,11 +741,6 @@ HRESULT CShellBrowser::Initialize()
     menuDsa = DSA_Create(sizeof(MenuBandInfo), 5);
     if (!menuDsa)
         return E_OUTOFMEMORY;
-
-    fCabinetState.cLength = sizeof(fCabinetState);
-    if (ReadCabinetState(&fCabinetState, sizeof(fCabinetState)) == FALSE)
-    {
-    }
 
     // create window
     Create(HWND_DESKTOP);
@@ -783,13 +786,13 @@ HRESULT CShellBrowser::Initialize()
 
     fToolbarProxy.Initialize(m_hWnd, clientBar);
 
-
     // create status bar
-    fStatusBar = CreateWindow(STATUSCLASSNAMEW, NULL, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS |
-                    SBT_NOBORDERS | SBT_TOOLTIPS, 0, 0, 500, 20, m_hWnd, (HMENU)0xa001,
-                    _AtlBaseModule.GetModuleInstance(), 0);
-    fStatusBarVisible = true;
-
+    DWORD dwStatusStyle = WS_CHILD | WS_CLIPSIBLINGS | SBARS_SIZEGRIP | SBARS_TOOLTIPS;
+    if (m_settings.fStatusBarVisible)
+        dwStatusStyle |= WS_VISIBLE;
+    fStatusBar = ::CreateWindowExW(0, STATUSCLASSNAMEW, NULL, dwStatusStyle,
+                                   0, 0, 500, 20, m_hWnd, (HMENU)IDC_STATUSBAR,
+                                   _AtlBaseModule.GetModuleInstance(), 0);
 
     ShowWindow(SW_SHOWNORMAL);
     UpdateWindow();
@@ -802,14 +805,23 @@ HRESULT CShellBrowser::BrowseToPIDL(LPCITEMIDLIST pidl, long flags)
     CComPtr<IShellFolder>                   newFolder;
     FOLDERSETTINGS                          newFolderSettings;
     HRESULT                                 hResult;
+    CLSID                                   clsid;
+    BOOL                                    HasIconViewType;
 
     // called by shell view to browse to new folder
     // also called by explorer band to navigate to new folder
     hResult = SHBindToFolder(pidl, &newFolder);
     if (FAILED_UNEXPECTEDLY(hResult))
         return hResult;
+    // HACK & FIXME: Get view mode from shellbag when fully implemented.
+    IUnknown_GetClassID(newFolder, &clsid);
+    HasIconViewType = clsid == CLSID_MyComputer || clsid == CLSID_ControlPanel ||
+                      clsid == CLSID_ShellDesktop;
 
-    newFolderSettings.ViewMode = FVM_ICON;
+    if (HasIconViewType)
+        newFolderSettings.ViewMode = FVM_ICON;
+    else
+        newFolderSettings.ViewMode = FVM_DETAILS;
     newFolderSettings.fFlags = 0;
     hResult = BrowseToPath(newFolder, pidl, &newFolderSettings, flags);
     if (FAILED_UNEXPECTEDLY(hResult))
@@ -905,7 +917,7 @@ cleanup:
     return hResult;
 }
 
-long IEGetNameAndFlags(LPITEMIDLIST pidl, SHGDNF uFlags, LPWSTR pszBuf, UINT cchBuf, SFGAOF *rgfInOut)
+HRESULT IEGetNameAndFlags(LPITEMIDLIST pidl, SHGDNF uFlags, LPWSTR pszBuf, UINT cchBuf, SFGAOF *rgfInOut)
 {
     return IEGetNameAndFlagsEx(pidl, uFlags, 0, pszBuf, cchBuf, rgfInOut);
 }
@@ -1033,42 +1045,33 @@ HRESULT CShellBrowser::BrowseToPath(IShellFolder *newShellFolder,
         FireNavigateComplete(L"ERROR");
     }
 
-    if (fCabinetState.fFullPathTitle)
-        nameFlags = SHGDN_FORADDRESSBAR | SHGDN_FORPARSING;
-    else
-        nameFlags = SHGDN_FORADDRESSBAR;
-    hResult = IEGetNameAndFlags(fCurrentDirectoryPIDL, nameFlags, newTitle,
-        sizeof(newTitle) / sizeof(wchar_t), NULL);
+    UpdateWindowTitle();
+
+    LPCITEMIDLIST pidlChild;
+    INT index, indexOpen;
+    HIMAGELIST himlSmall, himlLarge;
+
+    CComPtr<IShellFolder> sf;
+    hResult = SHBindToParent(absolutePIDL, IID_PPV_ARG(IShellFolder, &sf), &pidlChild);
     if (SUCCEEDED(hResult))
     {
-        SetWindowText(newTitle);
+        index = SHMapPIDLToSystemImageListIndex(sf, pidlChild, &indexOpen);
 
-        LPCITEMIDLIST pidlChild;
-        INT index, indexOpen;
-        HIMAGELIST himlSmall, himlLarge;
+        Shell_GetImageLists(&himlLarge, &himlSmall);
 
-        CComPtr<IShellFolder> sf;
-        hResult = SHBindToParent(absolutePIDL, IID_PPV_ARG(IShellFolder, &sf), &pidlChild);
-        if (SUCCEEDED(hResult))
-        {
-            index = SHMapPIDLToSystemImageListIndex(sf, pidlChild, &indexOpen);
+        HICON icSmall = ImageList_GetIcon(himlSmall, indexOpen, 0);
+        HICON icLarge = ImageList_GetIcon(himlLarge, indexOpen, 0);
 
-            Shell_GetImageLists(&himlLarge, &himlSmall);
+        /* Hack to make it possible to release the old icons */
+        /* Something seems to go wrong with WM_SETICON */
+        HICON oldSmall = (HICON)SendMessage(WM_GETICON, ICON_SMALL, 0);
+        HICON oldLarge = (HICON)SendMessage(WM_GETICON, ICON_BIG,   0);
 
-            HICON icSmall = ImageList_GetIcon(himlSmall, indexOpen, 0);
-            HICON icLarge = ImageList_GetIcon(himlLarge, indexOpen, 0);
+        SendMessage(WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icSmall));
+        SendMessage(WM_SETICON, ICON_BIG,   reinterpret_cast<LPARAM>(icLarge));
 
-            /* Hack to make it possible to release the old icons */
-            /* Something seems to go wrong with WM_SETICON */
-            HICON oldSmall = (HICON)SendMessage(WM_GETICON, ICON_SMALL, 0);
-            HICON oldLarge = (HICON)SendMessage(WM_GETICON, ICON_BIG,   0);
-
-            SendMessage(WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icSmall));
-            SendMessage(WM_SETICON, ICON_BIG,   reinterpret_cast<LPARAM>(icLarge));
-
-            DestroyIcon(oldSmall);
-            DestroyIcon(oldLarge);
-        }
+        DestroyIcon(oldSmall);
+        DestroyIcon(oldLarge);
     }
 
     FireCommandStateChangeAll();
@@ -1438,7 +1441,7 @@ void CShellBrowser::RepositionBars()
 
     GetClientRect(&clientRect);
 
-    if (fStatusBarVisible && fStatusBar)
+    if (m_settings.fStatusBarVisible && fStatusBar)
     {
         ::GetWindowRect(fStatusBar, &statusRect);
         ::SetWindowPos(fStatusBar, NULL, clientRect.left, clientRect.bottom - (statusRect.bottom - statusRect.top),
@@ -1733,7 +1736,7 @@ void CShellBrowser::UpdateViewMenu(HMENU theMenu)
         menuItemInfo.hSubMenu = toolbarMenu;
         SetMenuItemInfo(theMenu, IDM_VIEW_TOOLBARS, FALSE, &menuItemInfo);
     }
-    SHCheckMenuItem(theMenu, IDM_VIEW_STATUSBAR, fStatusBarVisible ? TRUE : FALSE);
+    SHCheckMenuItem(theMenu, IDM_VIEW_STATUSBAR, m_settings.fStatusBarVisible ? TRUE : FALSE);
 }
 
 HRESULT CShellBrowser::BuildExplorerBandMenu()
@@ -1877,7 +1880,7 @@ bool IUnknownIsEqual(IUnknown *int1, IUnknown *int2)
 
 HRESULT STDMETHODCALLTYPE CShellBrowser::GetBorderDW(IUnknown *punkObj, LPRECT prcBorder)
 {
-    static const INT excludeItems[] = { 1, 1, 1, 0xa001, 0, 0 };
+    static const INT excludeItems[] = { 1, 1, 1, IDC_STATUSBAR, 0, 0 };
 
     RECT availableBounds;
 
@@ -1984,7 +1987,7 @@ HRESULT STDMETHODCALLTYPE CShellBrowser::QueryStatus(const GUID *pguidCmdGroup,
         {
             switch (prgCmds->cmdID)
             {
-                case 0xa022:    // up level
+                case IDM_GOTO_UPONELEVEL:
                     prgCmds->cmdf = OLECMDF_SUPPORTED;
                     if (fCurrentDirectoryPIDL->mkid.cb != 0)
                         prgCmds->cmdf |= OLECMDF_ENABLED;
@@ -2361,12 +2364,33 @@ HRESULT STDMETHODCALLTYPE CShellBrowser::QueryService(REFGUID guidService, REFII
     return E_NOINTERFACE;
 }
 
+static BOOL _ILIsNetworkPlace(LPCITEMIDLIST pidl)
+{
+    WCHAR szPath[MAX_PATH];
+    return SHGetPathFromIDListWrapW(pidl, szPath) && PathIsUNCW(szPath);
+}
+
 HRESULT STDMETHODCALLTYPE CShellBrowser::GetPropertyBag(long flags, REFIID riid, void **ppvObject)
 {
     if (ppvObject == NULL)
         return E_POINTER;
+
     *ppvObject = NULL;
-    return E_NOTIMPL;
+
+    LPITEMIDLIST pidl;
+    HRESULT hr = GetPidl(&pidl);
+    if (FAILED_UNEXPECTEDLY(hr))
+        return E_FAIL;
+
+    // FIXME: pidl for Internet etc.
+
+    if (_ILIsNetworkPlace(pidl))
+        flags |= SHGVSPB_ROAM;
+
+    hr = SHGetViewStatePropertyBag(pidl, L"Shell", flags, riid, ppvObject);
+
+    ILFree(pidl);
+    return hr;
 }
 
 HRESULT STDMETHODCALLTYPE CShellBrowser::GetTypeInfoCount(UINT *pctinfo)
@@ -3472,7 +3496,7 @@ LRESULT CShellBrowser::OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHa
 {
     CComPtr<IDockingWindow>                 dockingWindow;
     RECT                                    availableBounds;
-    static const INT                        excludeItems[] = {1, 1, 1, 0xa001, 0, 0};
+    static const INT                        excludeItems[] = {1, 1, 1, IDC_STATUSBAR, 0, 0};
     HRESULT                                 hResult;
 
     if (wParam != SIZE_MINIMIZED)
@@ -3553,6 +3577,7 @@ LRESULT CShellBrowser::RelayMsgToShellView(UINT uMsg, WPARAM wParam, LPARAM lPar
 
 LRESULT CShellBrowser::OnSettingChange(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled)
 {
+    RefreshCabinetState();
     SHPropagateMessage(m_hWnd, uMsg, wParam, lParam, TRUE);
     return 0;
 }
@@ -3657,12 +3682,9 @@ LRESULT CShellBrowser::OnOrganizeFavorites(WORD wNotifyCode, WORD wID, HWND hWnd
 
 LRESULT CShellBrowser::OnToggleStatusBarVisible(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL &bHandled)
 {
-    fStatusBarVisible = !fStatusBarVisible;
-    if (fStatusBar)
-    {
-        ::ShowWindow(fStatusBar, fStatusBarVisible ? SW_SHOW : SW_HIDE);
-        RepositionBars();
-    }
+    m_settings.fStatusBarVisible = !m_settings.fStatusBarVisible;
+    m_settings.Save();
+    SendMessageW(BWM_SETTINGCHANGE, 0, (LPARAM)&m_settings);
     return 0;
 }
 
@@ -3767,7 +3789,70 @@ LRESULT CShellBrowser::RelayCommands(UINT uMsg, WPARAM wParam, LPARAM lParam, BO
     return 0;
 }
 
+LRESULT CShellBrowser::OnSettingsChange(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+    /* Refresh child windows */
+    ::SendMessageW(fClientBars[BIInternetToolbar].hwnd, uMsg, wParam, lParam);
+
+    /* Refresh status bar */
+    if (fStatusBar)
+    {
+        ::ShowWindow(fStatusBar, m_settings.fStatusBarVisible ? SW_SHOW : SW_HIDE);
+        RepositionBars();
+    }
+
+    return 0;
+}
+
+LRESULT CShellBrowser::OnGetSettingsPtr(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+    if (!lParam)
+        return ERROR_INVALID_PARAMETER;
+
+    *(ShellSettings**)lParam = &m_settings;
+    return NO_ERROR;
+}
+
+// WM_APPCOMMAND
+LRESULT CShellBrowser::OnAppCommand(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+    UINT uCmd = GET_APPCOMMAND_LPARAM(lParam);
+    switch (uCmd)
+    {
+        case APPCOMMAND_BROWSER_BACKWARD:
+            GoBack();
+            break;
+
+        case APPCOMMAND_BROWSER_FORWARD:
+            GoForward();
+            break;
+
+        default:
+            FIXME("uCmd: %u\n", uCmd);
+            break;
+    }
+    return 0;
+}
+
 HRESULT CShellBrowser_CreateInstance(REFIID riid, void **ppv)
 {
     return ShellObjectCreatorInit<CShellBrowser>(riid, ppv);
+}
+
+void CShellBrowser::RefreshCabinetState()
+{
+    gCabinetState.Load();
+    UpdateWindowTitle();
+}
+
+void CShellBrowser::UpdateWindowTitle()
+{
+    WCHAR title[MAX_PATH];
+    SHGDNF flags = SHGDN_FORADDRESSBAR;
+
+    if (gCabinetState.fFullPathTitle)
+        flags |= SHGDN_FORPARSING;
+
+    if (SUCCEEDED(IEGetNameAndFlags(fCurrentDirectoryPIDL, flags, title, _countof(title), NULL)))
+        SetWindowText(title);
 }

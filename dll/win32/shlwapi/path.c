@@ -1151,6 +1151,7 @@ BOOL WINAPI PathFileExistsDefExtW(LPWSTR lpszPath,DWORD dwWhich)
 #ifdef __REACTOS__
         if (dwWhich & 0x1)
         {
+        if (GetFileAttributes(lpszPath) != FILE_ATTRIBUTE_DIRECTORY)
 #endif
         lstrcpyW(lpszPath + iLen, pszExts[iChoose]);
         if (PathFileExistsW(lpszPath))
@@ -2248,7 +2249,7 @@ BOOL WINAPI PathIsUNCA(LPCSTR lpszPath)
  * considered UNC, while on Windows Vista+ this is not the case anymore.
  */
 // #ifdef __REACTOS__
-#if (WINVER >= _WIN32_WINNT_VISTA)
+#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
   if (lpszPath && (lpszPath[0]=='\\') && (lpszPath[1]=='\\') && (lpszPath[2]!='?'))
 #else
   if (lpszPath && (lpszPath[0]=='\\') && (lpszPath[1]=='\\'))
@@ -2271,7 +2272,7 @@ BOOL WINAPI PathIsUNCW(LPCWSTR lpszPath)
  * considered UNC, while on Windows Vista+ this is not the case anymore.
  */
 // #ifdef __REACTOS__
-#if (WINVER >= _WIN32_WINNT_VISTA)
+#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
   if (lpszPath && (lpszPath[0]=='\\') && (lpszPath[1]=='\\') && (lpszPath[2]!='?'))
 #else
   if (lpszPath && (lpszPath[0]=='\\') && (lpszPath[1]=='\\'))

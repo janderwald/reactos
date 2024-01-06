@@ -110,7 +110,7 @@ BEGIN
     IDS_CTRL_SHIFT "Strg+Umschalt"
     IDS_LEFT_ALT_SHIFT "Alt links+Umschalt"
     IDS_SWITCH_BET_INLANG "Zwischen Eingabesprachen umschalten"
-    IDS_REBOOT_NOW, "Reboot now?"
+    IDS_REBOOT_NOW "You have to restart the system for the settings to take effect. Reboot now?"
 END
 
 STRINGTABLE
@@ -246,7 +246,7 @@ BEGIN
     IDS_UKRAINIAN_LAYOUT "Ukrainisch"
     IDS_UKRAINIAN_STUDENT_LAYOUT "Ukrainisch (Student)"
     IDS_UNITED_KINGDOM_LAYOUT "Englisch (Großbritannien u. Nordirland)"
-    IDS_UNITED_STATES_DVIRAK_LAYOUT "Englisch (USA, Dvorak)"
+    IDS_UNITED_STATES_DVORAK_LAYOUT "Englisch (USA, Dvorak)"
     IDS_UNITED_STATES_DVORAK_FOR_LEFT_HAND_LAYOUT "Englisch (USA, Dvorak für Linkshänder)"
     IDS_UNITED_STATES_DVORAK_FOR_RIGHT_HAND_LAYOUT "Englisch (USA, Dvorak für Rechtshänder)"
     IDS_UNITED_STATES_INTERNATIONAL_LAYOUT "Englisch (USA, International)"

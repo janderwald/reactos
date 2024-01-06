@@ -1894,10 +1894,16 @@ HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\Classi
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}",,0x00000012
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","ListviewShadow",0x00010003,0x00000001
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","HideFileExt",0x00010003,0x00000000
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","PreferDateOverWeekday",0x00010003,0x00000001
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","StartMenuLogoff",0x00010003,0x00000001
 ; "Hidden" to be changed to 2 if we later want to have "Hide hidden files by default"
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","Hidden",0x00010003,1
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced","ShowSuperHidden",0x00010003,0
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\CabinetState",,0x00000012
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\CabinetState","FullPath",0x00010003,0
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\CabinetState","FullPathAddress",0x00010003,1
+HKCU,"SOFTWARE\Microsoft\Internet Explorer\Main","StatusBarOther",0x00010003,1
+HKCU,"SOFTWARE\Microsoft\Internet Explorer\Toolbar","Locked",0x00010003,1
 
 ; ComDlg32
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32",,0x00000012
@@ -1975,6 +1981,10 @@ HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers\WINXP",
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers\WINXP","PlatformId",0x00010001,0x00000002
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers\WINXP","SPMajorVersion",0x00010001,0x00000001
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers\WINXP","SPMinorVersion",0x00010001,0x00000000
+
+; Zip/UnZip codepages
+HKCU,"SOFTWARE\ReactOS","ZipCodePage",0x00000000,"65001" ; CP_UTF8
+HKCU,"SOFTWARE\ReactOS","UnZipCodePage",0x00000000,"0"   ; CP_ACP
 
 ; DEBUG: Windows Messages SPY configuration
 HKCU,"SOFTWARE\ReactOS\Debug","SpyInclude",0x00020000,"INCLUDEALL"
@@ -3198,7 +3208,7 @@ POWERCFG_NAME_2="Apresentação"
 POWERCFG_DESC_2="Este esquema mantém o monitor ligado para fazer apresentações."
 POWERCFG_NAME_3="Sempre ligado"
 POWERCFG_DESC_3="Este esquema mantém o computador em funcionamento para que possa ser acessado da rede. Use este esquema se não tiver hardware de activação de rede."
-POWERCFG_NAME_4="Gerenciamento mínimo de energia"
+POWERCFG_NAME_4="Gestão de energia mínima"
 POWERCFG_DESC_4="Este esquema mantém o computador ligado com optimização para obter alto desempenho."
 POWERCFG_NAME_5="Bateria carregada"
 POWERCFG_DESC_5="Esquema extremamente agressivo para economizar energia."
@@ -3216,7 +3226,7 @@ DESKTOP_SCHEME_10="Marinho"
 DESKTOP_SCHEME_11="Ameixa"
 DESKTOP_SCHEME_12="Abóbora"
 DESKTOP_SCHEME_13="Dia chuvoso"
-DESKTOP_SCHEME_14="ReactOS Classico"
+DESKTOP_SCHEME_14="ReactOS Clássico"
 DESKTOP_SCHEME_15="Rosa"
 DESKTOP_SCHEME_16="Areia"
 DESKTOP_SCHEME_17="Céu"

@@ -118,7 +118,7 @@ BEGIN
     IDS_CTRL_SHIFT "Ctrl+Shift"
     IDS_LEFT_ALT_SHIFT "Alt зліва+Shift"
     IDS_SWITCH_BET_INLANG "Перемикання мов вводу"
-    IDS_REBOOT_NOW, "Перезавантажити зараз?"
+    IDS_REBOOT_NOW "You have to restart the system for the settings to take effect. Reboot now?"
 END
 
 STRINGTABLE
@@ -254,7 +254,7 @@ BEGIN
     IDS_UKRAINIAN_LAYOUT "Українська"
     IDS_UKRAINIAN_STUDENT_LAYOUT "Українська (студентська)"
     IDS_UNITED_KINGDOM_LAYOUT "Великобританія"
-    IDS_UNITED_STATES_DVIRAK_LAYOUT "США - Дворак"
+    IDS_UNITED_STATES_DVORAK_LAYOUT "США - Дворак"
     IDS_UNITED_STATES_DVORAK_FOR_LEFT_HAND_LAYOUT "США - Дворак (для лівої руки)"
     IDS_UNITED_STATES_DVORAK_FOR_RIGHT_HAND_LAYOUT "США - Дворак (для правої руки)"
     IDS_UNITED_STATES_INTERNATIONAL_LAYOUT "США - міжнародна"

@@ -1,8 +1,8 @@
 ﻿/*
- * PROJECT:     Notepad Hindi Translation
- * LICENSE:     GPL-2.0+ (https://spdx.org/licenses/GPL-2.0+)
- * PURPOSE:     Hindi Translation Of Notepad
- * COPYRIGHT:   Copyright 2018 Arnav Bhatt (arnavbhatt2004@gmail.com)
+ * PROJECT:     ReactOS Notepad
+ * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:     Hindi (India) resource file
+ * TRANSLATOR:  Copyright 2018 Arnav Bhatt <arnavbhatt2004@gmail.com>
  */
 
 LANGUAGE LANG_HINDI, SUBLANG_HINDI_INDIA
@@ -23,6 +23,7 @@ BEGIN
     "^X", CMD_CUT
     "^Z", CMD_UNDO
     VK_F3, CMD_SEARCH_NEXT, VIRTKEY
+    VK_F3, CMD_SEARCH_PREV, VIRTKEY, SHIFT
     VK_F5, CMD_TIME_DATE, VIRTKEY
 END
 
@@ -130,20 +131,27 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
 CAPTION "गोटो लाइन"
 BEGIN
-    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, WS_CHILD | WS_BORDER | WS_TABSTOP
-    LTEXT "लाइन संख्या:", 0x155, 5, 12, 41, 12, WS_CHILD | WS_TABSTOP | ES_NUMBER
-    DEFPUSHBUTTON "ओके", IDOK, 75, 30, 40, 15, WS_CHILD | WS_TABSTOP
-    PUSHBUTTON "रद्द करें", IDCANCEL, 120, 30, 40, 15, WS_CHILD | WS_TABSTOP
+    LTEXT "लाइन संख्या:", 0x155, 5, 12, 41, 12
+    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, ES_NUMBER
+    DEFPUSHBUTTON "ओके", IDOK, 75, 30, 40, 15
+    PUSHBUTTON "रद्द करें", IDCANCEL, 120, 30, 40, 15
+END
+
+DIALOG_PRINTING DIALOG 0, 0, 160, 100
+CAPTION "Now printing"
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
+FONT 8, "MS Shell Dlg"
+BEGIN
+    CTEXT "Print job is starting...", IDC_PRINTING_STATUS, 5, 10, 150, 15
+    CTEXT "(Filename)", IDC_PRINTING_FILENAME, 5, 35, 150, 15
+    CTEXT "Page %u", IDC_PRINTING_PAGE, 5, 55, 150, 15
+    PUSHBUTTON "रद्द करें", IDCANCEL, 50, 75, 60, 20
 END
 
 STRINGTABLE
 BEGIN
-    STRING_PAGESETUP_HEADERVALUE "&n" /* FIXME */
-    STRING_PAGESETUP_FOOTERVALUE "Page &s" /* FIXME */
-    STRING_PAGESETUP_LEFTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_RIGHTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_TOPVALUE "25 mm" /* FIXME */
-    STRING_PAGESETUP_BOTTOMVALUE "25 mm" /* FIXME */
+    STRING_PAGESETUP_HEADERVALUE "&f"
+    STRING_PAGESETUP_FOOTERVALUE "Page &p"
     STRING_NOTEPAD "नोटपैड"
     STRING_ERROR "त्रुटि"
     STRING_WARNING "वॉर्निंग"
@@ -151,7 +159,7 @@ BEGIN
     STRING_UNTITLED "शीर्षकहीन"
     STRING_ALL_FILES "सभी फाइलें (*.*)"
     STRING_TEXT_FILES_TXT "पाठ फाइलें (*.txt)"
-    STRING_TOOLARGE "नोटपैड के लिए फ़ाइल '% s' बहुत बड़ी है।\n\
+    STRING_TOOLARGE "नोटपैड के लिए फ़ाइल '%s' बहुत बड़ी है।\n\
 कृपया एक अलग इडिटर का प्रयोग करें।"
     STRING_NOTEXT "आपने कोई टेक्स्ट दर्ज नहीं किया है।\
 \nकृपया कुछ टाइप करें और पुनः प्रयास करें"
@@ -174,6 +182,12 @@ BEGIN
     STRING_LINE_COLUMN "लाइन%d, स्तंभ%d"
     STRING_PRINTERROR "फ़ाइल '%s' मुद्रित नहीं कर सकता।\n\n सुनिश्चित करें कि प्रिंटर चालू है और ठीक से कॉन्फ़िगर किया गया है।"
     STRING_DEFAULTFONT "Lucida Console"
+    STRING_LINE_NUMBER_OUT_OF_RANGE "The specified line number is out of range."
+    STRING_NOWPRINTING "Now printing page..."
+    STRING_PRINTCANCELING "The print job is being canceled..."
+    STRING_PRINTCOMPLETE "Printing is successfully done."
+    STRING_PRINTCANCELED "Printing has been canceled."
+    STRING_PRINTFAILED "Printing is failed."
 
     STRING_TEXT_DOCUMENT "टेक्स्ट डॉक्यूमॅन्ट"
     STRING_NOTEPAD_AUTHORS "कॉपीराइट 1997,98 Marcel Baur, 2000 Mike McCormack, 2002 Sylvain Petreolle, 2002 Andriy Palamarchuk\r\n"

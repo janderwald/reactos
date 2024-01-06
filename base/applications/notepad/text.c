@@ -1,57 +1,44 @@
 /*
- *  Notepad (text.c)
- *
- *  Copyright 1998,99 Marcel Baur <mbaur@g26.ethz.ch>
- *  Copyright 2002 Sylvain Petreolle <spetreolle@yahoo.fr>
- *  Copyright 2002 Andriy Palamarchuk
- *  Copyright 2019-2023 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * PROJECT:    ReactOS Notepad
+ * LICENSE:    LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:    Providing a Windows-compatible simple text editor for ReactOS
+ * COPYRIGHT:  Copyright 1998,99 Marcel Baur <mbaur@g26.ethz.ch>
+ *             Copyright 2002 Sylvain Petreolle <spetreolle@yahoo.fr>
+ *             Copyright 2002 Andriy Palamarchuk
+ *             Copyright 2019-2023 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
  */
 
 #include "notepad.h"
 #include <assert.h>
 
-BOOL IsTextNonZeroASCII(const void *pText, DWORD dwSize)
+static BOOL IsTextNonZeroASCII(LPCVOID pText, DWORD dwSize)
 {
-    const signed char *pBytes = pText;
+    const signed char *pch = pText;
     while (dwSize-- > 0)
     {
-        if (*pBytes <= 0)
+        if (*pch <= 0)
             return FALSE;
 
-        ++pBytes;
+        ++pch;
     }
     return TRUE;
 }
 
-ENCODING AnalyzeEncoding(const char *pBytes, DWORD dwSize)
+static ENCODING AnalyzeEncoding(const BYTE *pBytes, DWORD dwSize)
 {
     INT flags = IS_TEXT_UNICODE_STATISTICS | IS_TEXT_UNICODE_REVERSE_STATISTICS;
 
-    if (dwSize <= 1 || IsTextNonZeroASCII(pBytes, dwSize))
-        return ENCODING_ANSI;
+    if (IsTextNonZeroASCII(pBytes, dwSize))
+        return ENCODING_DEFAULT;
 
     if (IsTextUnicode(pBytes, dwSize, &flags))
         return ENCODING_UTF16LE;
 
-    if ((flags & IS_TEXT_UNICODE_REVERSE_MASK) && !(flags & IS_TEXT_UNICODE_ILLEGAL_CHARS))
+    if (((flags & IS_TEXT_UNICODE_REVERSE_MASK) == IS_TEXT_UNICODE_REVERSE_STATISTICS))
         return ENCODING_UTF16BE;
 
     /* is it UTF-8? */
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pBytes, dwSize, NULL, 0))
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (LPCSTR)pBytes, dwSize, NULL, 0))
         return ENCODING_UTF8;
 
     return ENCODING_ANSI;
@@ -165,12 +152,12 @@ ProcessNewLinesAndNulls(HLOCAL *phLocal, LPWSTR *ppszText, SIZE_T *pcchText, EOL
 BOOL
 ReadText(HANDLE hFile, HLOCAL *phLocal, ENCODING *pencFile, EOLN *piEoln)
 {
-    PCHAR pBytes = NULL;
+    LPBYTE pBytes = NULL;
     LPWSTR pszText, pszNewText = NULL;
     DWORD dwSize, dwPos;
     SIZE_T i, cchText, cbContent;
     BOOL bSuccess = FALSE;
-    ENCODING encFile = ENCODING_ANSI;
+    ENCODING encFile;
     UINT iCodePage;
     HANDLE hMapping = INVALID_HANDLE_VALUE;
     HLOCAL hNewLocal;
@@ -191,7 +178,7 @@ ReadText(HANDLE hFile, HLOCAL *phLocal, ENCODING *pencFile, EOLN *piEoln)
 
         *phLocal = hNewLocal;
         *piEoln = EOLN_CRLF;
-        *pencFile = ENCODING_UTF8;
+        *pencFile = ENCODING_DEFAULT;
         return TRUE;
     }
 
@@ -222,7 +209,7 @@ ReadText(HANDLE hFile, HLOCAL *phLocal, ENCODING *pencFile, EOLN *piEoln)
     }
     else
     {
-        encFile = AnalyzeEncoding((const char *)pBytes, dwSize);
+        encFile = AnalyzeEncoding(pBytes, dwSize);
     }
 
     switch(encFile)
@@ -265,7 +252,7 @@ ReadText(HANDLE hFile, HLOCAL *phLocal, ENCODING *pencFile, EOLN *piEoln)
         cchText = 0;
         if (cbContent > 0)
         {
-            cchText = MultiByteToWideChar(iCodePage, 0, &pBytes[dwPos], (INT)cbContent, NULL, 0);
+            cchText = MultiByteToWideChar(iCodePage, 0, (LPCSTR)&pBytes[dwPos], (INT)cbContent, NULL, 0);
             if (cchText == 0)
                 goto done;
         }
@@ -280,8 +267,8 @@ ReadText(HANDLE hFile, HLOCAL *phLocal, ENCODING *pencFile, EOLN *piEoln)
         /* Do ANSI-to-Wide conversion */
         if (cbContent > 0)
         {
-            if (!MultiByteToWideChar(iCodePage, 0,
-                                     &pBytes[dwPos], (INT)cbContent, pszNewText, (INT)cchText))
+            if (!MultiByteToWideChar(iCodePage, 0, (LPCSTR)&pBytes[dwPos], (INT)cbContent,
+                                     pszNewText, (INT)cchText))
             {
                 goto done;
             }

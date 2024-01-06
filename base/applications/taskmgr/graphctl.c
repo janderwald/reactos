@@ -1,9 +1,10 @@
 /*
  * PROJECT:     ReactOS Task Manager
- * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     Graph plotting controls
+ * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:     Graph Plotting controls.
  * COPYRIGHT:   Copyright 2002 Robert Dickenson <robd@reactos.org>
  *              Copyright 2021 Wu Haotian <rigoligo03@gmail.com>
+ *              Copyright 2021 Valerij Zaporogeci <vlrzprgts@gmail.com>
  */
 
 #include "precomp.h"
@@ -116,6 +117,9 @@ GraphCtrl_Dispose(PTM_GRAPH_CONTROL inst)
     if (inst->PointBuffer)
         HeapFree(GetProcessHeap(), 0, inst->PointBuffer);
 
+    if (inst->hdcGraph)
+        DeleteDC(inst->hdcGraph);
+
     if (inst->hPenGrid)
         DeleteObject(inst->hPenGrid);
 
@@ -130,9 +134,6 @@ GraphCtrl_Dispose(PTM_GRAPH_CONTROL inst)
 
     if (inst->hbmGraph)
         DeleteObject(inst->hbmGraph);
-
-    if (inst->hdcGraph)
-        DeleteObject(inst->hdcGraph);
 }
 
 void

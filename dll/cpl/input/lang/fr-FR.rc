@@ -110,7 +110,7 @@ BEGIN
     IDS_CTRL_SHIFT "Ctrl+Maj"
     IDS_LEFT_ALT_SHIFT "Alt Gauche+Maj"
     IDS_SWITCH_BET_INLANG "Changer les langues de saisie"
-    IDS_REBOOT_NOW, "Redémarrer maintenant ?"
+    IDS_REBOOT_NOW "Il est nécessaire de redémarrer le système afin que les changements prennent effet. Redémarrer maintenant ?"
 END
 
 /* FIXME : À améliorer/compléter */
@@ -247,7 +247,7 @@ BEGIN
     IDS_UKRAINIAN_LAYOUT "Ukrainien"
     IDS_UKRAINIAN_STUDENT_LAYOUT "Ukrainien (Étudiants)"
     IDS_UNITED_KINGDOM_LAYOUT "Royaume-Uni"
-    IDS_UNITED_STATES_DVIRAK_LAYOUT "États-Unis-Dvorak"
+    IDS_UNITED_STATES_DVORAK_LAYOUT "États-Unis-Dvorak"
     IDS_UNITED_STATES_DVORAK_FOR_LEFT_HAND_LAYOUT "États-Unis-Dvorak pour la main gauche"
     IDS_UNITED_STATES_DVORAK_FOR_RIGHT_HAND_LAYOUT "États-Unis-Dvorak pour la main droite"
     IDS_UNITED_STATES_INTERNATIONAL_LAYOUT "États-Unis-International"

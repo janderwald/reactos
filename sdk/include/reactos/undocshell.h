@@ -189,6 +189,8 @@ DWORD WINAPI SHNetConnectionDialog(
     LPCWSTR lpstrRemoteName,
     DWORD dwType);
 
+BOOL WINAPI SHIsTempDisplayMode(VOID);
+
 /****************************************************************************
  * Cabinet Window Messages
  */
@@ -236,6 +238,22 @@ HICON WINAPI SHGetFileIcon(
     UINT uFlags);
 
 BOOL WINAPI FileIconInit(BOOL bFullInit);
+
+WORD WINAPI
+ExtractIconResInfoA(
+    _In_ HANDLE hHandle,
+    _In_ LPCSTR lpFileName,
+    _In_ WORD wIndex,
+    _Out_ LPWORD lpSize,
+    _Out_ LPHANDLE lpIcon);
+
+WORD WINAPI
+ExtractIconResInfoW(
+    _In_ HANDLE hHandle,
+    _In_ LPCWSTR lpFileName,
+    _In_ WORD wIndex,
+    _Out_ LPWORD lpSize,
+    _Out_ LPHANDLE lpIcon);
 
 /****************************************************************************
  * File Menu Routines
@@ -480,6 +498,11 @@ BOOL WINAPI PathIsSameRootAW(LPCVOID lpszPath1, LPCVOID lpszPath2);
 
 BOOL WINAPI PathFindOnPathAW(LPVOID sFile, LPCVOID *sOtherDirs);
 
+BOOL WINAPI PathIsEqualOrSubFolder(_In_ LPCWSTR pszFile1OrCSIDL, _In_ LPCWSTR pszFile2);
+
+BOOL WINAPI PathIsTemporaryA(_In_ LPCSTR Str);
+BOOL WINAPI PathIsTemporaryW(_In_ LPCWSTR Str);
+
 /****************************************************************************
  * Shell File Operations error codes - SHFileOperationA/W
  */
@@ -644,12 +667,70 @@ BOOL WINAPI SHInitRestricted(LPCVOID unused, LPCVOID inpRegKey);
 #define SMC_EXEC 4
 INT WINAPI Shell_GetCachedImageIndex(LPCWSTR szPath, INT nIndex, UINT bSimulateDoc);
 
+HRESULT WINAPI SHCreatePropertyBag(_In_ REFIID riid, _Out_ void **ppvObj);
+HRESULT WINAPI SHLimitInputCombo(HWND hWnd, IShellFolder *psf);
 HRESULT WINAPI SHGetImageList(int iImageList, REFIID riid, void **ppv);
 
 BOOL WINAPI GUIDFromStringW(
     _In_   PCWSTR psz,
     _Out_  LPGUID pguid
     );
+
+LPSTR WINAPI SheRemoveQuotesA(LPSTR psz);
+LPWSTR WINAPI SheRemoveQuotesW(LPWSTR psz);
+
+/* Flags for Int64ToString and LargeIntegerToString */
+#define FMT_USE_NUMDIGITS 0x01
+#define FMT_USE_LEADZERO  0x02
+#define FMT_USE_GROUPING  0x04
+#define FMT_USE_DECIMAL   0x08
+#define FMT_USE_THOUSAND  0x10
+#define FMT_USE_NEGNUMBER 0x20
+
+INT WINAPI
+Int64ToString(
+    _In_ LONGLONG llValue,
+    _Out_writes_z_(cchOut) LPWSTR pszOut,
+    _In_ UINT cchOut,
+    _In_ BOOL bUseFormat,
+    _In_opt_ const NUMBERFMTW *pNumberFormat,
+    _In_ DWORD dwNumberFlags);
+
+INT WINAPI
+LargeIntegerToString(
+    _In_ const LARGE_INTEGER *pLargeInt,
+    _Out_writes_z_(cchOut) LPWSTR pszOut,
+    _In_ UINT cchOut,
+    _In_ BOOL bUseFormat,
+    _In_opt_ const NUMBERFMTW *pNumberFormat,
+    _In_ DWORD dwNumberFlags);
+
+LPWSTR WINAPI
+ShortSizeFormatW(
+    _In_ DWORD dwNumber,
+    _Out_writes_(0x8FFF) LPWSTR pszBuffer);
+
+BOOL WINAPI SHOpenEffectiveToken(_Out_ LPHANDLE phToken);
+DWORD WINAPI SHGetUserSessionId(_In_opt_ HANDLE hToken);
+
+typedef HRESULT (CALLBACK *PRIVILEGED_FUNCTION)(LPARAM lParam);
+
+HRESULT WINAPI
+SHInvokePrivilegedFunctionW(
+    _In_z_ LPCWSTR pszName,
+    _In_ PRIVILEGED_FUNCTION fn,
+    _In_opt_ LPARAM lParam);
+
+BOOL WINAPI
+SHTestTokenPrivilegeW(_In_opt_ HANDLE hToken, _In_z_ LPCWSTR lpName);
+BOOL WINAPI IsSuspendAllowed(VOID);
+
+BOOL WINAPI
+Activate_RunDLL(
+    _In_ HWND hwnd,
+    _In_ HINSTANCE hinst,
+    _In_ LPCWSTR cmdline,
+    _In_ INT cmdshow);
 
 /*****************************************************************************
  * Shell32 resources
@@ -740,6 +821,14 @@ LONG WINAPI SHRegQueryValueExW(
 #else
     #define SHRegQueryValueEx SHRegQueryValueExA
 #endif
+
+EXTERN_C
+HRESULT WINAPI
+CopyStreamUI(
+    _In_ IStream *pSrc,
+    _Out_ IStream *pDst,
+    _Inout_opt_ IProgressDialog *pProgress,
+    _In_opt_ DWORDLONG dwlSize);
 
 /*****************************************************************************
  * INVALID_FILETITLE_CHARACTERS

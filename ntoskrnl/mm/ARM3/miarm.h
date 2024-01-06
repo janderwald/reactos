@@ -197,13 +197,8 @@ extern const ULONG MmProtectToValue[32];
 //
 // Special values for LoadedImports
 //
-#ifdef _WIN64
-#define MM_SYSLDR_NO_IMPORTS   (PVOID)0xFFFFFFFFFFFFFFFEULL
-#define MM_SYSLDR_BOOT_LOADED  (PVOID)0xFFFFFFFFFFFFFFFFULL
-#else
-#define MM_SYSLDR_NO_IMPORTS   (PVOID)0xFFFFFFFE
-#define MM_SYSLDR_BOOT_LOADED  (PVOID)0xFFFFFFFF
-#endif
+#define MM_SYSLDR_NO_IMPORTS   ((PVOID)(ULONG_PTR)-2)
+#define MM_SYSLDR_BOOT_LOADED  ((PVOID)(ULONG_PTR)-1)
 #define MM_SYSLDR_SINGLE_ENTRY 0x1
 
 //
@@ -867,7 +862,7 @@ MI_MAKE_PROTOTYPE_PTE(IN PMMPTE NewPte,
 
     /*
      * Prototype PTEs are only valid in paged pool by design, this little trick
-     * lets us only use 30 bits for the adress of the PTE, as long as the area
+     * lets us only use 30 bits for the address of the PTE, as long as the area
      * stays 1024MB At most.
      */
     Offset = (ULONG_PTR)PointerPte - (ULONG_PTR)MmPagedPoolStart;

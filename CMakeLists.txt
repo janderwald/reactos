@@ -232,7 +232,8 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
                     -D_WIN32_WINNT=0x502
                     -D_WIN32_WINDOWS=0x502
                     -D_SETUPAPI_VER=0x502
-                    -DMINGW_HAS_SECURE_API=1)
+                    -DMINGW_HAS_SECURE_API=1
+                    -DDLL_EXPORT_VERSION=${DLL_EXPORT_VERSION})
 
     # Arch Options
     if(ARCH STREQUAL "i386")
@@ -335,14 +336,12 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     add_subdirectory(sdk/include/reactos/mc)
     add_subdirectory(sdk/include/asm)
 
-    if(NO_ROSSYM)
+    if(ARCH MATCHES "64$")
+        include(sdk/cmake/baseaddress64.cmake)  
+    elseif(NO_ROSSYM)
         include(sdk/cmake/baseaddress_dwarf.cmake)
     elseif(MSVC)
-        if (ARCH STREQUAL "amd64")
-            include(sdk/cmake/baseaddress_msvc_x64.cmake)
-        else()
-            include(sdk/cmake/baseaddress_msvc.cmake)
-        endif()
+        include(sdk/cmake/baseaddress_msvc.cmake)
     else()
         include(sdk/cmake/baseaddress.cmake)
     endif()

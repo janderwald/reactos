@@ -522,7 +522,11 @@ BOOL _ILHACKCompareSimpleIds(LPCITEMIDLIST pidltemp1, LPCITEMIDLIST pidltemp2)
     }
     else
     {
-        return FALSE;
+        if ((pidltemp1->mkid.cb != pidltemp2->mkid.cb) ||
+            !RtlEqualMemory((BYTE*)&pidltemp1->mkid, (BYTE*)&pidltemp2->mkid, pidltemp1->mkid.cb))
+        {
+            return FALSE;
+        }
     }
 
     return TRUE;
@@ -1291,7 +1295,11 @@ BOOL WINAPI SHGetPathFromIDListA(LPCITEMIDLIST pidl, LPSTR pszPath)
  *
  * See SHGetPathFromIDListA.
  */
-BOOL WINAPI SHGetPathFromIDListW(LPCITEMIDLIST pidl, LPWSTR pszPath)
+HRESULT WINAPI
+SHGetPathCchFromIDListW(
+    _In_ LPCITEMIDLIST pidl,
+    _Out_writes_(cchPathMax) LPWSTR pszPath,
+    _In_ SIZE_T cchPathMax)
 {
     HRESULT hr;
     LPCITEMIDLIST pidlLast;
@@ -1302,33 +1310,40 @@ BOOL WINAPI SHGetPathFromIDListW(LPCITEMIDLIST pidl, LPWSTR pszPath)
     TRACE_(shell)("(pidl=%p,%p)\n", pidl, pszPath);
     pdump(pidl);
 
-    *pszPath = '\0';
+    *pszPath = UNICODE_NULL;
     if (!pidl)
-        return FALSE;
+        return E_FAIL;
 
     hr = SHBindToParent(pidl, &IID_IShellFolder, (VOID**)&psfFolder, &pidlLast);
     if (FAILED(hr))
     {
         ERR("SHBindToParent failed: %x\n", hr);
-        return FALSE;
+        return hr;
     }
 
     dwAttributes = SFGAO_FILESYSTEM;
     hr = IShellFolder_GetAttributesOf(psfFolder, 1, &pidlLast, &dwAttributes);
-    if (FAILED(hr) || !(dwAttributes & SFGAO_FILESYSTEM)) {
+    if (FAILED(hr) || !(dwAttributes & SFGAO_FILESYSTEM))
+    {
         WARN("Wrong dwAttributes or GetAttributesOf failed: %x\n", hr);
         IShellFolder_Release(psfFolder);
-        return FALSE;
+        return E_FAIL;
     }
-                
+
     hr = IShellFolder_GetDisplayNameOf(psfFolder, pidlLast, SHGDN_FORPARSING, &strret);
     IShellFolder_Release(psfFolder);
-    if (FAILED(hr)) return FALSE;
+    if (FAILED(hr))
+        return hr;
 
-    hr = StrRetToBufW(&strret, pidlLast, pszPath, MAX_PATH);
+    hr = StrRetToBufW(&strret, pidlLast, pszPath, cchPathMax);
 
     TRACE_(shell)("-- %s, 0x%08x\n",debugstr_w(pszPath), hr);
-    return SUCCEEDED(hr);
+    return hr;
+}
+
+BOOL WINAPI SHGetPathFromIDListW(LPCITEMIDLIST pidl, LPWSTR pszPath)
+{
+    return SUCCEEDED(SHGetPathCchFromIDListW(pidl, pszPath, MAX_PATH));
 }
 
 /*************************************************************************

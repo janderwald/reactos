@@ -104,7 +104,7 @@ NTSTATUS
 (NTAPI *PADJUSTRESOURCELIST)(
     _In_ PBUS_HANDLER BusHandler,
     _In_ PBUS_HANDLER RootHandler,
-    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST *Resources
+    _Inout_ PIO_RESOURCE_REQUIREMENTS_LIST* pResourceList
 );
 
 typedef
@@ -113,11 +113,11 @@ NTSTATUS
     _In_ PBUS_HANDLER BusHandler,
     _In_ PBUS_HANDLER RootHandler,
     _In_ PUNICODE_STRING RegistryPath,
-    _In_ PUNICODE_STRING DriverClassName,
+    _In_opt_ PUNICODE_STRING DriverClassName,
     _In_ PDRIVER_OBJECT DriverObject,
-    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_opt_ PDEVICE_OBJECT DeviceObject,
     _In_ ULONG SlotNumber,
-    _Inout_ PCM_RESOURCE_LIST *AllocatedResources
+    _Inout_ PCM_RESOURCE_LIST* AllocatedResources
 );
 
 typedef
@@ -126,7 +126,7 @@ ULONG
     _In_ PBUS_HANDLER BusHandler,
     _In_ PBUS_HANDLER RootHandler,
     _In_ ULONG SlotNumber,
-    _Out_ PVOID Buffer,
+    _In_ PVOID Buffer,
     _In_ ULONG Offset,
     _In_ ULONG Length
 );
@@ -289,8 +289,6 @@ extern NTHALAPI PUCHAR KdComPortInUse;
 //
 // BIOS call structure
 //
-#ifdef _M_AMD64
-
 typedef struct _X86_BIOS_REGISTERS
 {
     ULONG Eax;
@@ -303,8 +301,6 @@ typedef struct _X86_BIOS_REGISTERS
     USHORT SegDs;
     USHORT SegEs;
 } X86_BIOS_REGISTERS, *PX86_BIOS_REGISTERS;
-
-#endif // _M_AMD64
 
 #endif
 #endif

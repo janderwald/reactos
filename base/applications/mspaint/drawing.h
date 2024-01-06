@@ -1,9 +1,8 @@
 /*
- * PROJECT:     PAINT for ReactOS
- * LICENSE:     LGPL
- * FILE:        base/applications/mspaint/drawing.h
- * PURPOSE:     The drawing functions used by the tools
- * PROGRAMMERS: Benedikt Freisen
+ * PROJECT:    PAINT for ReactOS
+ * LICENSE:    LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:    The drawing functions used by the tools
+ * COPYRIGHT:  Copyright 2015 Benedikt Freisen <b.freisen@gmx.net>
  */
 
 #pragma once
@@ -28,15 +27,15 @@ void Replace(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF 
 
 void Airbrush(HDC hdc, LONG x, LONG y, COLORREF color, LONG r);
 
-void Brush(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF color, LONG style);
+void Brush(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF color, LONG style, INT thickness);
 
 void RectSel(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2);
 
-void SelectionFrame(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF system_selection_color);
+void Text(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF bg, LPCWSTR lpchText, HFONT font, LONG style);
 
-void Text(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF bg, LPCTSTR lpchText, HFONT font, LONG style);
-
-extern BOOL
+BOOL
 ColorKeyedMaskBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
-                  HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP hbmMask, int xMask, int yMask,
-                  DWORD dwRop, COLORREF keyColor);
+                  HDC hdcSrc, int nXSrc, int nYSrc, int nSrcWidth, int nSrcHeight,
+                  HBITMAP hbmMask, COLORREF keyColor);
+
+void DrawXorRect(HDC hdc, const RECT *prc);

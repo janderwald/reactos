@@ -1,23 +1,10 @@
 /*
- *  Notepad (settings.c)
- *
- *  Copyright 1998,99 Marcel Baur <mbaur@g26.ethz.ch>
- *  Copyright 2002 Sylvain Petreolle <spetreolle@yahoo.fr>
- *  Copyright 2002 Andriy Palamarchuk
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * PROJECT:    ReactOS Notepad
+ * LICENSE:    LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:    Providing a Windows-compatible simple text editor for ReactOS
+ * COPYRIGHT:  Copyright 1998,99 Marcel Baur <mbaur@g26.ethz.ch>
+ *             Copyright 2002 Sylvain Petreolle <spetreolle@yahoo.fr>
+ *             Copyright 2002 Andriy Palamarchuk
  */
 
 #include "notepad.h"
@@ -100,37 +87,55 @@ static BOOL QueryBool(HKEY hKey, LPCTSTR pszValueName, BOOL *pbResult)
     return TRUE;
 }
 
-static BOOL QueryString(HKEY hKey, LPCTSTR pszValueName, LPTSTR pszResult, DWORD dwResultSize)
+static BOOL QueryString(HKEY hKey, LPCTSTR pszValueName, LPTSTR pszResult, DWORD dwResultLength)
 {
-    return QueryGeneric(hKey, pszValueName, REG_SZ, pszResult, dwResultSize * sizeof(TCHAR));
+    if (dwResultLength == 0)
+        return FALSE;
+    if (!QueryGeneric(hKey, pszValueName, REG_SZ, pszResult, dwResultLength * sizeof(TCHAR)))
+        return FALSE;
+    pszResult[dwResultLength - 1] = 0; /* Avoid buffer overrun */
+    return TRUE;
 }
 
 /***********************************************************************
- *
  *           NOTEPAD_LoadSettingsFromRegistry
  *
  *  Load settings from registry HKCU\Software\Microsoft\Notepad.
  */
 void NOTEPAD_LoadSettingsFromRegistry(void)
 {
-    HKEY hKey = NULL;
+    HKEY hKey;
     HFONT hFont;
-    DWORD dwPointSize = 0;
-    INT base_length, dx, dy;
+    DWORD dwPointSize, cx, cy;
+    DWORD cxScreen = GetSystemMetrics(SM_CXSCREEN), cyScreen = GetSystemMetrics(SM_CYSCREEN);
 
-    base_length = (GetSystemMetrics(SM_CXSCREEN) > GetSystemMetrics(SM_CYSCREEN)) ?
-                  GetSystemMetrics(SM_CYSCREEN) : GetSystemMetrics(SM_CXSCREEN);
+    /* Set the default values */
+    Globals.bShowStatusBar = TRUE;
+    Globals.bWrapLongLines = FALSE;
+    SetRect(&Globals.lMargins, 750, 1000, 750, 1000);
+    ZeroMemory(&Globals.lfFont, sizeof(Globals.lfFont));
+    Globals.lfFont.lfCharSet = DEFAULT_CHARSET;
+    dwPointSize = 100;
+    Globals.lfFont.lfWeight = FW_NORMAL;
+    Globals.lfFont.lfPitchAndFamily = FIXED_PITCH | FF_MODERN;
+    Globals.main_rect.left = CW_USEDEFAULT;
+    Globals.main_rect.top = CW_USEDEFAULT;
+    cx = min((cxScreen * 3) / 4, 640);
+    cy = min((cyScreen * 3) / 4, 480);
 
-    dx = (INT)(base_length * .95);
-    dy = dx * 3 / 4;
-    SetRect(&Globals.main_rect, 0, 0, dx, dy);
+    /* FIXME: Globals.fSaveWindowPositions = FALSE; */
+    /* FIXME: Globals.fMLE_is_broken = FALSE; */
 
-    if (RegOpenKey(HKEY_CURRENT_USER, s_szRegistryKey, &hKey) == ERROR_SUCCESS)
+    /* Open the target registry key */
+    if (RegOpenKey(HKEY_CURRENT_USER, s_szRegistryKey, &hKey) != ERROR_SUCCESS)
+        hKey = NULL;
+
+    /* Load the values from registry */
+    if (hKey)
     {
         QueryByte(hKey, _T("lfCharSet"), &Globals.lfFont.lfCharSet);
         QueryByte(hKey, _T("lfClipPrecision"), &Globals.lfFont.lfClipPrecision);
         QueryDword(hKey, _T("lfEscapement"), (DWORD*)&Globals.lfFont.lfEscapement);
-        QueryString(hKey, _T("lfFaceName"), Globals.lfFont.lfFaceName, ARRAY_SIZE(Globals.lfFont.lfFaceName));
         QueryByte(hKey, _T("lfItalic"), &Globals.lfFont.lfItalic);
         QueryDword(hKey, _T("lfOrientation"), (DWORD*)&Globals.lfFont.lfOrientation);
         QueryByte(hKey, _T("lfOutPrecision"), &Globals.lfFont.lfOutPrecision);
@@ -140,10 +145,10 @@ void NOTEPAD_LoadSettingsFromRegistry(void)
         QueryByte(hKey, _T("lfUnderline"), &Globals.lfFont.lfUnderline);
         QueryDword(hKey, _T("lfWeight"), (DWORD*)&Globals.lfFont.lfWeight);
         QueryDword(hKey, _T("iPointSize"), &dwPointSize);
+
         QueryBool(hKey, _T("fWrap"), &Globals.bWrapLongLines);
         QueryBool(hKey, _T("fStatusBar"), &Globals.bShowStatusBar);
-        QueryString(hKey, _T("szHeader"), Globals.szHeader, ARRAY_SIZE(Globals.szHeader));
-        QueryString(hKey, _T("szTrailer"), Globals.szFooter, ARRAY_SIZE(Globals.szFooter));
+
         QueryDword(hKey, _T("iMarginLeft"), (DWORD*)&Globals.lMargins.left);
         QueryDword(hKey, _T("iMarginTop"), (DWORD*)&Globals.lMargins.top);
         QueryDword(hKey, _T("iMarginRight"), (DWORD*)&Globals.lMargins.right);
@@ -151,69 +156,51 @@ void NOTEPAD_LoadSettingsFromRegistry(void)
 
         QueryDword(hKey, _T("iWindowPosX"), (DWORD*)&Globals.main_rect.left);
         QueryDword(hKey, _T("iWindowPosY"), (DWORD*)&Globals.main_rect.top);
-        QueryDword(hKey, _T("iWindowPosDX"), (DWORD*)&dx);
-        QueryDword(hKey, _T("iWindowPosDY"), (DWORD*)&dy);
+        QueryDword(hKey, _T("iWindowPosDX"), &cx);
+        QueryDword(hKey, _T("iWindowPosDY"), &cy);
 
-        Globals.main_rect.right = Globals.main_rect.left + dx;
-        Globals.main_rect.bottom = Globals.main_rect.top + dy;
-
-        /* invert value because DIALOG_ViewStatusBar will be called to show it */
-        Globals.bShowStatusBar = !Globals.bShowStatusBar;
-
-        if (dwPointSize != 0)
-            Globals.lfFont.lfHeight = HeightFromPointSize(dwPointSize);
-        else
-            Globals.lfFont.lfHeight = HeightFromPointSize(100);
-
-        RegCloseKey(hKey);
+        QueryString(hKey, _T("searchString"), Globals.szFindText, _countof(Globals.szFindText));
+        QueryString(hKey, _T("replaceString"), Globals.szReplaceText, _countof(Globals.szReplaceText));
     }
-    else
+
+    Globals.lfFont.lfHeight = HeightFromPointSize(dwPointSize);
+    Globals.main_rect.right = Globals.main_rect.left + cx;
+    Globals.main_rect.bottom = Globals.main_rect.top + cy;
+
+    if (!hKey || !QueryString(hKey, _T("lfFaceName"),
+                              Globals.lfFont.lfFaceName, _countof(Globals.lfFont.lfFaceName)))
     {
-        /* If no settings are found in the registry, then use default values */
-        Globals.bShowStatusBar = FALSE;
-        Globals.bWrapLongLines = FALSE;
-        SetRect(&Globals.lMargins, 750, 1000, 750, 1000);
-
-        /* FIXME: Globals.fSaveWindowPositions = FALSE; */
-        /* FIXME: Globals.fMLE_is_broken = FALSE; */
-
-        LoadString(Globals.hInstance, STRING_PAGESETUP_HEADERVALUE, Globals.szHeader,
-                   ARRAY_SIZE(Globals.szHeader));
-        LoadString(Globals.hInstance, STRING_PAGESETUP_FOOTERVALUE, Globals.szFooter,
-                   ARRAY_SIZE(Globals.szFooter));
-
-        ZeroMemory(&Globals.lfFont, sizeof(Globals.lfFont));
-        Globals.lfFont.lfCharSet = DEFAULT_CHARSET;
-        Globals.lfFont.lfClipPrecision = CLIP_STROKE_PRECIS;
-        Globals.lfFont.lfEscapement = 0;
         LoadString(Globals.hInstance, STRING_DEFAULTFONT, Globals.lfFont.lfFaceName,
-                   ARRAY_SIZE(Globals.lfFont.lfFaceName));
-        Globals.lfFont.lfItalic = FALSE;
-        Globals.lfFont.lfOrientation = 0;
-        Globals.lfFont.lfOutPrecision = OUT_STRING_PRECIS;
+                   _countof(Globals.lfFont.lfFaceName));
+    }
 
-        /* WORKAROUND: Far East Asian users may not have suitable fixed-pitch fonts. */
-        switch (PRIMARYLANGID(GetUserDefaultLangID()))
-        {
-            case LANG_CHINESE:
-            case LANG_JAPANESE:
-            case LANG_KOREAN:
-                Globals.lfFont.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
-                break;
-            default:
-                Globals.lfFont.lfPitchAndFamily = FIXED_PITCH | FF_MODERN;
-                break;
-        }
+    if (!hKey || !QueryString(hKey, _T("szHeader"), Globals.szHeader, _countof(Globals.szHeader)))
+    {
+        LoadString(Globals.hInstance, STRING_PAGESETUP_HEADERVALUE, Globals.szHeader,
+                   _countof(Globals.szHeader));
+    }
 
-        Globals.lfFont.lfQuality = PROOF_QUALITY;
-        Globals.lfFont.lfStrikeOut = FALSE;
-        Globals.lfFont.lfUnderline = FALSE;
-        Globals.lfFont.lfWeight = FW_NORMAL;
-        Globals.lfFont.lfHeight = HeightFromPointSize(100);
+    if (!hKey || !QueryString(hKey, _T("szTrailer"), Globals.szFooter, _countof(Globals.szFooter)))
+    {
+        LoadString(Globals.hInstance, STRING_PAGESETUP_FOOTERVALUE, Globals.szFooter,
+                   _countof(Globals.szFooter));
+    }
+
+    if (hKey)
+        RegCloseKey(hKey);
+
+    /* WORKAROUND: Far East Asian users may not have suitable fixed-pitch fonts. */
+    switch (PRIMARYLANGID(GetUserDefaultLangID()))
+    {
+        case LANG_CHINESE:
+        case LANG_JAPANESE:
+        case LANG_KOREAN:
+            Globals.lfFont.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
+            break;
     }
 
     hFont = CreateFontIndirect(&Globals.lfFont);
-    SendMessage(Globals.hEdit, WM_SETFONT, (WPARAM)hFont, (LPARAM)TRUE);
+    SendMessage(Globals.hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
     if (hFont)
     {
         if (Globals.hFont)
@@ -233,7 +220,6 @@ static BOOL SaveString(HKEY hKey, LPCTSTR pszValueNameT, LPCTSTR pszValue)
 }
 
 /***********************************************************************
- *
  *           NOTEPAD_SaveSettingsToRegistry
  *
  *  Save settings to registry HKCU\Software\Microsoft\Notepad.
@@ -274,6 +260,8 @@ void NOTEPAD_SaveSettingsToRegistry(void)
         SaveDword(hKey, _T("iWindowPosY"), Globals.main_rect.top);
         SaveDword(hKey, _T("iWindowPosDX"), Globals.main_rect.right - Globals.main_rect.left);
         SaveDword(hKey, _T("iWindowPosDY"), Globals.main_rect.bottom - Globals.main_rect.top);
+        SaveString(hKey, _T("searchString"), Globals.szFindText);
+        SaveString(hKey, _T("replaceString"), Globals.szReplaceText);
 
         RegCloseKey(hKey);
     }

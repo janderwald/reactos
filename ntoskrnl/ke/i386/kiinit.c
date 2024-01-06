@@ -480,6 +480,12 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     /* Save CPU state */
     KiSaveProcessorControlState(&Prcb->ProcessorState);
 
+#if DBG
+    /* Print applied kernel features/policies and boot CPU features */
+    if (Number == 0)
+        KiReportCpuFeatures();
+#endif
+
     /* Get cache line information for this CPU */
     KiGetCacheInformation();
 
@@ -530,7 +536,7 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     else
     {
         /* FIXME */
-        DPRINT1("SMP Boot support not yet present\n");
+        DPRINT1("Starting CPU#%u - you are brave\n", Number);
     }
 
     /* Setup the Idle Thread */
@@ -805,6 +811,18 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     RtlCopyMemory(&Idt[8], &DoubleFaultEntry, sizeof(KIDTENTRY));
 
 AppCpuInit:
+    //TODO: We don't setup IPIs yet so freeze other processors here.
+    if (Cpu)
+    {
+        KeMemoryBarrier();
+        LoaderBlock->Prcb = 0;
+
+        for (;;)
+        {
+            YieldProcessor();
+        }
+    }
+
     /* Loop until we can release the freeze lock */
     do
     {

@@ -228,13 +228,6 @@ OutputHeader_stub(FILE *file)
         fprintf(file, "WINE_DECLARE_DEBUG_CHANNEL(relay);\n");
     }
 
-    /* __int128 is not supported on x86, so use a custom type */
-    fprintf(file, "\n"
-                  "typedef struct {\n"
-                  "    __int64 lower;\n"
-                  "    __int64 upper;\n"
-                  "} MyInt128;\n");
-
     fprintf(file, "\n");
 }
 
@@ -1404,6 +1397,7 @@ void usage(void)
            "  -s=<file>               generate a stub file\n"
            "  --ms                    MSVC compatibility\n"
            "  -n=<name>               name of the dll\n"
+           "  --version=<version>     Sets the version to create exports for\n"
            "  --implib                generate a def file for an import library\n"
            "  --no-private-warnings   suppress warnings about symbols that should be -private\n"
            "  -a=<arch>               set architecture to <arch> (i386, x86_64, arm, arm64)\n"

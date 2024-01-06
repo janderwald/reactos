@@ -1,3 +1,10 @@
+/*
+ * PROJECT:     ReactOS Applications Manager
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+ * PURPOSE:     Norwegian resource file
+ * TRANSLATOR:  Copyright 2009 Lars Martin Hambro (LMH1) <lars_martin4@hotmail.com>
+ */
+
 LANGUAGE LANG_NORWEGIAN, SUBLANG_NEUTRAL
 
 IDR_MAINMENU MENU
@@ -109,6 +116,7 @@ BEGIN
     IDS_TOOLTIP_INSTALL "Installere"
     IDS_TOOLTIP_UNINSTALL "Avinstallere"
     IDS_TOOLTIP_MODIFY "Rediger"
+    IDS_TOOLTIP_SELECT_ALL "Select/Deselect All"
     IDS_TOOLTIP_SETTINGS "Innstillinger"
     IDS_TOOLTIP_REFRESH "Oppdatere"
     IDS_TOOLTIP_UPDATE_DB "Update Database"
@@ -181,13 +189,10 @@ BEGIN
     IDS_APPTITLE "ReactOS programbehandler"
     IDS_APP_AUTHORS "Copyright 2009 Dmitry Chapyshev"
     IDS_SEARCH_TEXT "Søk…"
-    IDS_INSTALL "Installere"
-    IDS_UNINSTALL "Avinstallere"
-    IDS_MODIFY "Endre"
     IDS_APPS_COUNT "Program oppsummering: %d; Selected: %d"
     IDS_WELCOME_TITLE "Velkommen til ReactOS programbehandler!\n\n"
     IDS_WELCOME_TEXT "Velg en kategori til venstre, og velg et program for installere eller avinstallere programvaren.\nReactOS internettside: "
-    IDS_WELCOME_URL "https://reactos.org/"
+    IDS_WELCOME_URL "https://reactos.org"
     IDS_INSTALLED "Installert"
     IDS_AVAILABLEFORINST "Tilgjengelig for installasjon"
     IDS_UPDATES "Oppdateringer"
@@ -206,7 +211,6 @@ BEGIN
     IDS_INTEG_CHECK_FAIL "The package did not pass the integrity check, it may have been corrupted or tampered with during downloading. Running the software is not recommended."
     IDS_INTERRUPTED_DOWNLOAD "The download was interrupted. Check connection to Internet."
     IDS_UNABLE_TO_WRITE "Unable to write to disk. Disk may be at capacity."
-    IDS_SELECT_ALL "Select/Deselect All"
     IDS_INSTALL_SELECTED "Install Selected"
     IDS_SELECTEDFORINST "Selected for installation"
     IDS_MISMATCH_CERT_INFO "The certificate used is unknown:\nSubject: %s\nIssuer: %s\nDo you want to continue anyway?"

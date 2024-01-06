@@ -16,6 +16,7 @@ BEGIN
     "^X", CMD_CUT
     "^Z", CMD_UNDO
     VK_F3, CMD_SEARCH_NEXT, VIRTKEY
+    VK_F3, CMD_SEARCH_PREV, VIRTKEY, SHIFT
     VK_F5, CMD_TIME_DATE, VIRTKEY
 END
 
@@ -123,20 +124,27 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 FONT 9, "MS UI Gothic"
 CAPTION "行へ移動"
 BEGIN
-    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, WS_CHILD | WS_BORDER | WS_TABSTOP
-    LTEXT "行番号:", 0x155, 5, 12, 41, 12, WS_CHILD | WS_TABSTOP | ES_NUMBER
-    DEFPUSHBUTTON "OK", IDOK, 75, 30, 40, 15, WS_CHILD | WS_TABSTOP
-    PUSHBUTTON "キャンセル", IDCANCEL, 120, 30, 40, 15, WS_CHILD | WS_TABSTOP
+    LTEXT "行番号:", 0x155, 5, 12, 41, 12
+    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, ES_NUMBER
+    DEFPUSHBUTTON "OK", IDOK, 75, 30, 40, 15
+    PUSHBUTTON "キャンセル", IDCANCEL, 120, 30, 40, 15
+END
+
+DIALOG_PRINTING DIALOG 0, 0, 160, 100
+CAPTION "印刷中"
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
+FONT 9, "MS UI Gothic"
+BEGIN
+    CTEXT "印刷ジョブを開始中...", IDC_PRINTING_STATUS, 5, 10, 150, 15
+    CTEXT "(ファイル名)", IDC_PRINTING_FILENAME, 5, 35, 150, 15
+    CTEXT "ページ %u", IDC_PRINTING_PAGE, 5, 55, 150, 15
+    PUSHBUTTON "キャンセル", IDCANCEL, 50, 75, 60, 20
 END
 
 STRINGTABLE
 BEGIN
-    STRING_PAGESETUP_HEADERVALUE "&n" /* FIXME */
-    STRING_PAGESETUP_FOOTERVALUE "&s ページ" /* FIXME */
-    STRING_PAGESETUP_LEFTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_RIGHTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_TOPVALUE "25 mm" /* FIXME */
-    STRING_PAGESETUP_BOTTOMVALUE "25 mm" /* FIXME */
+    STRING_PAGESETUP_HEADERVALUE "&f"
+    STRING_PAGESETUP_FOOTERVALUE "ページ &p"
     STRING_NOTEPAD "メモ帳"
     STRING_ERROR "エラー"
     STRING_WARNING "警告"
@@ -149,9 +157,9 @@ BEGIN
     STRING_NOTEXT "何も入力されていません。\
 \n何か入力してから実行して下さい。"
     STRING_DOESNOTEXIST "ファイル '%s'\nは存在しません\n\n\
-新しいファイルを作成しますか ?"
+新しいファイルを作成しますか?"
     STRING_NOTSAVED "ファイル '%s'\nは変更されています\n\n\
-変更を保存しますか ?"
+変更を保存しますか?"
     STRING_NOTFOUND "'%s' は見つかりませんでした"
     STRING_OUT_OF_MEMORY "この操作を実行するためのメモリが\
 足りません。\nメモリの空きを増やすためにいくつかのアプリケーションを\n終了して\
@@ -168,6 +176,12 @@ BEGIN
     STRING_LINE_COLUMN "%d 行、%d 列"
     STRING_PRINTERROR "ファイル '%s'を印刷できません。\n\nプリンタがオンになっていて、正しく設定されているか確認して下さい。"
     STRING_DEFAULTFONT "ＭＳ ゴシック" /* MS Gothic */
+    STRING_LINE_NUMBER_OUT_OF_RANGE "指定された行番号は範囲外です。"
+    STRING_NOWPRINTING "印刷中..."
+    STRING_PRINTCANCELING "印刷ジョブをキャンセル中..."
+    STRING_PRINTCOMPLETE "印刷が完了しました。"
+    STRING_PRINTCANCELED "印刷がキャンセルされました。"
+    STRING_PRINTFAILED "印刷が失敗しました。"
 
     STRING_TEXT_DOCUMENT "テキスト文書"
     STRING_NOTEPAD_AUTHORS "Copyright 1997,98 Marcel Baur, 2000 Mike McCormack, 2002 Sylvain Petreolle, 2002 Andriy Palamarchuk\r\n"

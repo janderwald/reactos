@@ -269,7 +269,7 @@ DwExecIntruction(PDW2CFSTATE State, char *pc)
                 }
 
                /* These work differently. We are in a new function.
-                 * We have to parse a lea opcode to find the adress of
+                 * We have to parse a lea opcode to find the address of
                  * the jump target. This is the reference to find the
                  * appropriate C_SCOPE_TABLE. */
                 case 6: /* Filter func */
@@ -781,7 +781,7 @@ ParsePEHeaders(PFILE_INFO File)
     File->UsedSections = 0;
     File->eh_frame.idx = -1;
 
-    /* Allocate array of chars, specifiying whether to copy the section */
+    /* Allocate array of chars, specifying whether to copy the section */
     File->UseSection = malloc(File->AllSections);
 
     for (i = 0; i < File->AllSections; i++)

@@ -81,6 +81,7 @@ extern "C" {
     size_t lTotalCount;
   } _CrtMemState;
 
+
 // Debug reporting functions
 
 #ifdef _DEBUG
@@ -88,9 +89,10 @@ extern "C" {
     int __cdecl _CrtDbgReport(int reportType, const char *filename, int linenumber, const char *moduleName, const char *format, ...);
     int __cdecl _CrtDbgReportW(int reportType, const wchar_t *filename, int linenumber, const wchar_t *moduleName, const wchar_t *format, ...);
 
+    int __cdecl _CrtDbgReportV(int reportType, const char *filename, int linenumber, const char *moduleName, const char *format, va_list arglist);
+    int __cdecl _CrtDbgReportWV(int reportType, const wchar_t *filename, int linenumber, const wchar_t *moduleName, const wchar_t *format, va_list arglist);
+
 #endif
-
-
 
 
 // Assertion and error reporting
@@ -124,6 +126,8 @@ extern "C" {
     #define _RPTFW0(rptno,msg)
     #define _RPTFWN(rptno,msg,...)
 
+    #define _CrtSetReportMode(t,f) ((int)0)
+    #define _CrtSetReportFile(t,f) ((_HFILE)0)
 
 #else // _DEBUG
 
@@ -160,6 +164,9 @@ extern "C" {
 
     #define _RPTFW0(rptno,msg)      _RPT_BASEW(rptno, _CRT_WIDE(__FILE__), __LINE__, NULL, L"%s", msg)
     #define _RPTFWN(rptno,msg,...)  _RPT_BASEW(rptno, _CRT_WIDE(__FILE__), __LINE__, NULL, msg, __VA_ARGS__)
+
+    int __cdecl _CrtSetReportMode(int reportType, int reportMode);
+    _HFILE __cdecl _CrtSetReportFile(int reportType, _HFILE reportFile);
 
 #endif
 
@@ -230,8 +237,6 @@ extern "C" {
 #define _CrtGetReportHook() ((_CRT_REPORT_HOOK)0)
 #define _CrtSetReportHook2(t,f) ((int)0)
 #define _CrtSetReportHookW2(t,f) ((int)0)
-#define _CrtSetReportMode(t,f) ((int)0)
-#define _CrtSetReportFile(t,f) ((_HFILE)0)
 
 #define _CrtSetBreakAlloc(a) ((long)0)
 #define _CrtSetAllocHook(f) ((_CRT_ALLOC_HOOK)0)

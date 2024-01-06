@@ -17,11 +17,13 @@ extern void func_DrawText(void);
 extern void func_desktop(void);
 extern void func_EmptyClipboard(void);
 extern void func_EnumDisplaySettings(void);
+extern void func_GetClassInfo(void);
 extern void func_GetDCEx(void);
 extern void func_GetIconInfo(void);
 extern void func_GetKeyState(void);
 extern void func_GetMessageTime(void);
 extern void func_GetPeekMessage(void);
+extern void func_GetSetWindowInt(void);
 extern void func_GetSystemMetrics(void);
 extern void func_GetUserObjectInformation(void);
 extern void func_GetWindowPlacement(void);
@@ -51,6 +53,7 @@ extern void func_SetScrollRange(void);
 extern void func_ShowWindow(void);
 extern void func_SwitchToThisWindow(void);
 extern void func_SystemParametersInfo(void);
+extern void func_SystemMenu(void);
 extern void func_TrackMouseEvent(void);
 extern void func_VirtualKey(void);
 extern void func_WndProc(void);
@@ -72,11 +75,13 @@ const struct test winetest_testlist[] =
     { "desktop", func_desktop },
     { "EmptyClipboard", func_EmptyClipboard },
     { "EnumDisplaySettings", func_EnumDisplaySettings },
+    { "GetClassInfo", func_GetClassInfo },
     { "GetDCEx", func_GetDCEx },
     { "GetIconInfo", func_GetIconInfo },
     { "GetKeyState", func_GetKeyState },
     { "GetMessageTime", func_GetMessageTime },
     { "GetPeekMessage", func_GetPeekMessage },
+    { "GetSetWindowInt", func_GetSetWindowInt },
     { "GetSystemMetrics", func_GetSystemMetrics },
     { "GetUserObjectInformation", func_GetUserObjectInformation },
     { "GetWindowPlacement", func_GetWindowPlacement },
@@ -105,6 +110,7 @@ const struct test winetest_testlist[] =
     { "SetScrollRange", func_SetScrollRange },
     { "ShowWindow", func_ShowWindow },
     { "SwitchToThisWindow", func_SwitchToThisWindow },
+    { "SystemMenu", func_SystemMenu },
     { "SystemParametersInfo", func_SystemParametersInfo },
     { "TrackMouseEvent", func_TrackMouseEvent },
     { "VirtualKey", func_VirtualKey },

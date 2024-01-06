@@ -96,7 +96,7 @@ VOID ConInString(LPTSTR lpInput, DWORD dwLength)
     hFile = GetStdHandle(STD_INPUT_HANDLE);
     GetConsoleMode(hFile, &dwOldMode);
 
-    SetConsoleMode(hFile, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+    SetConsoleMode(hFile, ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
 
     ReadFile(hFile, (PVOID)pBuf, dwLength - 1, &dwRead, NULL);
 
@@ -106,7 +106,7 @@ VOID ConInString(LPTSTR lpInput, DWORD dwLength)
 #endif
     for (p = lpInput; *p; p++)
     {
-        if (*p == _T('\x0d'))
+        if (*p == _T('\r')) // Terminate at the carriage-return.
         {
             *p = _T('\0');
             break;
@@ -328,5 +328,45 @@ BOOL ConSetScreenColor(HANDLE hOutput, WORD wColor, BOOL bFill)
     return TRUE;
 }
 #endif
+
+#include <cjkcode.h>
+#include "wcwidth.c"
+
+// NOTE: The check against 0x80 is to avoid calling the helper function
+// for characters that we already know are not full-width.
+#define IS_FULL_WIDTH(wch)  \
+    (((USHORT)(wch) >= 0x0080) && (mk_wcwidth_cjk(wch) == 2))
+
+SIZE_T ConGetTextWidthW(PCWSTR pszText)
+{
+    SIZE_T ich, cxWidth;
+
+    if (!IsCJKCodePage(OutputCodePage))
+        return _tcslen(pszText);
+
+    for (ich = cxWidth = 0; pszText[ich]; ++ich)
+    {
+        if (IS_FULL_WIDTH(pszText[ich]))
+            cxWidth += 2;
+        else
+            ++cxWidth;
+    }
+
+    return cxWidth;
+}
+
+SIZE_T ConGetTextWidthA(PCSTR pszText)
+{
+    int cchMax;
+    PWSTR pszWide;
+    SIZE_T cxWidth;
+
+    cchMax = MultiByteToWideChar(OutputCodePage, 0, pszText, -1, NULL, 0);
+    pszWide = cmd_alloc(cchMax * sizeof(WCHAR));
+    MultiByteToWideChar(OutputCodePage, 0, pszText, -1, pszWide, cchMax);
+    cxWidth = ConGetTextWidthW(pszWide);
+    cmd_free(pszWide);
+    return cxWidth;
+}
 
 /* EOF */

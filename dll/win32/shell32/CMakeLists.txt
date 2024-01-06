@@ -40,6 +40,7 @@ list(APPEND SOURCE
     folders.cpp
     iconcache.cpp
     shell32.cpp
+    utils.cpp
     CShellItem.cpp
     CShellLink.cpp
     CFolderOptions.cpp
@@ -72,8 +73,7 @@ list(APPEND SOURCE
     COpenWithMenu.cpp
     CNewMenu.cpp
     CSendToMenu.cpp
-    CCopyToMenu.cpp
-    CMoveToMenu.cpp
+    CCopyMoveToMenu.cpp
     CShellDispatch.cpp
     CFolder.cpp
     CFolderItems.cpp

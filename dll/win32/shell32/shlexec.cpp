@@ -1823,7 +1823,7 @@ static BOOL SHELL_execute(LPSHELLEXECUTEINFOW sei, SHELL_ExecuteW32 execfunc)
     static const DWORD unsupportedFlags =
         SEE_MASK_ICON         | SEE_MASK_HOTKEY |
         SEE_MASK_CONNECTNETDRV | SEE_MASK_FLAG_DDEWAIT |
-        SEE_MASK_UNICODE       | SEE_MASK_ASYNCOK      | SEE_MASK_HMONITOR;
+        SEE_MASK_ASYNCOK      | SEE_MASK_HMONITOR;
 
     WCHAR parametersBuffer[1024], dirBuffer[MAX_PATH], wcmdBuffer[1024];
     WCHAR *wszApplicationName, *wszParameters, *wszDir, *wcmd;
@@ -2123,6 +2123,39 @@ static BOOL SHELL_execute(LPSHELLEXECUTEINFOW sei, SHELL_ExecuteW32 execfunc)
             /* terminate previous command string after the quote character */
             *end = L'\0';
             lpFile = wfileName;
+        }
+        /* We have to test sei instead of sei_tmp because sei_tmp had its
+         * input fMask modified above in SHELL_translate_idlist.
+         * This code is needed to handle the case where we only have an
+         * lpIDList with multiple CLSID/PIDL's (not 'My Computer' only) */
+        else if ((sei->fMask & SEE_MASK_IDLIST) == SEE_MASK_IDLIST)
+        {
+            WCHAR buffer[MAX_PATH], xlpFile[MAX_PATH];
+            LPWSTR space, s;
+
+            LPWSTR beg = wszApplicationName;
+            for(s = beg; (space = const_cast<LPWSTR>(strchrW(s, L' '))); s = space + 1)
+            {
+                int idx = space - sei_tmp.lpFile;
+                memcpy(buffer, sei_tmp.lpFile, idx * sizeof(WCHAR));
+                buffer[idx] = '\0';
+
+                if (SearchPathW(*sei_tmp.lpDirectory ? sei_tmp.lpDirectory : NULL,
+                    buffer, L".exe", _countof(xlpFile), xlpFile, NULL))
+                {
+                    /* separate out command from parameter string */
+                    LPCWSTR p = space + 1;
+
+                    while(isspaceW(*p))
+                        ++p;
+
+                    strcpyW(wszParameters, p);
+                    *space = L'\0';
+
+                    break;
+                }
+            }
+            lpFile = sei_tmp.lpFile;
         }
         else
         {
@@ -2531,6 +2564,8 @@ HRESULT WINAPI ShellExecCmdLine(
     }
     else
     {
+        PCWSTR apPathList[2];
+
         pchParams = SplitParams(lpCommand, szFile, _countof(szFile));
         if (szFile[0] != UNICODE_NULL && szFile[1] == L':' &&
             szFile[2] == UNICODE_NULL)
@@ -2551,30 +2586,10 @@ HRESULT WINAPI ShellExecCmdLine(
         {
             StringCchCopyW(szFile, _countof(szFile), szFile2);
         }
-        else if (SearchPathW(NULL, szFile, NULL, _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(NULL, szFile, L".exe", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(NULL, szFile, L".com", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, szFile, NULL, _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, szFile, L".exe", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, szFile, L".com", _countof(szFile2), szFile2, NULL))
-        {
-            StringCchCopyW(szFile, _countof(szFile), szFile2);
-        }
-        else if (SearchPathW(NULL, lpCommand, NULL, _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(NULL, lpCommand, L".exe", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(NULL, lpCommand, L".com", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, lpCommand, NULL, _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, lpCommand, L".exe", _countof(szFile2), szFile2, NULL) ||
-                 SearchPathW(pwszStartDir, lpCommand, L".com", _countof(szFile2), szFile2, NULL))
-        {
-            StringCchCopyW(szFile, _countof(szFile), szFile2);
-            pchParams = NULL;
-        }
 
-        if (pwszStartDir)
-        {
-            SetCurrentDirectoryW(szCurDir);
-        }
+        apPathList[0] = pwszStartDir;
+        apPathList[1] = NULL;
+        PathFindOnPathExW(szFile, apPathList, WHICH_DEFAULT);
 
         if (!(dwSeclFlags & SECL_ALLOW_NONEXE))
         {

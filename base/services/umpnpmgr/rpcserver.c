@@ -428,9 +428,11 @@ static
 CONFIGRET
 OpenConfigurationKey(
     _In_ LPCWSTR pszDeviceID,
+    _In_ DWORD ulLogConfType,
     _Out_ PHKEY phKey)
 {
     WCHAR szKeyName[MAX_PATH];
+    PCWSTR pszSubKeyName;
     HKEY hInstanceKey;
     DWORD dwError;
 
@@ -447,9 +449,26 @@ OpenConfigurationKey(
     if (dwError != ERROR_SUCCESS)
         return CR_INVALID_DEVINST;
 
+    switch (ulLogConfType)
+    {
+        case BOOT_LOG_CONF:
+        case BASIC_LOG_CONF:
+            pszSubKeyName = L"LogConf";
+            break;
+
+        case ALLOC_LOG_CONF:
+        case FILTERED_LOG_CONF:
+            pszSubKeyName = L"Control";
+            break;
+
+        default:
+            DPRINT1("Unsupported configuration type!\n");
+            return CR_FAILURE;
+    }
+
     /* Create or open the LogConf key */
     dwError = RegCreateKeyExW(hInstanceKey,
-                              L"LogConf",
+                              pszSubKeyName,
                               0,
                               NULL,
                               REG_OPTION_NON_VOLATILE,
@@ -549,6 +568,56 @@ GetConfigurationData(
 }
 
 
+static
+BOOL
+IsCallerInteractive(
+    _In_ handle_t hBinding)
+{
+    SID_IDENTIFIER_AUTHORITY NtAuthority = {SECURITY_NT_AUTHORITY};
+    HANDLE hToken;
+    PSID pInteractiveSid = NULL;
+    BOOL bInteractive = FALSE;
+    RPC_STATUS RpcStatus;
+
+    DPRINT("IsCallerInteractive(%p)\n", hBinding);
+
+    /* Allocate an interactive user sid */
+    if (!AllocateAndInitializeSid(&NtAuthority,
+                                  1,
+                                  SECURITY_INTERACTIVE_RID,
+                                  0, 0, 0, 0, 0, 0, 0,
+                                  &pInteractiveSid))
+    {
+        DPRINT1("AllocateAndInitializeSid failed\n");
+        return FALSE;
+    }
+
+    /* Impersonate the client */
+    RpcStatus = RpcImpersonateClient(hBinding);
+    if (RpcStatus != RPC_S_OK)
+    {
+        DPRINT1("RpcImpersonateClient failed (Status 0x%08lx)\n", RpcStatus);
+        goto done;
+    }
+
+    /* Open the thread token and check for interactive user membership */
+    if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, FALSE, &hToken))
+    {
+        CheckTokenMembership(hToken, pInteractiveSid, &bInteractive);
+        CloseHandle(hToken);
+    }
+
+    /* Revert the impersonation */
+    RpcRevertToSelf();
+
+done:
+    if (pInteractiveSid)
+        FreeSid(pInteractiveSid);
+
+    return bInteractive;
+}
+
+
 VOID
 __RPC_USER
 PNP_NOTIFY_HANDLE_rundown(
@@ -594,7 +663,7 @@ PNP_GetVersion(
     DPRINT("PNP_GetVersion(%p %p)\n",
            hBinding, pVersion);
 
-    *pVersion = 0x0400;
+    *pVersion = CONFIGMG_VERSION;
 
     return CR_SUCCESS;
 }
@@ -609,10 +678,12 @@ PNP_GetGlobalState(
     DWORD ulFlags)
 {
     UNREFERENCED_PARAMETER(hBinding);
-    UNREFERENCED_PARAMETER(ulFlags);
 
     DPRINT("PNP_GetGlobalState(%p %p 0x%08lx)\n",
            hBinding, pulState, ulFlags);
+
+    if (ulFlags != 0)
+        return CR_INVALID_FLAG;
 
     *pulState = CM_GLOBAL_STATE_CAN_DO_UI | CM_GLOBAL_STATE_SERVICES_AVAILABLE;
 
@@ -644,13 +715,16 @@ PNP_ReportLogOn(
     DWORD ProcessId)
 {
     DWORD ReturnValue = CR_FAILURE;
-    HANDLE hProcess;
+    HANDLE hProcess = NULL;
 
-    UNREFERENCED_PARAMETER(hBinding);
     UNREFERENCED_PARAMETER(Admin);
 
     DPRINT("PNP_ReportLogOn(%p %u, %u)\n",
            hBinding, Admin, ProcessId);
+
+    /* Fail, if the caller is not an interactive user */
+    if (!IsCallerInteractive(hBinding))
+        goto cleanup;
 
     /* Get the users token */
     hProcess = OpenProcess(PROCESS_ALL_ACCESS, TRUE, ProcessId);
@@ -4142,6 +4216,7 @@ PNP_GetFirstLogConf(
         return CR_INVALID_DEVINST;
 
     ret = OpenConfigurationKey(pDeviceID,
+                               ulLogConfType,
                                &hConfigKey);
     if (ret != CR_SUCCESS)
     {
@@ -4162,7 +4237,7 @@ PNP_GetFirstLogConf(
         goto done;
     }
 
-    DPRINT("Data size %lu\n", ulDataSize);
+    DPRINT1("Data size %lu\n", ulDataSize);
     if (ulDataSize == 0 || lpData == NULL)
     {
         DPRINT1("No config data available!\n");
@@ -4173,21 +4248,15 @@ PNP_GetFirstLogConf(
     /* Get the first tag */
     if (RegDataType == REG_RESOURCE_LIST)
     {
-        DPRINT("REG_RESOURCE_LIST\n");
+        DPRINT("REG_RESOURCE_LIST->Count %lu\n", ((PCM_RESOURCE_LIST)lpData)->Count);
 
-        DPRINT("ResourceList->Count %lu\n", ((PCM_RESOURCE_LIST)lpData)->Count);
+        /* Indicate that we reached the end of the list */
         if (((PCM_RESOURCE_LIST)lpData)->Count == 0)
         {
             DPRINT1("No resource descriptors!\n");
             ret = CR_NO_MORE_LOG_CONF;
             goto done;
         }
-
-        DPRINT("lpData %p\n", lpData);
-        DPRINT("&List[0] %p\n", &(((PCM_RESOURCE_LIST)lpData)->List[0]));
-
-        *pulLogConfTag = (DWORD)((DWORD_PTR)&(((PCM_RESOURCE_LIST)lpData)->List[0]) - (DWORD_PTR)lpData);
-        DPRINT("Offset (Tag): 0x%08lx\n", *pulLogConfTag);
     }
     else if (RegDataType == REG_RESOURCE_REQUIREMENTS_LIST)
     {
@@ -4242,6 +4311,7 @@ PNP_GetNextLogConf(
         return CR_INVALID_DEVINST;
 
     ret = OpenConfigurationKey(pDeviceID,
+                               ulLogConfType,
                                &hConfigKey);
     if (ret != CR_SUCCESS)
     {
@@ -4271,13 +4341,24 @@ PNP_GetNextLogConf(
         goto done;
     }
 
-    /* FIXME: Get the next tag */
+    /* Check if the next entry is available */
     if (RegDataType == REG_RESOURCE_LIST)
     {
-        DPRINT1("FIXME: REG_RESOURCE_LIST\n");
-        /* FIXME */
-        ret = CR_NO_MORE_LOG_CONF;
-        goto done;
+        DPRINT("REG_RESOURCE_LIST->Count %lu\n", ((PCM_RESOURCE_LIST)lpData)->Count);
+
+        /* Fail, if we are beyond the end of the list */
+        if (ulCurrentTag >= ((PCM_RESOURCE_LIST)lpData)->Count)
+        {
+            ret = CR_INVALID_LOG_CONF;
+            goto done;
+        }
+
+        /* Indicate that we reached the end of the list */
+        if (ulCurrentTag == ((PCM_RESOURCE_LIST)lpData)->Count - 1)
+        {
+            ret = CR_NO_MORE_LOG_CONF;
+            goto done;
+        }
     }
     else if (RegDataType == REG_RESOURCE_REQUIREMENTS_LIST)
     {
@@ -4286,6 +4367,9 @@ PNP_GetNextLogConf(
         ret = CR_NO_MORE_LOG_CONF;
         goto done;
     }
+
+    /* Return the next tag value */
+    *pulNextTag = ulCurrentTag + 1;
 
 done:
     if (lpData != NULL)
@@ -4390,6 +4474,7 @@ PNP_GetNextResDes(
         return CR_INVALID_DEVINST;
 
     ret = OpenConfigurationKey(pDeviceID,
+                               ulLogConfType,
                                &hConfigKey);
     if (ret != CR_SUCCESS)
     {
@@ -4604,22 +4689,22 @@ DWORD
 WINAPI
 PNP_RegisterNotification(
     handle_t hBinding,
-    DWORD ulUnknown2,
+    DWORD_PTR hRecipient,
     LPWSTR pszName,
     BYTE *pNotificationFilter,
     DWORD ulNotificationFilterSize,
     DWORD ulFlags,
     PNP_NOTIFY_HANDLE *pNotifyHandle,
-    DWORD ulUnknown8,
+    DWORD ulProcessId,
     DWORD *pulUnknown9)
 {
     PDEV_BROADCAST_DEVICEINTERFACE_W pBroadcastDeviceInterface;
     PDEV_BROADCAST_HANDLE pBroadcastDeviceHandle;
     PNOTIFY_ENTRY pNotifyData = NULL;
 
-    DPRINT1("PNP_RegisterNotification(%p %lx '%S' %p %lu 0x%lx %p %lx %p)\n",
-           hBinding, ulUnknown2, pszName, pNotificationFilter,
-           ulNotificationFilterSize, ulFlags, pNotifyHandle, ulUnknown8, pulUnknown9);
+    DPRINT1("PNP_RegisterNotification(%p %p '%S' %p %lu 0x%lx %p %lx %p)\n",
+           hBinding, hRecipient, pszName, pNotificationFilter,
+           ulNotificationFilterSize, ulFlags, pNotifyHandle, ulProcessId, pulUnknown9);
 
     if (pNotifyHandle == NULL)
         return CR_INVALID_POINTER;
@@ -4824,7 +4909,7 @@ PNP_GetVersionInternal(
 {
     UNREFERENCED_PARAMETER(hBinding);
 
-    *pwVersion = 0x501;
+    *pwVersion = WINVER;
     return CR_SUCCESS;
 }
 

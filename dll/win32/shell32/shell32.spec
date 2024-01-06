@@ -101,7 +101,7 @@
 102 stdcall SHCoCreateInstance(wstr ptr long ptr ptr)
 103 stdcall SignalFileOpen(ptr)
 104 stdcall OpenAs_RunDLLW(long long wstr long)
-105 stdcall Activate_RunDLL(long ptr ptr ptr)
+105 stdcall Activate_RunDLL(ptr ptr wstr long)
 106 stdcall AppCompat_RunDLLW(ptr ptr wstr long)
 107 stdcall CheckEscapesA(str long)
 108 stdcall CheckEscapesW(wstr long)
@@ -200,7 +200,7 @@
 201 stdcall -noname SHDesktopMessageLoop(ptr)
 202 stub -noname DDEHandleViewFolderNotify
 203 stdcall -noname AddCommasW(long wstr)
-204 stdcall -noname ShortSizeFormatW(double)
+204 stdcall -noname ShortSizeFormatW(long ptr)
 205 stdcall -noname Printer_LoadIconsW(wstr ptr ptr)
 206 stdcall ExtractAssociatedIconA(long str ptr)
 207 stdcall ExtractAssociatedIconExA(long str long long)
@@ -232,7 +232,7 @@
 233 stdcall -noname SHGetUserPicturePathW(wstr long ptr)
 234 stdcall -noname SHSetUserPicturePathW(wstr long ptr)
 235 stdcall -noname SHOpenEffectiveToken(ptr)
-236 stdcall -noname SHTestTokenPrivilegeW(ptr ptr)
+236 stdcall -noname SHTestTokenPrivilegeW(ptr wstr)
 237 stdcall -noname SHShouldShowWizards(ptr)
 238 stdcall InternalExtractIconListW(ptr wstr ptr)
 239 stdcall PathIsSlowW(wstr long)
@@ -242,7 +242,7 @@
 243 stdcall -noname SHSetShellWindowEx(ptr ptr) user32.SetShellWindowEx
 244 stdcall -noname SHSettingsChanged(ptr ptr)
 245 stdcall SHTestTokenMembership(ptr ptr)
-246 stub -noname SHInvokePrivilegedFunctionW
+246 stdcall -noname SHInvokePrivilegedFunctionW(wstr ptr ptr)
 247 stub -noname SHGetActiveConsoleSessionId
 248 stdcall -noname SHGetUserSessionId(ptr)
 249 stdcall -noname PathParseIconLocation(wstr) PathParseIconLocationW
@@ -444,7 +444,7 @@
 723 stdcall -noname SHCreateSessionKey(long ptr)
 724 stdcall -noname SHIsTempDisplayMode()
 725 stdcall -noname GetFileDescriptor(ptr long long wstr)
-726 stdcall -noname CopyStreamUI(ptr ptr ptr)
+726 stdcall -noname CopyStreamUI(ptr ptr ptr int64)
 727 stdcall SHGetImageList(long ptr ptr)
 730 stdcall RestartDialogEx(long wstr long long)
 731 stdcall -noname -stub SHRegisterDarwinLink(long long long)

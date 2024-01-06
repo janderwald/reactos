@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <aclapi.h>
 #include <shellapi.h>
+#include <strsafe.h>
+#include <stdlib.h>
 
 #include "main.h"
 #include "hexedit.h"

@@ -1,9 +1,8 @@
 /*
- * PROJECT:     PAINT for ReactOS
- * LICENSE:     LGPL
- * FILE:        base/applications/mspaint/textedit.h
- * PURPOSE:     Text editor and font chooser for the text tool
- * PROGRAMMERS: Benedikt Freisen
+ * PROJECT:    PAINT for ReactOS
+ * LICENSE:    LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:    Text editor and font chooser for the text tool
+ * COPYRIGHT:  Copyright 2015 Benedikt Freisen <b.freisen@gmx.net>
  */
 
 #pragma once
@@ -18,7 +17,7 @@ public:
 
     HWND Create(HWND hwndParent);
     void DoFillBack(HWND hwnd, HDC hDC);
-    void FixEditPos(LPCTSTR pszOldText);
+    void FixEditPos(LPCWSTR pszOldText);
     void InvalidateEditRect();
     void UpdateFont();
     BOOL GetEditRect(LPRECT prc) const;
@@ -32,6 +31,8 @@ public:
         MESSAGE_HANDLER(WM_TOOLSMODELSETTINGSCHANGED, OnToolsModelSettingsChanged)
         MESSAGE_HANDLER(WM_TOOLSMODELZOOMCHANGED, OnToolsModelZoomChanged)
         MESSAGE_HANDLER(WM_PALETTEMODELCOLORCHANGED, OnPaletteModelColorChanged)
+        MESSAGE_HANDLER(WM_MOVING, OnMoving)
+        MESSAGE_HANDLER(WM_SIZING, OnSizing)
         MESSAGE_HANDLER(WM_CHAR, OnChar)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBkGnd)
@@ -45,6 +46,9 @@ public:
         MESSAGE_HANDLER(WM_LBUTTONDOWN, OnLButtonDown);
         MESSAGE_HANDLER(EM_SETSEL, OnSetSel);
         MESSAGE_HANDLER(WM_MOUSEWHEEL, OnMouseWheel);
+        MESSAGE_HANDLER(WM_CUT, OnCut);
+        MESSAGE_HANDLER(WM_PASTE, OnPaste);
+        MESSAGE_HANDLER(WM_CLEAR, OnClear);
     END_MSG_MAP()
 
     LRESULT OnCreate(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -53,6 +57,8 @@ public:
     LRESULT OnToolsModelSettingsChanged(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnToolsModelZoomChanged(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnPaletteModelColorChanged(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnMoving(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnSizing(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnChar(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnKeyDown(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnLButtonDown(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -66,15 +72,16 @@ public:
     LRESULT OnSize(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnSetSel(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnMouseWheel(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnCut(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnPaste(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnClear(UINT nMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
 protected:
     HWND m_hwndParent;
     HFONT m_hFont;
     HFONT m_hFontZoomed;
-    LONG m_nAppIsMovingOrSizing;
     RECT m_rc;
 
     INT DoHitTest(RECT& rc, POINT pt);
     void DrawGrip(HDC hDC, RECT& rc);
-    void Reposition();
 };

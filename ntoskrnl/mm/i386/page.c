@@ -2,7 +2,7 @@
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS kernel
  * FILE:            ntoskrnl/mm/i386/page.c
- * PURPOSE:         Low level memory managment manipulation
+ * PURPOSE:         Low level memory management manipulation
  *
  * PROGRAMMERS:     David Welch (welch@cwcom.net)
  */
@@ -234,11 +234,12 @@ MmGetPfnForProcess(PEPROCESS Process,
  */
 _Success_(return)
 BOOLEAN
-MmDeleteVirtualMapping(
-    _In_opt_ PEPROCESS Process,
+MmDeleteVirtualMappingEx(
+    _Inout_opt_ PEPROCESS Process,
     _In_ PVOID Address,
     _Out_opt_ BOOLEAN* WasDirty,
-    _Out_opt_ PPFN_NUMBER Page)
+    _Out_opt_ PPFN_NUMBER Page,
+    _In_ BOOLEAN IsPhysical)
 {
     PMMPTE PointerPte;
     MMPTE OldPte;
@@ -322,12 +323,49 @@ MmDeleteVirtualMapping(
             }
         }
 
+        if (!IsPhysical && OldPte.u.Hard.Valid)
+        {
+            PMMPFN Pfn1;
+            KIRQL OldIrql;
+
+            OldIrql = MiAcquirePfnLock();
+            Pfn1 = &MmPfnDatabase[OldPte.u.Hard.PageFrameNumber];
+            ASSERT(Pfn1->u3.e1.PageLocation == ActiveAndValid);
+            ASSERT(Pfn1->u2.ShareCount > 0);
+            if (--Pfn1->u2.ShareCount == 0)
+            {
+                Pfn1->u3.e1.PageLocation = TransitionPage;
+            }
+            MiReleasePfnLock(OldIrql);
+        }
+
         MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
     }
 
     return OldPte.u.Long != 0;
 }
 
+_Success_(return)
+BOOLEAN
+MmDeleteVirtualMapping(
+    _Inout_opt_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _Out_opt_ BOOLEAN * WasDirty,
+    _Out_opt_ PPFN_NUMBER Page)
+{
+    return MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, FALSE);
+}
+
+_Success_(return)
+BOOLEAN
+MmDeletePhysicalMapping(
+    _Inout_opt_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _Out_opt_ BOOLEAN * WasDirty,
+    _Out_opt_ PPFN_NUMBER Page)
+{
+    return MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, TRUE);
+}
 
 VOID
 NTAPI
@@ -560,7 +598,7 @@ MmCreatePageFileMapping(PEPROCESS Process,
     /* And we don't support creating for other process */
     ASSERT(Process == PsGetCurrentProcess());
 
-    if (SwapEntry & (1 << 31))
+    if (SwapEntry & ((ULONG_PTR)1 << (RTL_BITS_OF(SWAPENTRY) - 1)))
     {
         KeBugCheck(MEMORY_MANAGEMENT);
     }
@@ -588,10 +626,12 @@ MmCreatePageFileMapping(PEPROCESS Process,
 
 NTSTATUS
 NTAPI
-MmCreateVirtualMappingUnsafe(PEPROCESS Process,
-                             PVOID Address,
-                             ULONG flProtect,
-                             PFN_NUMBER Page)
+MmCreateVirtualMappingUnsafeEx(
+    _Inout_opt_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _In_ ULONG flProtect,
+    _In_ PFN_NUMBER Page,
+    _In_ BOOLEAN IsPhysical)
 {
     ULONG ProtectionMask;
     PMMPTE PointerPte;
@@ -654,6 +694,18 @@ MmCreateVirtualMappingUnsafe(PEPROCESS Process,
         KeBugCheck(MEMORY_MANAGEMENT);
     }
 
+    if (!IsPhysical)
+    {
+        PMMPFN Pfn1;
+        KIRQL OldIrql;
+
+        OldIrql = MiAcquirePfnLock();
+        Pfn1 = &MmPfnDatabase[TempPte.u.Hard.PageFrameNumber];
+        Pfn1->u2.ShareCount++;
+        Pfn1->u3.e1.PageLocation = ActiveAndValid;
+        MiReleasePfnLock(OldIrql);
+    }
+
     /* We don't need to flush the TLB here because it only caches valid translations
      * and we're moving this PTE from invalid to valid so it can't be cached right now */
 
@@ -665,6 +717,28 @@ MmCreateVirtualMappingUnsafe(PEPROCESS Process,
     }
 
     return(STATUS_SUCCESS);
+}
+
+NTSTATUS
+NTAPI
+MmCreateVirtualMappingUnsafe(
+    _Inout_opt_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _In_ ULONG flProtect,
+    _In_ PFN_NUMBER Page)
+{
+    return MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, FALSE);
+}
+
+NTSTATUS
+NTAPI
+MmCreatePhysicalMapping(
+    _Inout_opt_ PEPROCESS Process,
+    _In_ PVOID Address,
+    _In_ ULONG flProtect,
+    _In_ PFN_NUMBER Page)
+{
+    return MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, TRUE);
 }
 
 NTSTATUS
@@ -830,7 +904,7 @@ MmSetDirtyBit(PEPROCESS Process, PVOID Address, BOOLEAN Bit)
     MiMakePdeExistAndMakeValid(MiAddressToPde(Address), Process, MM_NOIRQL);
 
     PointerPte = MiAddressToPte(Address);
-    // We shouldnl't set dirty bit on non-mapped adresses
+    // We shouldnl't set dirty bit on non-mapped addresses
     if (!PointerPte->u.Hard.Valid && (FlagOn(PointerPte->u.Long, 0x800) || (PointerPte->u.Hard.PageFrameNumber == 0)))
     {
         DPRINT1("Invalid Pte %lx\n", PointerPte->u.Long);

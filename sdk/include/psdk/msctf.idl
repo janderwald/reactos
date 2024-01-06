@@ -28,15 +28,24 @@ cpp_quote("#define TF_E_DISCONNECTED    MAKE_HRESULT(SEVERITY_ERROR, FACILITY_IT
 cpp_quote("#define TF_E_ALREADY_EXISTS  MAKE_HRESULT(SEVERITY_ERROR, FACILITY_ITF, 0x0506)")
 cpp_quote("#define TF_E_NOLOCK          MAKE_HRESULT(SEVERITY_ERROR, FACILITY_ITF, 0x0201)")
 
-cpp_quote("HRESULT WINAPI TF_CreateThreadMgr(ITfThreadMgr **pptim);")
-cpp_quote("HRESULT WINAPI TF_GetThreadMgr(ITfThreadMgr **pptim);")
-cpp_quote("HRESULT WINAPI TF_CreateInputProcessorProfiles(ITfInputProcessorProfiles **ppipr);")
-cpp_quote("HRESULT WINAPI TF_CreateLangBarMgr(ITfLangBarMgr **pppbm);")
-cpp_quote("HRESULT WINAPI TF_CreateLangBarItemMgr(ITfLangBarItemMgr **pplbim);")
-cpp_quote("HRESULT WINAPI TF_InvalidAssemblyListCacheIfExist(void);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_InitSystem(VOID);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_UninitSystem(VOID);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_GetGlobalCompartment(_Out_ ITfCompartmentMgr **ppCompMgr);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_PostAllThreadMsg(DWORD dwUnknown1, DWORD dwUnknown2);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateThreadMgr(_Out_ ITfThreadMgr **pptim);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_GetThreadMgr(_Out_ ITfThreadMgr **pptim);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateInputProcessorProfiles(_Out_ ITfInputProcessorProfiles **ppipr);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateLangBarMgr(_Out_ ITfLangBarMgr **pppbm);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateLangBarItemMgr(_Out_ ITfLangBarItemMgr **pplbim);")
+cpp_quote("EXTERN_C HANDLE  WINAPI TF_CreateCicLoadMutex(_Out_ LPBOOL pfWinLogon);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_InvalidAssemblyListCache(VOID);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_InvalidAssemblyListCacheIfExist(VOID);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_DllDetachInOther(VOID);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateCategoryMgr(ITfCategoryMgr **ppcat);")
+cpp_quote("EXTERN_C HRESULT WINAPI TF_CreateDisplayAttributeMgr(ITfDisplayAttributeMgr **ppdam);")
 
 cpp_quote("EXTERN_C const GUID GUID_PROP_TEXTOWNER;")
-cpp_quote("DEFINE_GUID(GUID_PROP_ATTRIBUTE,0x34b45670,0x7526,0x11d2,0xa1,0x47,0x00,0x10,0x5a,0x27,0x99,0xb5);")
+cpp_quote("EXTERN_C const GUID GUID_PROP_ATTRIBUTE;")
 cpp_quote("EXTERN_C const GUID GUID_PROP_LANGID;")
 cpp_quote("EXTERN_C const GUID GUID_PROP_READING;")
 cpp_quote("EXTERN_C const GUID GUID_PROP_COMPOSING;")
@@ -99,6 +108,8 @@ interface ITfCompositionView;
 interface ITfKeyEventSink;
 interface ITfPersistentPropertyLoaderACP;
 interface ITfRangeACP;
+interface ITfCleanupContextSink;
+interface ITfTextLayoutSink;
 
 cpp_quote("#if 0")
 typedef [uuid(4f5d560f-5ab5-4dde-8c4d-404592857ab0)] UINT_PTR HKL;
@@ -1503,6 +1514,18 @@ interface ITfCompositionSink : IUnknown
 
 [
     object,
+    uuid(01689689-7acb-4e9b-ab7c-7ea46b12b522),
+    pointer_default(unique)
+]
+interface ITfCleanupContextSink : IUnknown
+{
+    HRESULT OnCleanupContext(
+            [in] TfEditCookie ecWrite,
+            [in] ITfContext   *pic);
+}
+
+[
+    object,
     uuid(d40C8aae-aC92-4fc7-9a11-0ee0e23aa39b),
     pointer_default(unique)
 ]
@@ -1896,4 +1919,24 @@ interface ITfTransitoryExtensionSink : IUnknown
         [in] ITfRange *pResultRange,
         [in] ITfRange *pCompositionRange,
         [out] BOOL *pfDeleteResultRange);
+}
+
+[
+    object,
+    uuid(2af2d06a-dd5b-4927-a0b4-54f19c91fade),
+    pointer_default(unique)
+]
+interface ITfTextLayoutSink : IUnknown
+{
+    typedef [uuid(603553cf-9edd-4cc1-9ecc-069e4a427734)] enum
+    {
+        TF_LC_CREATE = 0,
+        TF_LC_CHANGE = 1,
+        TF_LC_DESTROY = 2
+    } TfLayoutCode;
+
+    HRESULT OnLayoutChange(
+        [in] ITfContext     *pic,
+        [in] TfLayoutCode   lcode,
+        [in] ITfContextView *pView);
 }

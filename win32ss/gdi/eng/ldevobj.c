@@ -226,7 +226,7 @@ LDEVOBJ_pvFindImageProcAddress(
 {
     PVOID pvImageBase;
     PIMAGE_EXPORT_DIRECTORY pExportDir;
-    PVOID pvProcAdress = NULL;
+    PVOID pvProcAddress = NULL;
     PUSHORT pOrdinals;
     PULONG pNames, pAddresses;
     ULONG i;
@@ -255,13 +255,13 @@ LDEVOBJ_pvFindImageProcAddress(
         if (_stricmp(pszProcName, RVA_TO_ADDR(pvImageBase, pNames[i])) == 0)
         {
             /* Found! Calculate the procedure address */
-            pvProcAdress = RVA_TO_ADDR(pvImageBase, pAddresses[pOrdinals[i]]);
+            pvProcAddress = RVA_TO_ADDR(pvImageBase, pAddresses[pOrdinals[i]]);
             break;
         }
     }
 
     /* Return the address */
-    return pvProcAdress;
+    return pvProcAddress;
 }
 
 static
@@ -407,7 +407,7 @@ LDEVOBJ_pLoadDriver(
         /* Check if the ldev is associated with a file */
         if (pldev->pGdiDriverInfo)
         {
-            /* Check for match (case insensative) */
+            /* Check for match (case insensitive) */
             if (RtlEqualUnicodeString(&pldev->pGdiDriverInfo->DriverName, &strDriverName, TRUE))
             {
                 /* Image found in LDEV list */
@@ -442,8 +442,10 @@ LDEVOBJ_pLoadDriver(
             ERR("LDEVOBJ_bEnableDriver failed\n");
 
             /* Unload the image. */
-            LDEVOBJ_bUnloadImage(pldev);
-            LDEVOBJ_vFreeLDEV(pldev);
+            if (LDEVOBJ_bUnloadImage(pldev))
+                LDEVOBJ_vFreeLDEV(pldev);
+            else
+                ERR("Could not unload driver. Leaking memory\n");
             pldev = NULL;
             goto leave;
         }

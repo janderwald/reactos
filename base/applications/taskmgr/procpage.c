@@ -1,37 +1,22 @@
 /*
- *  ReactOS Task Manager
- *
- *  procpage.c
- *
- *  Copyright (C) 1999 - 2001  Brian Palmer  <brianp@reactos.org>
- *  Copyright (C) 2009         Maxime Vernier <maxime.vernier@gmail.com>
- *  Copyright (C) 2022         Thamatip Chitpong <tangaming123456@outlook.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * PROJECT:     ReactOS Task Manager
+ * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:     Processes Page
+ * COPYRIGHT:   Copyright 1999-2001 Brian Palmer <brianp@reactos.org>
+ *              Copyright 2009 Maxime Vernier <maxime.vernier@gmail.com>
+ *              Copyright 2022 Thamatip Chitpong <tangaming123456@outlook.com>
  */
 
 #include "precomp.h"
 
 #include "proclist.h"
 
-#include <strsafe.h>
-
 #include <ndk/psfuncs.h>
 
 #define CMP(x1, x2)\
     (x1 < x2 ? -1 : (x1 > x2 ? 1 : 0))
+
+#define CONST_STR_LEN(str) (_countof(str) - 1)
 
 typedef struct
 {
@@ -42,8 +27,8 @@ HWND hProcessPage;                      /* Process List Property Page */
 
 HWND hProcessPageListCtrl;              /* Process ListCtrl Window */
 HWND hProcessPageHeaderCtrl;            /* Process Header Control */
-HWND hProcessPageEndProcessButton;      /* Process End Process button */
-HWND hProcessPageShowAllProcessesButton;/* Process Show All Processes checkbox */
+static HWND hProcessPageEndProcessButton;      /* Process End Process button */
+static HWND hProcessPageShowAllProcessesButton;/* Process Show All Processes checkbox */
 BOOL bProcessPageSelectionMade = FALSE; /* Is item in ListCtrl selected */
 
 static int  nProcessPageWidth;
@@ -812,8 +797,8 @@ int CALLBACK ProcessPageCompareFunc(LPARAM lParam1, LPARAM lParam2, LPARAM lPara
 
     if (TaskManagerSettings.SortColumn == COLUMN_IMAGENAME)
     {
-        PerfDataGetImageName(IndexParam1, text1, sizeof (text1) / sizeof (*text1));
-        PerfDataGetImageName(IndexParam2, text2, sizeof (text2) / sizeof (*text2));
+        PerfDataGetImageName(IndexParam1, text1, _countof(text1));
+        PerfDataGetImageName(IndexParam2, text2, _countof(text2));
         ret = _wcsicmp(text1, text2);
     }
     else if (TaskManagerSettings.SortColumn == COLUMN_PID)
@@ -824,14 +809,14 @@ int CALLBACK ProcessPageCompareFunc(LPARAM lParam1, LPARAM lParam2, LPARAM lPara
     }
     else if (TaskManagerSettings.SortColumn == COLUMN_USERNAME)
     {
-        PerfDataGetUserName(IndexParam1, text1, sizeof (text1) / sizeof (*text1));
-        PerfDataGetUserName(IndexParam2, text2, sizeof (text2) / sizeof (*text2));
+        PerfDataGetUserName(IndexParam1, text1, _countof(text1));
+        PerfDataGetUserName(IndexParam2, text2, _countof(text2));
         ret = _wcsicmp(text1, text2);
     }
     else if (TaskManagerSettings.SortColumn == COLUMN_COMMANDLINE)
     {
-        PerfDataGetCommandLine(IndexParam1, text1, sizeof (text1) / sizeof (*text1));
-        PerfDataGetCommandLine(IndexParam2, text2, sizeof (text2) / sizeof (*text2));
+        PerfDataGetCommandLine(IndexParam1, text1, _countof(text1));
+        PerfDataGetCommandLine(IndexParam2, text2, _countof(text2));
         ret = _wcsicmp(text1, text2);
     }
     else if (TaskManagerSettings.SortColumn == COLUMN_SESSIONID)
@@ -1011,7 +996,7 @@ DevicePathToDosPath(
     WCHAR szDeviceName[MAX_PATH];
 
     /* Check if lpDevicePath is a device path */
-    if (_wcsnicmp(lpDevicePath, L"\\Device\\", _countof(L"\\Device\\")-1) != 0)
+    if (_wcsnicmp(lpDevicePath, L"\\Device\\", CONST_STR_LEN(L"\\Device\\")) != 0)
     {
         return 0;
     }
@@ -1167,7 +1152,7 @@ GetProcessExecutablePathById(
         if (GetSystemDirectoryW(pszSystemDir, uLength) != 0)
         {
             /* Get the required length, including the NULL terminator */
-            dwRet = uLength + _countof(szKernelExe) - 1;
+            dwRet = uLength + CONST_STR_LEN(szKernelExe);
 
             if (lpExePath && (dwLength >= dwRet))
             {
@@ -1255,11 +1240,11 @@ void ProcessPage_OnOpenFileLocation(void)
         goto Cleanup;
 
     /* Build the shell command line */
-    pszCmdLine = HeapAlloc(GetProcessHeap(), 0, (dwLength + 10) * sizeof(WCHAR));
+    pszCmdLine = HeapAlloc(GetProcessHeap(), 0, (dwLength + CONST_STR_LEN(L"/select,\"\"")) * sizeof(WCHAR));
     if (!pszCmdLine)
         goto Cleanup;
 
-    StringCchPrintfW(pszCmdLine, dwLength + 10, L"/select,\"%s\"", pszExePath);
+    StringCchPrintfW(pszCmdLine, dwLength + CONST_STR_LEN(L"/select,\"\""), L"/select,\"%s\"", pszExePath);
 
     /* Call the shell to open the file location and select it */
     ShellExecuteW(NULL, L"open", L"explorer.exe", pszCmdLine, NULL, SW_SHOWNORMAL);

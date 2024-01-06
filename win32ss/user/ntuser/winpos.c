@@ -1,12 +1,13 @@
 /*
- * COPYRIGHT:        See COPYING in the top level directory
- * PROJECT:          ReactOS kernel
- * PURPOSE:          Windows
- * FILE:             win32ss/user/ntuser/winpos.c
- * PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
+ * COPYRIGHT:   See COPYING in the top level directory
+ * PROJECT:     ReactOS kernel
+ * PURPOSE:     Windows
+ * PROGRAMER:   Casper S. Hornstrup (chorns@users.sourceforge.net)
+ *              Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
 
 #include <win32k.h>
+#include <ddk/immdev.h>
 DBG_DEFAULT_CHANNEL(UserWinpos);
 
 /* GLOBALS *******************************************************************/
@@ -288,7 +289,7 @@ BOOL FASTCALL ActivateOtherWindowMin(PWND Wnd)
     USER_REFERENCE_ENTRY Ref;
     PTHREADINFO pti = gptiCurrent;
 
-    //ERR("AOWM 1 %p\n",Wnd->head.h);
+    //ERR("AOWM 1 %p\n", UserHMGetHandle(Wnd));
     ActivePrev = (pti->MessageQueue->spwndActivePrev != NULL);
     FindTopWnd = TRUE;
 
@@ -319,7 +320,7 @@ BOOL FASTCALL ActivateOtherWindowMin(PWND Wnd)
                 //ERR("ActivateOtherWindowMin Set FG 1\n");
                 co_IntSetForegroundWindow(pWndSetActive);
                 UserDerefObjectCo(pWndSetActive);
-                //ERR("AOWM 2 Exit Good %p\n",pWndSetActive->head.h);
+                //ERR("AOWM 2 Exit Good %p\n", UserHMGetHandle(pWndSetActive));
                 return TRUE;
              }
              if (!pWndTemp ) pWndTemp = pWndSetActive;
@@ -356,7 +357,7 @@ BOOL FASTCALL ActivateOtherWindowMin(PWND Wnd)
        //ERR("ActivateOtherWindowMin Set FG 2\n");
        co_IntSetForegroundWindow(pWndSetActive);
        UserDerefObjectCo(pWndSetActive);
-       //ERR("AOWM 3 Exit Good %p\n",pWndSetActive->head.h);
+       //ERR("AOWM 3 Exit Good %p\n", UserHMGetHandle(pWndSetActive));
        return TRUE;
     }
     //ERR("AOWM 4 Bad\n");
@@ -459,7 +460,7 @@ done:
    if (gpqForeground && (!gpqForeground->spwndActive || Wnd == gpqForeground->spwndActive))
    {
       /* ReactOS can pass WndTo = NULL to co_IntSetForegroundWindow and returns FALSE. */
-      //ERR("WinPosActivateOtherWindow Set FG 0x%p hWnd %p\n",WndTo, WndTo ? WndTo->head.h : 0);
+      //ERR("WinPosActivateOtherWindow Set FG 0x%p hWnd %p\n", WndTo, WndTo ? UserHMGetHandle(WndTo) : NULL);
       if (co_IntSetForegroundWindow(WndTo))
       {
          if (WndTo) UserDerefObjectCo(WndTo);
@@ -998,7 +999,7 @@ co_WinPosGetMinMaxInfo(PWND Window, POINT* MaxSize, POINT* MaxPos,
 
     if (!EMPTYPOINT(Window->InternalPos.MaxPos)) MinMax.ptMaxPosition = Window->InternalPos.MaxPos;
 
-    co_IntSendMessage(Window->head.h, WM_GETMINMAXINFO, 0, (LPARAM)&MinMax);
+    co_IntSendMessage(UserHMGetHandle(Window), WM_GETMINMAXINFO, 0, (LPARAM)&MinMax);
 
     /* if the app didn't change the values, adapt them for the current monitor */
     if ((monitor = UserGetPrimaryMonitor()))
@@ -1204,7 +1205,7 @@ co_WinPosDoNCCALCSize(PWND Window, PWINDOWPOS WinPos, RECTL* WindowRect, RECTL* 
       params.lppos = &winposCopy;
       winposCopy = *WinPos;
 
-      wvrFlags = co_IntSendMessage(Window->head.h, WM_NCCALCSIZE, TRUE, (LPARAM) &params);
+      wvrFlags = co_IntSendMessage(UserHMGetHandle(Window), WM_NCCALCSIZE, TRUE, (LPARAM)&params);
 
       /* If the application send back garbage, ignore it */
       if (params.rgrc[0].left <= params.rgrc[0].right &&
@@ -1275,8 +1276,8 @@ co_WinPosDoWinPosChanging(PWND Window,
    if (!(WinPos->flags & SWP_NOSENDCHANGING)
           && !((WinPos->flags & SWP_AGG_NOCLIENTCHANGE) && (WinPos->flags & SWP_SHOWWINDOW)))
    {
-      TRACE("Sending WM_WINDOWPOSCHANGING to hwnd %p flags %04x.\n", Window->head.h,WinPos->flags);
-      co_IntSendMessage(Window->head.h, WM_WINDOWPOSCHANGING, 0, (LPARAM) WinPos);
+      TRACE("Sending WM_WINDOWPOSCHANGING to hwnd %p flags %04x.\n", UserHMGetHandle(Window), WinPos->flags);
+      co_IntSendMessage(UserHMGetHandle(Window), WM_WINDOWPOSCHANGING, 0, (LPARAM)WinPos);
    }
 
    /* Calculate new position and size */
@@ -1369,7 +1370,7 @@ WinPosDoOwnedPopups(PWND Window, HWND hWndInsertAfter)
       return hWndInsertAfter;
    }
 
-   Owner = Window->spwndOwner ? Window->spwndOwner->head.h : NULL;
+   Owner = (Window->spwndOwner ? UserHMGetHandle(Window->spwndOwner) : NULL);
 
    if (Owner)
    {
@@ -1490,7 +1491,7 @@ WinPosDoOwnedPopups(PWND Window, HWND hWndInsertAfter)
          if (!(Wnd = ValidateHwndNoErr(List[i])))
             continue;
 
-         Owner = Wnd->spwndOwner ? Wnd->spwndOwner->head.h : NULL;
+         Owner = (Wnd->spwndOwner ? UserHMGetHandle(Wnd->spwndOwner) : NULL);
 
          if (Owner != UserHMGetHandle(Window)) continue;
 
@@ -1670,7 +1671,7 @@ WinPosFixupFlags(WINDOWPOS *WinPos, PWND Wnd)
              * itself.
              */
             if ((WinPos->hwnd == WinPos->hwndInsertAfter) ||
-                ((InsAfterWnd->spwndNext) && (WinPos->hwnd == InsAfterWnd->spwndNext->head.h)))
+                ((InsAfterWnd->spwndNext) && (WinPos->hwnd == UserHMGetHandle(InsAfterWnd->spwndNext))))
             {
                WinPos->flags |= SWP_NOZORDER;
             }
@@ -1743,6 +1744,43 @@ ForceNCPaintErase(PWND Wnd, HRGN hRgn, PREGION pRgn)
    }
 }
 
+static VOID FASTCALL IntImeWindowPosChanged(VOID)
+{
+    HWND *phwnd;
+    PWND pwndNode, pwndDesktop = UserGetDesktopWindow();
+    PWINDOWLIST pWL;
+    USER_REFERENCE_ENTRY Ref;
+
+    if (!pwndDesktop)
+        return;
+
+    /* Enumerate the windows to get the IME windows (of default and non-default) */
+    pWL = IntBuildHwndList(pwndDesktop->spwndChild, IACE_LIST, gptiCurrent);
+    if (!pWL)
+        return;
+
+    for (phwnd = pWL->ahwnd; *phwnd != HWND_TERMINATOR; ++phwnd)
+    {
+        if (gptiCurrent->TIF_flags & TIF_INCLEANUP)
+            break;
+
+        pwndNode = ValidateHwndNoErr(*phwnd);
+        if (pwndNode == NULL ||
+            pwndNode->head.pti != gptiCurrent ||
+            pwndNode->pcls->atomClassName != gpsi->atomSysClass[ICLS_IME])
+        {
+            continue;
+        }
+
+        /* Now hwndNode is an IME window of the current thread */
+        UserRefObjectCo(pwndNode, &Ref);
+        co_IntSendMessage(*phwnd, WM_IME_SYSTEM, IMS_UPDATEIMEUI, 0);
+        UserDerefObjectCo(pwndNode);
+    }
+
+    IntFreeHwndList(pWL);
+}
+
 /* x and y are always screen relative */
 BOOLEAN FASTCALL
 co_WinPosSetWindowPos(
@@ -1784,7 +1822,7 @@ co_WinPosSetWindowPos(
 
    bPointerInWindow = IntPtInWindow(Window, gpsi->ptCursor.x, gpsi->ptCursor.y);
 
-   WinPos.hwnd = Window->head.h;
+   WinPos.hwnd = UserHMGetHandle(Window);
    WinPos.hwndInsertAfter = WndInsertAfter;
    WinPos.x = x;
    WinPos.y = y;
@@ -1832,7 +1870,7 @@ co_WinPosSetWindowPos(
 
    Ancestor = UserGetAncestor(Window, GA_PARENT);
    if ( (WinPos.flags & (SWP_NOZORDER | SWP_HIDEWINDOW | SWP_SHOWWINDOW)) != SWP_NOZORDER &&
-         Ancestor && Ancestor->head.h == IntGetDesktopWindow() )
+         Ancestor && UserHMGetHandle(Ancestor) == IntGetDesktopWindow() )
    {
       WinPos.hwndInsertAfter = WinPosDoOwnedPopups(Window, WinPos.hwndInsertAfter);
    }
@@ -1924,7 +1962,7 @@ co_WinPosSetWindowPos(
                            RDW_VALIDATE | RDW_NOFRAME | RDW_NOERASE | RDW_NOINTERNALPAINT | RDW_ALLCHILDREN);
 
       if (UserIsDesktopWindow(Window->spwndParent))
-         co_IntShellHookNotify(HSHELL_WINDOWDESTROYED, (WPARAM)Window->head.h, 0);
+         co_IntShellHookNotify(HSHELL_WINDOWDESTROYED, (WPARAM)UserHMGetHandle(Window), 0);
 
       Window->style &= ~WS_VISIBLE; //IntSetStyle( Window, 0, WS_VISIBLE );
       Window->head.pti->cVisWindows--;
@@ -1936,7 +1974,7 @@ co_WinPosSetWindowPos(
       {
          if ((Window->style & WS_POPUP) && (Window->ExStyle & WS_EX_APPWINDOW))
          {
-            co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)Window->head.h, 0);
+            co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)UserHMGetHandle(Window), 0);
             if (!(WinPos.flags & SWP_NOACTIVATE))
                UpdateShellHook(Window);
          }
@@ -1947,7 +1985,7 @@ co_WinPosSetWindowPos(
       {
          if (!UserIsDesktopWindow(Window))
          {
-            co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)Window->head.h, 0);
+            co_IntShellHookNotify(HSHELL_WINDOWCREATED, (WPARAM)UserHMGetHandle(Window), 0);
             if (!(WinPos.flags & SWP_NOACTIVATE))
                UpdateShellHook(Window);
          }
@@ -1979,7 +2017,7 @@ co_WinPosSetWindowPos(
       Window->state |= WNDS_SENDNCPAINT;
    }
 
-   if (!(WinPos.flags & SWP_NOREDRAW))
+   if (!(WinPos.flags & SWP_NOREDRAW) && ((WinPos.flags & SWP_AGG_STATUSFLAGS) != SWP_AGG_NOPOSCHANGE))
    {
       /* Determine the new visible region */
       VisAfter = VIS_ComputeVisibleRegion(Window, FALSE, FALSE,
@@ -2100,8 +2138,7 @@ co_WinPosSetWindowPos(
       }
 
       /* We need to redraw what wasn't visible before or force a redraw */
-      if ((WinPos.flags & (SWP_FRAMECHANGED | SWP_SHOWWINDOW)) ||
-          (((WinPos.flags & SWP_AGG_NOGEOMETRYCHANGE) != SWP_AGG_NOGEOMETRYCHANGE) && VisAfter != NULL))
+      if (VisAfter != NULL)
       {
          PREGION DirtyRgn = IntSysCreateRectpRgn(0, 0, 0, 0);
          if (DirtyRgn)
@@ -2137,7 +2174,7 @@ co_WinPosSetWindowPos(
                 }
                 IntInvalidateWindows(Window, DirtyRgn, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
              }
-             else if ( RgnType != ERROR && RgnType == NULLREGION ) // Must be the same. See CORE-7166 & CORE-15934, NC HACK fix.
+             else if (RgnType != ERROR && RgnType == NULLREGION) // Must be the same. See CORE-7166 & CORE-15934, NC HACK fix.
              {
                 if ( !PosChanged &&
                      !(WinPos.flags & SWP_DEFERERASE) &&
@@ -2186,7 +2223,7 @@ co_WinPosSetWindowPos(
       }
 
       /* Expose what was covered before but not covered anymore */
-      if ( VisBefore != NULL )
+      if (VisBefore != NULL)
       {
          PREGION ExposedRgn = IntSysCreateRectpRgn(0, 0, 0, 0);
          if (ExposedRgn)
@@ -2196,7 +2233,7 @@ co_WinPosSetWindowPos(
                                OldWindowRect.left - NewWindowRect.left,
                                OldWindowRect.top  - NewWindowRect.top);
 
-             if ( VisAfter != NULL )
+             if (VisAfter != NULL)
                 RgnType = IntGdiCombineRgn(ExposedRgn, ExposedRgn, VisAfter, RGN_DIFF);
 
              if (RgnType != ERROR && RgnType != NULLREGION)
@@ -2244,7 +2281,7 @@ co_WinPosSetWindowPos(
        if ( !(Window->style & WS_CHILD) && (Parent) && (Parent->style & WS_CLIPCHILDREN))
        {
            TRACE("SWP_FRAMECHANGED Parent %p WS_CLIPCHILDREN %p\n",Parent,Window);
-           UserSyncAndPaintWindows( Parent, RDW_CLIPCHILDREN); // NC should redraw here, see NC HACK fix.
+           UserSyncAndPaintWindows(Parent, RDW_CLIPCHILDREN); // NC should redraw here, see NC HACK fix.
        }
    }
 
@@ -2280,7 +2317,7 @@ co_WinPosSetWindowPos(
 
    /* And last, send the WM_WINDOWPOSCHANGED message */
 
-   TRACE("\tstatus hwnd %p flags = %04x\n",Window?Window->head.h:NULL,WinPos.flags & SWP_AGG_STATUSFLAGS);
+   TRACE("\tstatus hwnd %p flags = %04x\n", Window ? UserHMGetHandle(Window) : NULL, WinPos.flags & SWP_AGG_STATUSFLAGS);
 
    if (((WinPos.flags & SWP_AGG_STATUSFLAGS) != SWP_AGG_NOPOSCHANGE)
             && !((flags & SWP_AGG_NOCLIENTCHANGE) && (flags & SWP_SHOWWINDOW)))
@@ -2302,6 +2339,13 @@ co_WinPosSetWindowPos(
       PWND pWnd = ValidateHwndNoErr(WinPos.hwnd);
       if (pWnd)
          IntNotifyWinEvent(EVENT_OBJECT_LOCATIONCHANGE, pWnd, OBJID_WINDOW, CHILDID_SELF, WEF_SETBYWNDPTI);
+   }
+
+   /* Send WM_IME_SYSTEM:IMS_UPDATEIMEUI to the IME windows if necessary */
+   if ((WinPos.flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE))
+   {
+      if (IS_IMM_MODE())
+          IntImeWindowPosChanged();
    }
 
    if(bPointerInWindow != IntPtInWindow(Window, gpsi->ptCursor.x, gpsi->ptCursor.y))
@@ -2326,7 +2370,7 @@ co_WinPosGetNonClientSize(PWND Window, RECT* WindowRect, RECT* ClientRect)
    ASSERT_REFS_CO(Window);
 
    *ClientRect = *WindowRect;
-   Result = co_IntSendMessageNoWait(Window->head.h, WM_NCCALCSIZE, FALSE, (LPARAM) ClientRect);
+   Result = co_IntSendMessageNoWait(UserHMGetHandle(Window), WM_NCCALCSIZE, FALSE, (LPARAM)ClientRect);
 
    FixClientRect(ClientRect, WindowRect);
 
@@ -2380,7 +2424,7 @@ co_WinPosMinMaximize(PWND Wnd, UINT ShowFlag, RECT* NewPos)
    wpl.length = sizeof(wpl);
    IntGetWindowPlacement( Wnd, &wpl );
 
-   if (co_HOOK_CallHooks( WH_CBT, HCBT_MINMAX, (WPARAM)Wnd->head.h, ShowFlag))
+   if (co_HOOK_CallHooks(WH_CBT, HCBT_MINMAX, (WPARAM)UserHMGetHandle(Wnd), ShowFlag))
    {
       ERR("WinPosMinMaximize WH_CBT Call Hook return!\n");
       return SWP_NOSIZE | SWP_NOMOVE;
@@ -2395,7 +2439,7 @@ co_WinPosMinMaximize(PWND Wnd, UINT ShowFlag, RECT* NewPos)
          case SW_FORCEMINIMIZE:
              return SWP_NOSIZE | SWP_NOMOVE;
          }
-         if (!co_IntSendMessageNoWait(Wnd->head.h, WM_QUERYOPEN, 0, 0))
+         if (!co_IntSendMessageNoWait(UserHMGetHandle(Wnd), WM_QUERYOPEN, 0, 0))
          {
             return(SWP_NOSIZE | SWP_NOMOVE);
          }
@@ -2538,7 +2582,7 @@ co_WinPosShowWindow(PWND Wnd, INT Cmd)
    style = Wnd->style;
 
    TRACE("co_WinPosShowWindow START hwnd %p Cmd %d usicmd %u\n",
-         Wnd->head.h, Cmd, pti->ppi->usi.wShowWindow);
+         UserHMGetHandle(Wnd), Cmd, pti->ppi->usi.wShowWindow);
 
    if ( pti->ppi->usi.dwFlags & STARTF_USESHOWWINDOW )
    {
@@ -2697,10 +2741,10 @@ co_WinPosShowWindow(PWND Wnd, INT Cmd)
 
    if ((ShowFlag != WasVisible || Cmd == SW_SHOWNA) && Cmd != SW_SHOWMAXIMIZED && !(Swp & SWP_STATECHANGED))
    {
-      co_IntSendMessageNoWait(Wnd->head.h, WM_SHOWWINDOW, ShowFlag, 0);
+      co_IntSendMessageNoWait(UserHMGetHandle(Wnd), WM_SHOWWINDOW, ShowFlag, 0);
 #if 0 // Fix wine msg test_SetParent:WmSetParentSeq_1:2
       if (!(Wnd->state2 & WNDS2_WIN31COMPAT)) // <------------- XP sets this bit!
-         co_IntSendMessageNoWait(Wnd->head.h, WM_SETVISIBLE, ShowFlag, 0);
+         co_IntSendMessageNoWait(UserHMGetHandle(Wnd), WM_SETVISIBLE, ShowFlag, 0);
 #endif
       if (!VerifyWnd(Wnd)) return WasVisible;
    }
@@ -2870,7 +2914,7 @@ co_WinPosSearchChildren(
 
     if (ScopeWin->head.pti == PsGetCurrentThreadWin32Thread())
     {
-       *HitTest = (USHORT)co_IntSendMessage(ScopeWin->head.h, WM_NCHITTEST, 0, MAKELONG(Point->x, Point->y));
+       *HitTest = (USHORT)co_IntSendMessage(UserHMGetHandle(ScopeWin), WM_NCHITTEST, 0, MAKELONG(Point->x, Point->y));
 
        if ((*HitTest) == (USHORT)HTTRANSPARENT)
        {
@@ -2918,6 +2962,7 @@ co_WinPosWindowFromPoint(
    return Window;
 }
 
+/* Win: _RealChildWindowFromPoint */
 PWND FASTCALL
 IntRealChildWindowFromPoint(PWND Parent, LONG x, LONG y)
 {
@@ -2960,6 +3005,7 @@ IntRealChildWindowFromPoint(PWND Parent, LONG x, LONG y)
    return pwndHit ? pwndHit : Parent;
 }
 
+/* Win: _ChildWindowFromPointEx */
 PWND APIENTRY
 IntChildWindowFromPointEx(PWND Parent, LONG x, LONG y, UINT uiFlags)
 {
@@ -3011,6 +3057,7 @@ IntChildWindowFromPointEx(PWND Parent, LONG x, LONG y, UINT uiFlags)
    return pwndHit ? pwndHit : Parent;
 }
 
+/* Win: _DeferWindowPos(PSMWP, PWND, PWND, ...) */
 HDWP
 FASTCALL
 IntDeferWindowPos( HDWP hdwp,
@@ -3101,7 +3148,8 @@ END:
     return retvalue;
 }
 
-BOOL FASTCALL IntEndDeferWindowPosEx( HDWP hdwp, BOOL sAsync )
+/* Win: xxxEndDeferWindowPosEx */
+BOOL FASTCALL IntEndDeferWindowPosEx(HDWP hdwp, BOOL bAsync)
 {
     PSMWP pDWP;
     PCVR winpos;
@@ -3131,7 +3179,7 @@ BOOL FASTCALL IntEndDeferWindowPosEx( HDWP hdwp, BOOL sAsync )
 
         UserRefObjectCo(pwnd, &Ref);
 
-        if ( sAsync )
+        if (bAsync)
         {
            LRESULT lRes;
            PWINDOWPOS ppos = ExAllocatePoolWithTag(PagedPool, sizeof(WINDOWPOS), USERTAG_SWP);
@@ -3162,6 +3210,7 @@ BOOL FASTCALL IntEndDeferWindowPosEx( HDWP hdwp, BOOL sAsync )
 
         UserDerefObjectCo(pwnd);
     }
+
     ExFreePoolWithTag(pDWP->acvr, USERTAG_SWP);
     UserDereferenceObject(pDWP);
     UserDeleteObject(hdwp, TYPE_SETWINDOWPOS);
@@ -3343,21 +3392,21 @@ NtUserGetWindowPlacement(HWND hWnd,
    PWND Wnd;
    WINDOWPLACEMENT Safepl;
    NTSTATUS Status;
-   DECLARE_RETURN(BOOL);
+   BOOL Ret = FALSE;
 
    TRACE("Enter NtUserGetWindowPlacement\n");
    UserEnterShared();
 
    if (!(Wnd = UserGetWindowObject(hWnd)))
    {
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
    Status = MmCopyFromCaller(&Safepl, lpwndpl, sizeof(WINDOWPLACEMENT));
    if (!NT_SUCCESS(Status))
    {
       SetLastNtError(Status);
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
    Safepl.length = sizeof(WINDOWPLACEMENT);
@@ -3368,15 +3417,15 @@ NtUserGetWindowPlacement(HWND hWnd,
    if (!NT_SUCCESS(Status))
    {
       SetLastNtError(Status);
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
-   RETURN( TRUE);
+   Ret = TRUE;
 
-CLEANUP:
-   TRACE("Leave NtUserGetWindowPlacement, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserGetWindowPlacement, ret=%i\n", Ret);
    UserLeave();
-   END_CLEANUP;
+   return Ret;
 }
 
 DWORD
@@ -3463,9 +3512,8 @@ NtUserSetWindowPos(
    int cy,
    UINT uFlags)
 {
-   DECLARE_RETURN(BOOL);
    PWND Window, pWndIA;
-   BOOL ret;
+   BOOL ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserSetWindowPos\n");
@@ -3475,7 +3523,7 @@ NtUserSetWindowPos(
         UserIsDesktopWindow(Window) || UserIsMessageWindow(Window))
    {
       ERR("NtUserSetWindowPos bad window handle!\n");
-      RETURN(FALSE);
+      goto Exit; // Return FALSE
    }
 
    if ( hWndInsertAfter != HWND_TOP &&
@@ -3487,7 +3535,7 @@ NtUserSetWindowPos(
             UserIsDesktopWindow(pWndIA) || UserIsMessageWindow(pWndIA))
       {
          ERR("NtUserSetWindowPos bad insert window handle!\n");
-         RETURN(FALSE);
+         goto Exit; // Return FALSE
       }
    }
 
@@ -3511,12 +3559,10 @@ NtUserSetWindowPos(
    ret = co_WinPosSetWindowPos(Window, hWndInsertAfter, X, Y, cx, cy, uFlags);
    UserDerefObjectCo(Window);
 
-   RETURN(ret);
-
-CLEANUP:
-   TRACE("Leave NtUserSetWindowPos, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserSetWindowPos, ret=%i\n", ret);
    UserLeave();
-   END_CLEANUP;
+   return ret;
 }
 
 /*
@@ -3531,8 +3577,7 @@ NtUserSetWindowRgn(
    HRGN hrgnCopy = NULL;
    PWND Window;
    INT flags = (SWP_NOCLIENTSIZE|SWP_NOCLIENTMOVE|SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_NOSIZE|SWP_NOMOVE);
-   BOOLEAN Ret = FALSE;
-   DECLARE_RETURN(INT);
+   INT Ret = 0;
 
    TRACE("Enter NtUserSetWindowRgn\n");
    UserEnterExclusive();
@@ -3540,7 +3585,7 @@ NtUserSetWindowRgn(
    if (!(Window = UserGetWindowObject(hWnd)) ||
         UserIsDesktopWindow(Window) || UserIsMessageWindow(Window))
    {
-      RETURN( 0);
+      goto Exit; // Return 0
    }
 
    if (hRgn) // The region will be deleted in user32.
@@ -3553,7 +3598,7 @@ NtUserSetWindowRgn(
          NtGdiCombineRgn( hrgnCopy, hRgn, 0, RGN_COPY);
       }
       else
-         RETURN( 0);
+         goto Exit; // Return 0
    }
 
    //// HACK 1 : Work around the lack of supporting DeferWindowPos.
@@ -3566,14 +3611,12 @@ NtUserSetWindowRgn(
        Window->hrgnNewFrame = HRGN_WINDOW;
    }
    //// HACK 2
-   Ret = co_WinPosSetWindowPos(Window, HWND_TOP, 0, 0, 0, 0, bRedraw ? flags : (flags|SWP_NOREDRAW) );
+   Ret = (INT)co_WinPosSetWindowPos(Window, HWND_TOP, 0, 0, 0, 0, bRedraw ? flags : (flags | SWP_NOREDRAW));
 
-   RETURN( (INT)Ret);
-
-CLEANUP:
-   TRACE("Leave NtUserSetWindowRgn, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserSetWindowRgn, ret=%i\n", Ret);
    UserLeave();
-   END_CLEANUP;
+   return Ret;
 }
 
 /*
@@ -3591,7 +3634,7 @@ NtUserSetInternalWindowPos(
    PWND Wnd;
    RECT rect;
    POINT pt = {0};
-   DECLARE_RETURN(BOOL);
+   BOOL Ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserSetWindowPlacement\n");
@@ -3600,7 +3643,7 @@ NtUserSetInternalWindowPos(
    if (!(Wnd = UserGetWindowObject(hwnd)) || // FIXME:
         UserIsDesktopWindow(Wnd) || UserIsMessageWindow(Wnd))
    {
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
    _SEH2_TRY
@@ -3619,7 +3662,7 @@ NtUserSetInternalWindowPos(
    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
    {
       SetLastNtError(_SEH2_GetExceptionCode());
-      _SEH2_YIELD(RETURN( FALSE));
+      _SEH2_YIELD(goto Exit); // Return FALSE
    }
    _SEH2_END
 
@@ -3642,12 +3685,12 @@ NtUserSetInternalWindowPos(
    UserRefObjectCo(Wnd, &Ref);
    IntSetWindowPlacement(Wnd, &wndpl, flags);
    UserDerefObjectCo(Wnd);
-   RETURN(TRUE);
+   Ret = TRUE;
 
-CLEANUP:
-   TRACE("Leave NtUserSetWindowPlacement, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserSetWindowPlacement, ret=%i\n", Ret);
    UserLeave();
-   END_CLEANUP;
+   return Ret;
 }
 
 /*
@@ -3660,7 +3703,7 @@ NtUserSetWindowPlacement(HWND hWnd,
    PWND Wnd;
    WINDOWPLACEMENT Safepl;
    UINT Flags;
-   DECLARE_RETURN(BOOL);
+   BOOL Ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserSetWindowPlacement\n");
@@ -3669,7 +3712,7 @@ NtUserSetWindowPlacement(HWND hWnd,
    if (!(Wnd = UserGetWindowObject(hWnd)) ||
         UserIsDesktopWindow(Wnd) || UserIsMessageWindow(Wnd))
    {
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
    _SEH2_TRY
@@ -3680,13 +3723,13 @@ NtUserSetWindowPlacement(HWND hWnd,
    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
    {
       SetLastNtError(_SEH2_GetExceptionCode());
-      _SEH2_YIELD(RETURN( FALSE));
+      _SEH2_YIELD(goto Exit); // Return FALSE
    }
    _SEH2_END
 
    if(Safepl.length != sizeof(WINDOWPLACEMENT))
    {
-      RETURN( FALSE);
+      goto Exit; // Return FALSE
    }
 
    Flags = PLACE_MAX | PLACE_RECT;
@@ -3694,12 +3737,12 @@ NtUserSetWindowPlacement(HWND hWnd,
    UserRefObjectCo(Wnd, &Ref);
    IntSetWindowPlacement(Wnd, &Safepl, Flags);
    UserDerefObjectCo(Wnd);
-   RETURN(TRUE);
+   Ret = TRUE;
 
-CLEANUP:
-   TRACE("Leave NtUserSetWindowPlacement, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserSetWindowPlacement, ret=%i\n", Ret);
    UserLeave();
-   END_CLEANUP;
+   return Ret;
 }
 
 /*
@@ -3709,8 +3752,8 @@ BOOL APIENTRY
 NtUserShowWindowAsync(HWND hWnd, LONG nCmdShow)
 {
    PWND Window;
-   BOOL ret;
-   DECLARE_RETURN(BOOL);
+   LRESULT Result;
+   BOOL ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserShowWindowAsync\n");
@@ -3719,26 +3762,24 @@ NtUserShowWindowAsync(HWND hWnd, LONG nCmdShow)
    if (!(Window = UserGetWindowObject(hWnd)) ||
         UserIsDesktopWindow(Window) || UserIsMessageWindow(Window))
    {
-      RETURN(FALSE);
+      goto Exit; // Return FALSE
    }
 
    if ( nCmdShow > SW_MAX )
    {
       EngSetLastError(ERROR_INVALID_PARAMETER);
-      RETURN(FALSE);
+      goto Exit; // Return FALSE
    }
 
    UserRefObjectCo(Window, &Ref);
-   ret = co_IntSendMessageNoWait( hWnd, WM_ASYNC_SHOWWINDOW, nCmdShow, 0 );
+   Result = co_IntSendMessageNoWait( hWnd, WM_ASYNC_SHOWWINDOW, nCmdShow, 0 );
    UserDerefObjectCo(Window);
-   if (-1 == (int) ret || !ret) ret = FALSE;
+   if (Result != -1 && Result != 0) ret = TRUE;
 
-   RETURN(ret);
-
-CLEANUP:
-   TRACE("Leave NtUserShowWindowAsync, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserShowWindowAsync, ret=%i\n", ret);
    UserLeave();
-   END_CLEANUP;
+   return ret;
 }
 
 /*
@@ -3748,8 +3789,7 @@ BOOL APIENTRY
 NtUserShowWindow(HWND hWnd, LONG nCmdShow)
 {
    PWND Window;
-   BOOL ret;
-   DECLARE_RETURN(BOOL);
+   BOOL ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserShowWindow hWnd %p SW_ %d\n",hWnd, nCmdShow);
@@ -3758,25 +3798,23 @@ NtUserShowWindow(HWND hWnd, LONG nCmdShow)
    if (!(Window = UserGetWindowObject(hWnd)) ||
         UserIsDesktopWindow(Window) || UserIsMessageWindow(Window))
    {
-      RETURN(FALSE);
+      goto Exit; // Return FALSE
    }
 
    if ( nCmdShow > SW_MAX || Window->state2 & WNDS2_INDESTROY)
    {
       EngSetLastError(ERROR_INVALID_PARAMETER);
-      RETURN(FALSE);
+      goto Exit; // Return FALSE
    }
 
    UserRefObjectCo(Window, &Ref);
    ret = co_WinPosShowWindow(Window, nCmdShow);
    UserDerefObjectCo(Window);
 
-   RETURN(ret);
-
-CLEANUP:
-   TRACE("Leave NtUserShowWindow, ret=%i\n",_ret_);
+Exit:
+   TRACE("Leave NtUserShowWindow, ret=%i\n", ret);
    UserLeave();
-   END_CLEANUP;
+   return ret;
 }
 
 
@@ -3787,10 +3825,9 @@ HWND APIENTRY
 NtUserWindowFromPoint(LONG X, LONG Y)
 {
    POINT pt;
-   HWND Ret;
-   PWND DesktopWindow = NULL, Window = NULL;
+   HWND Ret = NULL;
+   PWND DesktopWindow, Window;
    USHORT hittest;
-   DECLARE_RETURN(HWND);
    USER_REFERENCE_ENTRY Ref;
 
    TRACE("Enter NtUserWindowFromPoint\n");
@@ -3809,23 +3846,17 @@ NtUserWindowFromPoint(LONG X, LONG Y)
 
       //pti = PsGetCurrentThreadWin32Thread();
       Window = co_WinPosWindowFromPoint(DesktopWindow, &pt, &hittest, FALSE);
-
       if (Window)
       {
          Ret = UserHMGetHandle(Window);
-
-         RETURN( Ret);
       }
+
+      UserDerefObjectCo(DesktopWindow);
    }
 
-   RETURN( NULL);
-
-CLEANUP:
-   if (DesktopWindow) UserDerefObjectCo(DesktopWindow);
-
-   TRACE("Leave NtUserWindowFromPoint, ret=%p\n", _ret_);
+   TRACE("Leave NtUserWindowFromPoint, ret=%p\n", Ret);
    UserLeave();
-   END_CLEANUP;
+   return Ret;
 }
 
 /* EOF */

@@ -36,6 +36,7 @@
 #include <wine/debug.h>
 
 #include "resource.h"
+#include "settings.h"
 
 #include "ACLCustomMRU.h"
 #include "aclhistory.h"

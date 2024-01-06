@@ -1,14 +1,14 @@
 /*
- * PROJECT:    PAINT for ReactOS
- * LICENSE:    LGPL
- * FILE:       base/applications/mspaint/lang/it-IT.rc
- * PURPOSE:    Italian Language resource file
- * TRANSLATOR: Gabriel Ilardi
+ * PROJECT:     PAINT for ReactOS
+ * LICENSE:     LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:     Italian resource file
+ * TRANSLATORS: Copyright 2009 Gabriel Ilardi <gabrielilardi@hotmail.it>
+ *              Copyright 2009-2010 Paolo Devoti <devotip@tiscali.it>
  */
 
 LANGUAGE LANG_ITALIAN, SUBLANG_NEUTRAL
 
-//IDB_FONTSTOOLBAR BITMAP "icons/fontstoolbar-it-IT.bmp"
+//IDB_FONTSTOOLBAR BITMAP "img/fontstoolbar-it-IT.bmp"
 
 ID_MENU MENU
 BEGIN
@@ -37,18 +37,18 @@ BEGIN
     END
     POPUP "&Modifica"
     BEGIN
-        MENUITEM "Annulla\tCtrl+Z", IDM_EDITUNDO
-        MENUITEM "Ripeti\tCtrl+Y", IDM_EDITREDO
+        MENUITEM "&Annulla\tCtrl+Z", IDM_EDITUNDO
+        MENUITEM "&Ripeti\tCtrl+Y", IDM_EDITREDO
         MENUITEM SEPARATOR
-        MENUITEM "Taglia\tCtrl+X", IDM_EDITCUT
-        MENUITEM "Copia\tCtrl+C", IDM_EDITCOPY
-        MENUITEM "Incolla\tCtrl+V", IDM_EDITPASTE
-        MENUITEM "Cancella area selezionata\tCanc", IDM_EDITDELETESELECTION
-        MENUITEM "Inverte selezione", IDM_EDITINVERTSELECTION
+        MENUITEM "&Taglia\tCtrl+X", IDM_EDITCUT
+        MENUITEM "&Copia\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "I&ncolla\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "Cance&lla area selezionata\tCanc", IDM_EDITDELETESELECTION
+        MENUITEM "&Inverte selezione", IDM_EDITINVERTSELECTION
         MENUITEM "Sele&ziona tutto\tCtrl+A", IDM_EDITSELECTALL
         MENUITEM SEPARATOR
-        MENUITEM "Copia su...", IDM_EDITCOPYTO
-        MENUITEM "Incolla da...", IDM_EDITPASTEFROM
+        MENUITEM "Copia &su...", IDM_EDITCOPYTO
+        MENUITEM "Incolla &da...", IDM_EDITPASTEFROM
     END
     POPUP "&Visualizza"
     BEGIN
@@ -77,13 +77,13 @@ BEGIN
     END
     POPUP "&Immagine"
     BEGIN
-        MENUITEM "Capovolgi/ruota...\tCtrl+R", IDM_IMAGEROTATEMIRROR
-        MENUITEM "Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
-        MENUITEM "Ritaglia", IDM_IMAGECROP
-        MENUITEM "Inverti colori\tCtrl+I", IDM_IMAGEINVERTCOLORS
-        MENUITEM "Attributi...\tCtrl+E", IDM_IMAGEATTRIBUTES
-        MENUITEM "Cancella immagine\tCtrl+Maiusc+N", IDM_IMAGEDELETEIMAGE
-        MENUITEM "Opaco", IDM_IMAGEDRAWOPAQUE
+        MENUITEM "Ca&povolgi/ruota...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "&Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "&Ritaglia", IDM_IMAGECROP
+        MENUITEM "&Inverti colori\tCtrl+I", IDM_IMAGEINVERTCOLORS
+        MENUITEM "&Attributi...\tCtrl+E", IDM_IMAGEATTRIBUTES
+        MENUITEM "&Cancella immagine\tCtrl+Maiusc+N", IDM_IMAGEDELETEIMAGE
+        MENUITEM "&Opaco", IDM_IMAGEDRAWOPAQUE
     END
     POPUP "&Colori"
     BEGIN
@@ -97,6 +97,25 @@ BEGIN
         MENUITEM "Guida in linea", IDM_HELPHELPTOPICS
         MENUITEM SEPARATOR
         MENUITEM "Informazioni", IDM_HELPINFO
+    END
+END
+
+ID_POPUPMENU MENU
+BEGIN
+    POPUP "Popup #0"
+    BEGIN
+        MENUITEM "&Taglia\tCtrl+X", IDM_EDITCUT
+        MENUITEM "&Copia\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "I&ncolla\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "Cance&lla area selezionata\tCanc", IDM_EDITDELETESELECTION
+        MENUITEM "Sele&ziona tutto\tCtrl+A", IDM_EDITSELECTALL
+        MENUITEM SEPARATOR
+        MENUITEM "Copia &su...", IDM_EDITCOPYTO
+        MENUITEM "Incolla &da...", IDM_EDITPASTEFROM
+        MENUITEM SEPARATOR
+        MENUITEM "Ca&povolgi/ruota...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "S&tretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "&Inverti colori\tCtrl+I", IDM_IMAGEINVERTCOLORS
     END
 END
 
@@ -121,6 +140,10 @@ BEGIN
     "^I", IDM_IMAGEINVERTCOLORS
     "^E", IDM_IMAGEATTRIBUTES
     "N", IDM_IMAGEDELETEIMAGE, CONTROL, SHIFT, VIRTKEY
+    VK_ADD, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_SUBTRACT, IDM_CTRL_MINUS, CONTROL, VIRTKEY
+    VK_OEM_PLUS, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_OEM_MINUS, IDM_CTRL_MINUS, CONTROL, VIRTKEY
 END
 
 IDD_MIRRORROTATE DIALOGEX 100, 100, 180, 100
@@ -144,26 +167,26 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
 CAPTION "Attributi"
 BEGIN
+    LTEXT "&Larghezza:", IDD_ATTRIBUTESTEXT1, 10, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT1, 48, 40, 35, 12
+    LTEXT "&Altezza:", IDD_ATTRIBUTESTEXT2, 90, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT2, 128, 40, 35, 12
-    LTEXT "Larghezza:", IDD_ATTRIBUTESTEXT1, 10, 40, 35, 10
-    LTEXT "Altezza:", IDD_ATTRIBUTESTEXT2, 90, 40, 35, 10
-    LTEXT "Ultimo salvataggio:", IDD_ATTRIBUTESTEXT3, 10, 5, 60, 10
-    LTEXT "Dimensioni su disco:", IDD_ATTRIBUTESTEXT4, 10, 15, 60, 10
-    LTEXT "Risoluzione:", IDD_ATTRIBUTESTEXT5, 10, 25, 60, 10
-    LTEXT "Non disponibile", IDD_ATTRIBUTESTEXT6, 60, 5, 90, 10
-    LTEXT "Non disponibile", IDD_ATTRIBUTESTEXT7, 60, 15, 90, 10
-    LTEXT "Non disponibile", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10
+    LTEXT "Ultimo salvataggio:", IDD_ATTRIBUTESTEXT3, 10, 5, 64, 10
+    LTEXT "Dimensioni su disco:", IDD_ATTRIBUTESTEXT4, 10, 15, 64, 10
+    LTEXT "Risoluzione:", IDD_ATTRIBUTESTEXT5, 10, 25, 64, 10
+    LTEXT "Non disponibile", IDD_ATTRIBUTESTEXT6, 77, 5, 90, 10
+    LTEXT "Non disponibile", IDD_ATTRIBUTESTEXT7, 77, 15, 90, 10
+    LTEXT "ppcm", IDD_ATTRIBUTESTEXT8, 77, 25, 90, 10 /* This unit must match IDS_PRINTRES */
     GROUPBOX "Unità di misura", IDD_ATTRIBUTESGROUP1, 6, 57, 158, 27
-    AUTORADIOBUTTON "Pollici", IDD_ATTRIBUTESRB1, 12, 69, 45, 10, WS_GROUP
-    AUTORADIOBUTTON "Cm", IDD_ATTRIBUTESRB2, 62, 69, 45, 10
-    AUTORADIOBUTTON "Pixel", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
+    AUTORADIOBUTTON "P&ollici", IDD_ATTRIBUTESRB1, 12, 69, 45, 10, WS_GROUP
+    AUTORADIOBUTTON "C&m", IDD_ATTRIBUTESRB2, 62, 69, 45, 10
+    AUTORADIOBUTTON "&Pixel", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
     GROUPBOX "Colori", IDD_ATTRIBUTESGROUP2, 6, 88, 158, 27
-    AUTORADIOBUTTON "Bianco e nero", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
-    AUTORADIOBUTTON "Colori", IDD_ATTRIBUTESRB5, 92, 100, 35, 10
+    AUTORADIOBUTTON "&Bianco e nero", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
+    AUTORADIOBUTTON "&Colori", IDD_ATTRIBUTESRB5, 92, 100, 42, 10
     DEFPUSHBUTTON "OK", IDOK, 170, 8, 48, 14
     PUSHBUTTON "Annulla", IDCANCEL, 170, 24, 48, 14
-    PUSHBUTTON "Predefiniti", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
+    PUSHBUTTON "Pre&definiti", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
 END
 
 IDD_STRETCHSKEW DIALOGEX 100, 100, 225, 150
@@ -232,7 +255,6 @@ BEGIN
     IDS_ALLFILES "All Files"
     IDS_ALLPICTUREFILES "All Picture Files"
     IDS_FILESIZE "%d bytes"
-    IDS_PRINTRES "%d x %d pixels per metro"
     IDS_INTNUMBERS "Si prega di inserire solo numeri interi!"
     IDS_PERCENTAGE "La percentuale deve essere compresa tra 1 e 500."
     IDS_ANGLE "L'angolo deve essere compreso tra -89 e 89."
@@ -242,4 +264,9 @@ BEGIN
     IDS_ITALIC "Italic"
     IDS_UNDERLINE "Underline"
     IDS_VERTICAL "Vertical"
+    IDS_PRINTRES "%d x %d pixel/cm"
+    IDS_CANTPASTE "Failed to paste from the clipboard. The data format is either incorrect or not supported."
+    IDS_SAVEERROR "Failed to save the bitmap to file:\n\n%s"
+    IDS_CANTSENDMAIL "Failed to send a mail."
+    IDS_LOSECOLOR "The color information will be lost in this operation. Are you sure to proceed?"
 END

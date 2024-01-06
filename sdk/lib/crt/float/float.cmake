@@ -6,6 +6,7 @@ list(APPEND LIBCNTPR_FLOAT_SOURCE
 list(APPEND CRT_FLOAT_SOURCE
     ${LIBCNTPR_FLOAT_SOURCE}
     float/chgsign.c
+    float/_controlfp_s.c
     float/copysign.c
     float/fpclass.c
     float/fpecode.c
@@ -40,7 +41,14 @@ elseif(ARCH STREQUAL "arm")
         float/arm/_fpreset.c
         float/arm/_statusfp.c
     )
+    list(APPEND LIBCNTPR_FLOAT_SOURCE
+        float/arm/_controlfp.c
+    )
     list(APPEND CRT_FLOAT_ASM_SOURCE
+        float/arm/__getfp.s
+        float/arm/__setfp.s
+    )
+    list(APPEND LIBCNTPR_FLOAT_ASM_SOURCE
         float/arm/__getfp.s
         float/arm/__setfp.s
     )

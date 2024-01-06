@@ -1,4 +1,4 @@
-/* Malay translation by Henry Tang Ih 2016 (henrytang2@hotmail.com) */
+// COPYRIGHT: 2016 Henry Tang Ih <henrytang2@hotmail.com>
 
 LANGUAGE LANG_MALAY, SUBLANG_DEFAULT
 
@@ -18,6 +18,7 @@ BEGIN
     "^X", CMD_CUT
     "^Z", CMD_UNDO
     VK_F3, CMD_SEARCH_NEXT, VIRTKEY
+    VK_F3, CMD_SEARCH_PREV, VIRTKEY, SHIFT
     VK_F5, CMD_TIME_DATE, VIRTKEY
 END
 
@@ -125,20 +126,27 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
 CAPTION "Pergi ke garisan"
 BEGIN
-    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, WS_CHILD | WS_BORDER | WS_TABSTOP
-    LTEXT "Nombor baris:", 0x155, 5, 12, 41, 12, WS_CHILD | WS_TABSTOP | ES_NUMBER
-    DEFPUSHBUTTON "OK", IDOK, 75, 30, 40, 15, WS_CHILD | WS_TABSTOP
-    PUSHBUTTON "Batal", IDCANCEL, 120, 30, 40, 15, WS_CHILD | WS_TABSTOP
+    LTEXT "Nombor baris:", 0x155, 5, 12, 41, 12
+    EDITTEXT ID_LINENUMBER, 54, 10, 106, 12, ES_NUMBER
+    DEFPUSHBUTTON "OK", IDOK, 75, 30, 40, 15
+    PUSHBUTTON "Batal", IDCANCEL, 120, 30, 40, 15
+END
+
+DIALOG_PRINTING DIALOG 0, 0, 160, 100
+CAPTION "Now printing"
+STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
+FONT 8, "MS Shell Dlg"
+BEGIN
+    CTEXT "Print job is starting...", IDC_PRINTING_STATUS, 5, 10, 150, 15
+    CTEXT "(Filename)", IDC_PRINTING_FILENAME, 5, 35, 150, 15
+    CTEXT "Page %u", IDC_PRINTING_PAGE, 5, 55, 150, 15
+    PUSHBUTTON "Batal", IDCANCEL, 50, 75, 60, 20
 END
 
 STRINGTABLE
 BEGIN
-    STRING_PAGESETUP_HEADERVALUE "&n" /* FIXME */
-    STRING_PAGESETUP_FOOTERVALUE "Page &s" /* FIXME */
-    STRING_PAGESETUP_LEFTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_RIGHTVALUE "20 mm" /* FIXME */
-    STRING_PAGESETUP_TOPVALUE "25 mm" /* FIXME */
-    STRING_PAGESETUP_BOTTOMVALUE "25 mm" /* FIXME */
+    STRING_PAGESETUP_HEADERVALUE "&f"
+    STRING_PAGESETUP_FOOTERVALUE "Page &p"
     STRING_NOTEPAD "Notepad"
     STRING_ERROR "RALAT"
     STRING_WARNING "AMARAN"
@@ -148,7 +156,7 @@ BEGIN
     STRING_TEXT_FILES_TXT "Fail teks (*.txt)"
     STRING_TOOLARGE "Fail '%s' adalah terlalu besar untuk notepad.\n\
 Sila gunakan editor yang berbeza."
-    STRING_NOTEXT "Anda tidak memasukkan sebarang teks. \
+    STRING_NOTEXT "Anda tidak memasukkan sebarang teks.\
 \nSila taip sesuatu dan cuba lagi"
     STRING_DOESNOTEXIST "Fail '%s'\ntidak wujud\n\n\
 Adakah anda mahu mencipta fail baru?"
@@ -169,6 +177,12 @@ tugas ini.\nTutup satu atau lebih aplikasi untuk menambah jumlah\ningatan kosong
     STRING_LINE_COLUMN "Garisan %d, Kolum %d"
     STRING_PRINTERROR "Tidak boleh mencetak fail '%s'.\n\nPastikan pencetak dihidupkan dan dikonfigurasikan dengan betul."
     STRING_DEFAULTFONT "Lucida Console"
+    STRING_LINE_NUMBER_OUT_OF_RANGE "The specified line number is out of range."
+    STRING_NOWPRINTING "Now printing page..."
+    STRING_PRINTCANCELING "The print job is being canceled..."
+    STRING_PRINTCOMPLETE "Printing is successfully done."
+    STRING_PRINTCANCELED "Printing has been canceled."
+    STRING_PRINTFAILED "Printing is failed."
 
     STRING_TEXT_DOCUMENT "Text Document"
     STRING_NOTEPAD_AUTHORS "Copyright 1997,98 Marcel Baur, 2000 Mike McCormack, 2002 Sylvain Petreolle, 2002 Andriy Palamarchuk\r\n"

@@ -418,7 +418,7 @@ HRESULT CNewMenu::SelectNewItem(LONG wEventId, UINT uFlags, LPWSTR pszName, BOOL
         dwSelectFlags |= SVSI_EDIT;
 
     /* Notify the view object about the new item */
-    SHChangeNotify(wEventId, uFlags, (LPCVOID) pszName, NULL);
+    SHChangeNotify(wEventId, uFlags | SHCNF_FLUSH, (LPCVOID)pszName, NULL);
 
     if (!m_pSite)
         return S_OK;
@@ -518,17 +518,14 @@ HRESULT CNewMenu::NewItemByCommand(SHELLNEW_ITEM *pItem, LPCWSTR wszPath)
 HRESULT CNewMenu::NewItemByNonCommand(SHELLNEW_ITEM *pItem, LPWSTR wszName,
                                       DWORD cchNameMax, LPCWSTR wszPath)
 {
-    WCHAR wszBuf[MAX_PATH];
-    WCHAR wszNewFile[MAX_PATH];
     BOOL bSuccess = TRUE;
 
-    if (!LoadStringW(shell32_hInstance, FCIDM_SHVIEW_NEW, wszBuf, _countof(wszBuf)))
-        return E_FAIL;
-
-    StringCchPrintfW(wszNewFile, _countof(wszNewFile), L"%s %s%s", wszBuf, pItem->pwszDesc, pItem->pwszExt);
+    CStringW strNewItem;
+    strNewItem.Format(IDS_NEWITEMFORMAT, pItem->pwszDesc);
+    strNewItem += pItem->pwszExt;
 
     /* Create the name of the new file */
-    if (!PathYetAnotherMakeUniqueName(wszName, wszPath, NULL, wszNewFile))
+    if (!PathYetAnotherMakeUniqueName(wszName, wszPath, NULL, strNewItem))
         return E_FAIL;
 
     /* Create new file */
@@ -565,8 +562,10 @@ HRESULT CNewMenu::NewItemByNonCommand(SHELLNEW_ITEM *pItem, LPWSTR wszName,
     }
     else
     {
-        StringCbPrintfW(wszBuf, sizeof(wszBuf), L"Cannot create file: %s", wszName);
-        MessageBoxW(NULL, wszBuf, L"Cannot create file", MB_OK | MB_ICONERROR); // FIXME load localized error msg
+        CStringW Caption(MAKEINTRESOURCEW(IDS_CREATEFILE_CAPTION));
+        CStringW Message(MAKEINTRESOURCEW(IDS_CREATEFILE_DENIED));
+        Message.FormatMessage(Message.GetString(), wszName);
+        MessageBoxW(0, Message, Caption, MB_ICONEXCLAMATION | MB_OK);
     }
 
     return S_OK;

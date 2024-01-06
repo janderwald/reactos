@@ -79,6 +79,7 @@ extern "C" {
 #define MEM_EXECUTE_OPTION_VALID_FLAGS                      0x3F
 
 #ifndef NTOS_MODE_USER
+
 //
 // Virtual Memory Flags
 //
@@ -100,11 +101,13 @@ extern "C" {
 #define SEC_NOCACHE                                         0x10000000
 #define SEC_WRITECOMBINE                                    0x40000000
 #define SEC_LARGE_PAGES                                     0x80000000
-#else
+
+#else // NTOS_MODE_USER
+
 #define SEC_BASED                                           0x200000
 
 //
-// Section Inherit Flags for NtCreateSection
+// Section Inherit Flags for NtMapViewOfSection
 //
 typedef enum _SECTION_INHERIT
 {
@@ -139,7 +142,8 @@ typedef enum _POOL_TYPE
     PagedPoolCacheAlignedSession,
     NonPagedPoolCacheAlignedMustSSession
 } POOL_TYPE;
-#endif
+
+#endif // NTOS_MODE_USER
 
 //
 // Memory Manager Page Lists
@@ -208,7 +212,6 @@ typedef enum _MI_VAD_TYPE
 } MI_VAD_TYPE, *PMI_VAD_TYPE;
 
 #ifdef NTOS_MODE_USER
-
 //
 // Virtual Memory Counters
 //
@@ -669,7 +672,7 @@ typedef struct _MM_AVL_TABLE
 } MM_AVL_TABLE, *PMM_AVL_TABLE;
 
 //
-// Virtual Adress List used in VADs
+// Virtual Address List used in VADs
 //
 typedef struct _MMADDRESS_LIST
 {

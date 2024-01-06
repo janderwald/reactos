@@ -1,14 +1,14 @@
 /*
- * PROJECT:  PAINT for ReactOS
- * LICENSE:  LGPL
- * Превод на Български/ Bulgarian translation
- * https://reactos.org/wiki/Bulgarian_translation
- * LOCATION: base/applications/mspaint/lang
+ * PROJECT:     PAINT for ReactOS
+ * LICENSE:     LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:     Bulgarian resource file
+ * TRANSLATORS: Copyright 2009-2012 S. Stanev (CCTAHEB) <sstpr@narod.ru>
+ *              Copyright 2022 Nikolay Dimitrov <delphipro@gmail.com>
  */
 
 LANGUAGE LANG_BULGARIAN, SUBLANG_DEFAULT
 
-//IDB_FONTSTOOLBAR BITMAP "icons/fontstoolbar-bg-BG.bmp"
+//IDB_FONTSTOOLBAR BITMAP "img/fontstoolbar-bg-BG.bmp"
 
 ID_MENU MENU
 BEGIN
@@ -37,18 +37,18 @@ BEGIN
     END
     POPUP "&Обработка"
     BEGIN
-        MENUITEM "Назад\tCtrl+Z", IDM_EDITUNDO
-        MENUITEM "Напред\tCtrl+Y", IDM_EDITREDO
+        MENUITEM "&Назад\tCtrl+Z", IDM_EDITUNDO
+        MENUITEM "Н&апред\tCtrl+Y", IDM_EDITREDO
         MENUITEM SEPARATOR
-        MENUITEM "Отрязване\tCtrl+X", IDM_EDITCUT
-        MENUITEM "Копиране\tCtrl+C", IDM_EDITCOPY
-        MENUITEM "Поставяне\tCtrl+V", IDM_EDITPASTE
-        MENUITEM "Изтриване на избраното\tDel", IDM_EDITDELETESELECTION
-        MENUITEM "Обръщане на избора", IDM_EDITINVERTSELECTION
-        MENUITEM "Избиране на всичко\tCtrl+A", IDM_EDITSELECTALL
+        MENUITEM "От&рязване\tCtrl+X", IDM_EDITCUT
+        MENUITEM "&Запомняне\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "&Поставяне\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "&Изтриване на избраното\tDel", IDM_EDITDELETESELECTION
+        MENUITEM "О&бръщане на избора", IDM_EDITINVERTSELECTION
+        MENUITEM "Избиране на &всичко\tCtrl+A", IDM_EDITSELECTALL
         MENUITEM SEPARATOR
-        MENUITEM "Запомняне в...", IDM_EDITCOPYTO
-        MENUITEM "Поставяне в...", IDM_EDITPASTEFROM
+        MENUITEM "Запо&мняне в...", IDM_EDITCOPYTO
+        MENUITEM "По&ставяне в...", IDM_EDITPASTEFROM
     END
     POPUP "Из&глед"
     BEGIN
@@ -77,13 +77,13 @@ BEGIN
     END
     POPUP "Из&ображение"
     BEGIN
-        MENUITEM "Завъртане\tCtrl+R", IDM_IMAGEROTATEMIRROR
-        MENUITEM "Разпъване/Изкривяване\tCtrl+W", IDM_IMAGESTRETCHSKEW
-        MENUITEM "Изрязване", IDM_IMAGECROP
-        MENUITEM "Обръщане на цветовете\tCtrl+I", IDM_IMAGEINVERTCOLORS
-        MENUITEM "Принадлежности\tCtrl+E", IDM_IMAGEATTRIBUTES
-        MENUITEM "Изтриване на изображението\tCtrl+Shft+N", IDM_IMAGEDELETEIMAGE
-        MENUITEM "Непрозрачно изчертаване", IDM_IMAGEDRAWOPAQUE
+        MENUITEM "З&авъртане...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "Разпъва&не/Изкривяване...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "Из&рязване", IDM_IMAGECROP
+        MENUITEM "&Обръщане на цветовете\tCtrl+I", IDM_IMAGEINVERTCOLORS
+        MENUITEM "&Принадлежности\tCtrl+E", IDM_IMAGEATTRIBUTES
+        MENUITEM "&Изтриване на изображението\tCtrl+Shft+N", IDM_IMAGEDELETEIMAGE
+        MENUITEM "Непрозра&чно изчертаване", IDM_IMAGEDRAWOPAQUE
     END
     POPUP "&Цветове"
     BEGIN
@@ -97,6 +97,25 @@ BEGIN
         MENUITEM "Помощ", IDM_HELPHELPTOPICS
         MENUITEM SEPARATOR
         MENUITEM "Сведения", IDM_HELPINFO
+    END
+END
+
+ID_POPUPMENU MENU
+BEGIN
+    POPUP "Popup #0"
+    BEGIN
+        MENUITEM "От&рязване\tCtrl+X", IDM_EDITCUT
+        MENUITEM "&Запомняне\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "&Поставяне\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "&Изтриване на избраното\tDel", IDM_EDITDELETESELECTION
+        MENUITEM "Избиране на &всичко\tCtrl+A", IDM_EDITSELECTALL
+        MENUITEM SEPARATOR
+        MENUITEM "Запо&мняне в...", IDM_EDITCOPYTO
+        MENUITEM "По&ставяне в...", IDM_EDITPASTEFROM
+        MENUITEM SEPARATOR
+        MENUITEM "З&авъртане...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "Разпъва&не/Изкривяване...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "&Обръщане на цветовете\tCtrl+I", IDM_IMAGEINVERTCOLORS
     END
 END
 
@@ -121,6 +140,10 @@ BEGIN
     "^I", IDM_IMAGEINVERTCOLORS
     "^E", IDM_IMAGEATTRIBUTES
     "N", IDM_IMAGEDELETEIMAGE, CONTROL, SHIFT, VIRTKEY
+    VK_ADD, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_SUBTRACT, IDM_CTRL_MINUS, CONTROL, VIRTKEY
+    VK_OEM_PLUS, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_OEM_MINUS, IDM_CTRL_MINUS, CONTROL, VIRTKEY
 END
 
 IDD_MIRRORROTATE DIALOGEX 100, 100, 180, 100
@@ -139,31 +162,31 @@ BEGIN
     PUSHBUTTON "Отказ", IDCANCEL, 125, 24, 48, 14
 END
 
-IDD_ATTRIBUTES DIALOGEX 100, 100, 225, 120
+IDD_ATTRIBUTES DIALOGEX 100, 100, 243, 120
 STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
 CAPTION "Принадлежности"
 BEGIN
+    LTEXT "&Ширина:", IDD_ATTRIBUTESTEXT1, 10, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT1, 48, 40, 35, 12
+    LTEXT "&Височина:", IDD_ATTRIBUTESTEXT2, 90, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT2, 128, 40, 35, 12
-    LTEXT "Ширина:", IDD_ATTRIBUTESTEXT1, 10, 40, 35, 10
-    LTEXT "Височина:", IDD_ATTRIBUTESTEXT2, 90, 40, 35, 10
-    LTEXT "Дата на файла:", IDD_ATTRIBUTESTEXT3, 10, 5, 60, 10
-    LTEXT "Файлов размер:", IDD_ATTRIBUTESTEXT4, 10, 15, 60, 10
-    LTEXT "Разделителна:", IDD_ATTRIBUTESTEXT5, 10, 25, 60, 10
-    LTEXT "Неналично", IDD_ATTRIBUTESTEXT6, 60, 5, 90, 10
-    LTEXT "Неналично", IDD_ATTRIBUTESTEXT7, 60, 15, 90, 10
-    LTEXT "Неналично", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10
+    LTEXT "Дата на файла:", IDD_ATTRIBUTESTEXT3, 10, 5, 64, 10
+    LTEXT "Файлов размер:", IDD_ATTRIBUTESTEXT4, 10, 15, 64, 10
+    LTEXT "Разделителна:", IDD_ATTRIBUTESTEXT5, 10, 25, 64, 10
+    LTEXT "Неналично", IDD_ATTRIBUTESTEXT6, 77, 5, 90, 10
+    LTEXT "Неналично", IDD_ATTRIBUTESTEXT7, 77, 15, 90, 10
+    LTEXT "ppcm", IDD_ATTRIBUTESTEXT8, 77, 25, 90, 10 /* This unit must match IDS_PRINTRES */
     GROUPBOX "Единици", IDD_ATTRIBUTESGROUP1, 6, 57, 158, 27
-    AUTORADIOBUTTON "Инчове", IDD_ATTRIBUTESRB1, 12, 69, 45, 10, WS_GROUP
-    AUTORADIOBUTTON "Сантиметри", IDD_ATTRIBUTESRB2, 62, 69, 45, 10
-    AUTORADIOBUTTON "Пиксели", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
+    AUTORADIOBUTTON "&Инчове", IDD_ATTRIBUTESRB1, 12, 69, 40, 10, WS_GROUP
+    AUTORADIOBUTTON "Санти&метри", IDD_ATTRIBUTESRB2, 55, 69, 54, 10
+    AUTORADIOBUTTON "&Пиксели", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
     GROUPBOX "Цветове", IDD_ATTRIBUTESGROUP2, 6, 88, 158, 27
-    AUTORADIOBUTTON "Черно-бяло", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
-    AUTORADIOBUTTON "Цветове", IDD_ATTRIBUTESRB5, 92, 100, 35, 10
-    DEFPUSHBUTTON "Добре", IDOK, 170, 8, 48, 14
-    PUSHBUTTON "Отказ", IDCANCEL, 170, 24, 48, 14
-    PUSHBUTTON "По подразбиране", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
+    AUTORADIOBUTTON "&Черно-бяло", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
+    AUTORADIOBUTTON "Цв&етове", IDD_ATTRIBUTESRB5, 92, 100, 42, 10
+    DEFPUSHBUTTON "Добре", IDOK, 170, 8, 66, 14
+    PUSHBUTTON "Отказ", IDCANCEL, 170, 24, 66, 14
+    PUSHBUTTON "По по&дразбиране", IDD_ATTRIBUTESSTANDARD, 170, 40, 66, 14
 END
 
 IDD_STRETCHSKEW DIALOGEX 100, 100, 225, 150
@@ -232,7 +255,6 @@ BEGIN
     IDS_ALLFILES "Всички файлове"
     IDS_ALLPICTUREFILES "Снимки"
     IDS_FILESIZE "%d разряда"
-    IDS_PRINTRES "%d x %d точки на метър"
     IDS_INTNUMBERS "Моля въведете само числа!"
     IDS_PERCENTAGE "Процента може да бъде между 1 и 500."
     IDS_ANGLE "Ъгълът трябва да бъде между -89 и 89."
@@ -242,4 +264,9 @@ BEGIN
     IDS_ITALIC "Наклонен"
     IDS_UNDERLINE "Подчертан"
     IDS_VERTICAL "Вертикален"
+    IDS_PRINTRES "%d x %d pixel/cm"
+    IDS_CANTPASTE "Failed to paste from the clipboard. The data format is either incorrect or not supported."
+    IDS_SAVEERROR "Failed to save the bitmap to file:\n\n%s"
+    IDS_CANTSENDMAIL "Failed to send a mail."
+    IDS_LOSECOLOR "The color information will be lost in this operation. Are you sure to proceed?"
 END

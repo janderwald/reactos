@@ -1389,9 +1389,9 @@ Phase1InitializationDiscard(IN PVOID Context)
     /* Get the SOS setting */
     SosEnabled = (CommandLine && strstr(CommandLine, "SOS") != NULL);
 
-    /* Setup the boot driver */
+    /* Setup the boot video driver */
     InbvEnableBootDriver(!NoGuiBoot);
-    InbvDriverInitialize(LoaderBlock, IDB_MAX_RESOURCE);
+    InbvDriverInitialize(LoaderBlock, IDB_MAX_RESOURCES);
 
     /* Check if GUI boot is enabled */
     if (!NoGuiBoot)
@@ -1549,16 +1549,19 @@ Phase1InitializationDiscard(IN PVOID Context)
                                          ExpTimeZoneBias.QuadPart;
         }
 
-        /* Update the system time */
+        /* Update the system time and notify the system */
         KeSetSystemTime(&UniversalBootTime, &OldTime, FALSE, NULL);
-
-        /* Do system callback */
         PoNotifySystemTimeSet();
 
         /* Remember this as the boot time */
         KeBootTime = UniversalBootTime;
         KeBootTimeBias = 0;
     }
+
+#ifdef CONFIG_SMP
+    /* Start Application Processors */
+    KeStartAllProcessors();
+#endif
 
     /* Initialize all processors */
     if (!HalAllProcessorsStarted()) KeBugCheck(HAL1_INITIALIZATION_FAILED);
@@ -1681,7 +1684,8 @@ Phase1InitializationDiscard(IN PVOID Context)
     else
     {
         /* Check if the timezone switched and update the time */
-        if (LastTzBias != ExpLastTimeZoneBias) ZwSetSystemTime(NULL, NULL);
+        if (LastTzBias != ExpLastTimeZoneBias)
+            ZwSetSystemTime(NULL, NULL);
     }
 
     /* Initialize the File System Runtime Library */

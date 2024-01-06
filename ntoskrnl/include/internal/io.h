@@ -669,10 +669,20 @@ NTSTATUS
 IopInitPlugPlayEvents(VOID);
 
 NTSTATUS
+IopQueueDeviceChangeEvent(
+    _In_ const GUID *EventGuid,
+    _In_ const GUID *InterfaceClassGuid,
+    _In_ PUNICODE_STRING SymbolicLinkName);
+
+NTSTATUS
 IopQueueTargetDeviceEvent(
-    const GUID *Guid,
-    PUNICODE_STRING DeviceIds
-);
+    _In_ const GUID *Guid,
+    _In_ PUNICODE_STRING DeviceIds);
+
+NTSTATUS
+IopQueueDeviceInstallEvent(
+    _In_ const GUID *Guid,
+    _In_ PUNICODE_STRING DeviceId);
 
 NTSTATUS
 NTAPI
@@ -1064,16 +1074,22 @@ PnpRootDriverEntry(
 );
 
 NTSTATUS
+PnpRootCreateDeviceObject(
+    OUT PDEVICE_OBJECT *DeviceObject);
+
+NTSTATUS
 PnpRootCreateDevice(
     IN PUNICODE_STRING ServiceName,
-    IN OPTIONAL PDRIVER_OBJECT DriverObject,
     OUT PDEVICE_OBJECT *PhysicalDeviceObject,
-    OUT OPTIONAL PUNICODE_STRING FullInstancePath
+    OUT PUNICODE_STRING FullInstancePath
 );
 
 NTSTATUS
 PnpRootRegisterDevice(
     IN PDEVICE_OBJECT DeviceObject);
+
+VOID
+PnpRootInitializeDevExtension(VOID);
 
 //
 // Driver Routines
@@ -1330,17 +1346,17 @@ IopStartRamdisk(
 // Configuration Routines
 //
 NTSTATUS
-NTAPI
-IopFetchConfigurationInformation(OUT PWSTR * SymbolicLinkList,
-                                 IN GUID Guid,
-                                 IN ULONG ExpectedInterfaces,
-                                 IN PULONG Interfaces
+IopFetchConfigurationInformation(
+    _Out_ PWSTR* SymbolicLinkList,
+    _In_ GUID Guid,
+    _In_ ULONG ExpectedInterfaces,
+    _Out_ PULONG Interfaces
 );
 
 VOID
-NTAPI
-IopStoreSystemPartitionInformation(IN PUNICODE_STRING NtSystemPartitionDeviceName,
-                                   IN PUNICODE_STRING OsLoaderPathName
+IopStoreSystemPartitionInformation(
+    _In_ PUNICODE_STRING NtSystemPartitionDeviceName,
+    _In_ PUNICODE_STRING OsLoaderPathName
 );
 
 //

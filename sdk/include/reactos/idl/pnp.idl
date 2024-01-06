@@ -53,7 +53,7 @@ typedef enum _PNP_VETO_TYPE {
     PNP_VetoNonDisableable = 10,
     PNP_VetoLegacyDriver = 11,
     PNP_VetoInsufficientRights = 12,
-} *PPNP_VETO_TYPE;
+} PNP_VETO_TYPE, *PPNP_VETO_TYPE;
 
 cpp_quote("#endif")
 
@@ -878,7 +878,7 @@ interface pnp
     __stdcall
     PNP_RegisterNotification(
         [in] handle_t hBinding,
-        [in] DWORD ulUnknown2,
+        [in] DWORD_PTR hRecipient,
         [in, string, ref] LPWSTR pszName,
         [in, size_is(ulNotificationFilterSize)] BYTE *pNotificationFilter,
         [in] DWORD ulNotificationFilterSize,

@@ -27,7 +27,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Yenile\tF5", ID_REFRESH
         MENUITEM SEPARATOR
-        MENUITEM "Uy&gulama Veri Tabanını Yenile\tCtrl+F5", ID_RESETDB
+        MENUITEM "Uyg&ulama Veri Tabanını Yenile\tCtrl+F5", ID_RESETDB
     END
     POPUP "&Yardım"
     BEGIN
@@ -69,7 +69,7 @@ BEGIN
     GROUPBOX "Genel", -1, 4, 2, 240, 61
     AUTOCHECKBOX "&Pencere Konumunu Kaydet", IDC_SAVE_WINDOW_POS, 15, 12, 219, 12
     AUTOCHECKBOX "&Başlangıçta Erişilebilir Programların Listesini Yenile", IDC_UPDATE_AVLIST, 15, 29, 222, 12
-    AUTOCHECKBOX "&Programların Kurulma ve Kaldırma Günlüğünü Sakla", IDC_LOG_ENABLED, 15, 46, 219, 12
+    AUTOCHECKBOX "P&rogramların Kurulma ve Kaldırma Günlüğünü Sakla", IDC_LOG_ENABLED, 15, 46, 219, 12
     GROUPBOX "İndirme", -1, 4, 65, 240, 51
     LTEXT "İndirme Dizini:", -1, 16, 75, 100, 9
     EDITTEXT IDC_DOWNLOAD_DIR_EDIT, 15, 86, 166, 12, WS_CHILD | WS_VISIBLE | WS_GROUP | ES_AUTOHSCROLL
@@ -118,6 +118,7 @@ BEGIN
     IDS_TOOLTIP_INSTALL "Kur"
     IDS_TOOLTIP_UNINSTALL "Kaldır"
     IDS_TOOLTIP_MODIFY "Değiştir"
+    IDS_TOOLTIP_SELECT_ALL "Tümünü Seç/Seçileni Kaldır"
     IDS_TOOLTIP_SETTINGS "Ayarlar"
     IDS_TOOLTIP_REFRESH "Yenile"
     IDS_TOOLTIP_UPDATE_DB "Yazılım Veri Tabanını Yenile"
@@ -190,13 +191,10 @@ BEGIN
     IDS_APPTITLE "ReactOS Uygulama Yöneticisi"
     IDS_APP_AUTHORS "Telif Hakkı: 2009 Dmitry Chapyshev"
     IDS_SEARCH_TEXT "Ara"
-    IDS_INSTALL "Kur"
-    IDS_UNINSTALL "Kaldır"
-    IDS_MODIFY "Değiştir"
     IDS_APPS_COUNT "Uygulama Sayısı: %d; Seçili: %d"
     IDS_WELCOME_TITLE "ReactOS Uygulama Yöneticisi'ne hoş geldiniz.\n\n"
     IDS_WELCOME_TEXT "Solda bir kategori seçiniz, ardından kurmak ya da kaldırmak için bir uygulama seçiniz.\nReactOS'un İnternet sitesi: "
-    IDS_WELCOME_URL "https://reactos.org/"
+    IDS_WELCOME_URL "https://reactos.org"
     IDS_INSTALLED "Kurulanlar"
     IDS_AVAILABLEFORINST "Kurulabilir Uygulamalar"
     IDS_UPDATES "Güncelleştirmeler"
@@ -215,7 +213,6 @@ BEGIN
     IDS_INTEG_CHECK_FAIL "Paket bütünlük denetimini geçmedi, bozulmuş veya indirme esnasında oynanmış olabilir. Yazılımı çalıştırmanız önerilmez."
     IDS_INTERRUPTED_DOWNLOAD "İndirme kesildi. İnternet bağlantınızı denetleyiniz."
     IDS_UNABLE_TO_WRITE "Diske yazılamıyor. Disk dolu olabilir."
-    IDS_SELECT_ALL "Tümünü Seç/Seçileni Kaldır"
     IDS_INSTALL_SELECTED "Seçileni Kur"
     IDS_SELECTEDFORINST "Kurulum için seçildi"
     IDS_MISMATCH_CERT_INFO "Kullanılan sertifika bilimmiyor:\nAçıklama: %s\nSertifikayı Veren: %s\nYine de devam etmek istiyor musunuz?"

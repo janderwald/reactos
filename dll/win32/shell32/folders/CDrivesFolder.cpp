@@ -55,6 +55,17 @@ static int iDriveTypeIds[7] = { IDS_DRIVE_FIXED,       /* DRIVE_UNKNOWN */
                                 IDS_DRIVE_FIXED        /* DRIVE_RAMDISK*/
                                 };
 
+BOOL _ILGetDriveType(LPCITEMIDLIST pidl)
+{
+    char szDrive[8];
+    if (!_ILGetDrive(pidl, szDrive, _countof(szDrive)))
+    {
+        ERR("pidl %p is not a drive\n", pidl);
+        return DRIVE_UNKNOWN;
+    }
+    return ::GetDriveTypeA(szDrive);
+}
+
 /***********************************************************************
 *   IShellFolder implementation
 */
@@ -572,8 +583,6 @@ static const shvheader MyComputerSFHeader[] = {
     {IDS_SHV_COLUMN_COMMENTS, SHCOLSTATE_TYPE_STR, LVCFMT_LEFT, 10},
 };
 
-#define MYCOMPUTERSHELLVIEWCOLUMNS 5
-
 static const DWORD dwComputerAttributes =
     SFGAO_CANRENAME | SFGAO_CANDELETE | SFGAO_HASPROPSHEET | SFGAO_DROPTARGET |
     SFGAO_FILESYSANCESTOR | SFGAO_FOLDER | SFGAO_HASSUBFOLDER;
@@ -662,11 +671,16 @@ HRESULT WINAPI CDrivesFolder::ParseDisplayName(HWND hwndOwner, LPBC pbc, LPOLEST
         if (pdwAttributes && *pdwAttributes)
         {
             if (_ILIsDrive(pidlTemp))
+            {
                 *pdwAttributes &= dwDriveAttributes;
+
+                if (_ILGetDriveType(pidlTemp) == DRIVE_CDROM)
+                    *pdwAttributes &= ~SFGAO_CANRENAME; // CD-ROM drive cannot rename
+            }
             else if (_ILIsSpecialFolder(pidlTemp))
                 m_regFolder->GetAttributesOf(1, &pidlTemp, pdwAttributes);
             else
-                ERR("Got an unkown pidl here!\n");
+                ERR("Got an unknown pidl here!\n");
         }
     }
 
@@ -752,28 +766,29 @@ HRESULT WINAPI CDrivesFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1
     if (_ILIsSpecialFolder(pidl1) || _ILIsSpecialFolder(pidl2))
         return m_regFolder->CompareIDs(lParam, pidl1, pidl2);
 
-    if (!_ILIsDrive(pidl1) || !_ILIsDrive(pidl2) || LOWORD(lParam) >= MYCOMPUTERSHELLVIEWCOLUMNS)
+    UINT iColumn = LOWORD(lParam);
+    if (!_ILIsDrive(pidl1) || !_ILIsDrive(pidl2) || iColumn >= _countof(MyComputerSFHeader))
         return E_INVALIDARG;
 
     CHAR* pszDrive1 = _ILGetDataPointer(pidl1)->u.drive.szDriveName;
     CHAR* pszDrive2 = _ILGetDataPointer(pidl2)->u.drive.szDriveName;
 
     int result;
-    switch(LOWORD(lParam))
+    switch (MyComputerSFHeader[iColumn].colnameid)
     {
-        case 0:        /* name */
+        case IDS_SHV_COLUMN_NAME:
         {
             result = stricmp(pszDrive1, pszDrive2);
             hres = MAKE_COMPARE_HRESULT(result);
             break;
         }
-        case 1:        /* Type */
+        case IDS_SHV_COLUMN_TYPE:
         {
             /* We want to return immediately because SHELL32_CompareDetails also compares children. */
             return SHELL32_CompareDetails(this, lParam, pidl1, pidl2);
         }
-        case 2:       /* Size */
-        case 3:       /* Size Available */
+        case IDS_SHV_COLUMN_DISK_CAPACITY:
+        case IDS_SHV_COLUMN_DISK_AVAILABLE:
         {
             ULARGE_INTEGER Drive1Available, Drive1Total, Drive2Available, Drive2Total;
 
@@ -796,11 +811,10 @@ HRESULT WINAPI CDrivesFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1
             hres = MAKE_COMPARE_HRESULT(Diff.QuadPart);
             break;
         }
-        case 4:        /* comments */
+        case IDS_SHV_COLUMN_COMMENTS:
             hres = MAKE_COMPARE_HRESULT(0);
             break;
-        default:
-            return E_INVALIDARG;
+        DEFAULT_UNREACHABLE;
     }
 
     if (HRESULT_CODE(hres) == 0)
@@ -879,7 +893,12 @@ HRESULT WINAPI CDrivesFolder::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY a
         for (UINT i = 0; i < cidl; ++i)
         {
             if (_ILIsDrive(apidl[i]))
+            {
                 *rgfInOut &= dwDriveAttributes;
+
+                if (_ILGetDriveType(apidl[i]) == DRIVE_CDROM)
+                    *rgfInOut &= ~SFGAO_CANRENAME; // CD-ROM drive cannot rename
+            }
             else if (_ILIsControlPanel(apidl[i]))
                 *rgfInOut &= dwControlPanelAttributes;
             else if (_ILIsSpecialFolder(*apidl))
@@ -1117,7 +1136,7 @@ HRESULT WINAPI CDrivesFolder::GetDefaultColumnState(UINT iColumn, DWORD * pcsFla
 {
     TRACE ("(%p)\n", this);
 
-    if (!pcsFlags || iColumn >= MYCOMPUTERSHELLVIEWCOLUMNS)
+    if (!pcsFlags || iColumn >= _countof(MyComputerSFHeader))
         return E_INVALIDARG;
     *pcsFlags = MyComputerSFHeader[iColumn].pcsFlags;
     return S_OK;
@@ -1135,7 +1154,7 @@ HRESULT WINAPI CDrivesFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, S
 
     TRACE ("(%p)->(%p %i %p)\n", this, pidl, iColumn, psd);
 
-    if (!psd || iColumn >= MYCOMPUTERSHELLVIEWCOLUMNS)
+    if (!psd || iColumn >= _countof(MyComputerSFHeader))
         return E_INVALIDARG;
 
     if (!pidl)
@@ -1146,7 +1165,18 @@ HRESULT WINAPI CDrivesFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, S
     }
     else if (!_ILIsDrive(pidl))
     {
-        return m_regFolder->GetDetailsOf(pidl, iColumn, psd);
+        switch (MyComputerSFHeader[iColumn].colnameid)
+        {
+            case IDS_SHV_COLUMN_NAME:
+            case IDS_SHV_COLUMN_TYPE:
+                return m_regFolder->GetDetailsOf(pidl, iColumn, psd);
+            case IDS_SHV_COLUMN_DISK_CAPACITY:
+            case IDS_SHV_COLUMN_DISK_AVAILABLE:
+                return SHSetStrRet(&psd->str, ""); /* blank col */
+            case IDS_SHV_COLUMN_COMMENTS:
+                return m_regFolder->GetDetailsOf(pidl, 2, psd); /* 2 = comments */
+            DEFAULT_UNREACHABLE;
+        }
     }
     else
     {
@@ -1156,19 +1186,19 @@ HRESULT WINAPI CDrivesFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, S
         if (DriveType > DRIVE_RAMDISK)
             DriveType = DRIVE_FIXED;
 
-        switch (iColumn)
+        switch (MyComputerSFHeader[iColumn].colnameid)
         {
-            case 0:        /* name */
+            case IDS_SHV_COLUMN_NAME:
                 hr = GetDisplayNameOf(pidl, SHGDN_NORMAL | SHGDN_INFOLDER, &psd->str);
                 break;
-            case 1:        /* type */
+            case IDS_SHV_COLUMN_TYPE:
                 if (DriveType == DRIVE_REMOVABLE && !IsDriveFloppyA(pszDrive))
                     hr = SHSetStrRet(&psd->str, IDS_DRIVE_REMOVABLE);
                 else
                     hr = SHSetStrRet(&psd->str, iDriveTypeIds[DriveType]);
                 break;
-            case 2:        /* total size */
-            case 3:        /* free size */
+            case IDS_SHV_COLUMN_DISK_CAPACITY:
+            case IDS_SHV_COLUMN_DISK_AVAILABLE:
                 psd->str.cStr[0] = 0x00;
                 psd->str.uType = STRRET_CSTR;
                 if (GetVolumeInformationA(pszDrive, NULL, 0, NULL, NULL, NULL, NULL, 0))
@@ -1181,9 +1211,10 @@ HRESULT WINAPI CDrivesFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, S
                 }
                 hr = S_OK;
                 break;
-            case 4:                /* FIXME: comments */
-                hr = SHSetStrRet(&psd->str, "");
+            case IDS_SHV_COLUMN_COMMENTS:
+                hr = SHSetStrRet(&psd->str, ""); /* FIXME: comments */
                 break;
+            DEFAULT_UNREACHABLE;
         }
     }
 

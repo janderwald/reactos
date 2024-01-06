@@ -455,6 +455,8 @@ DWORD WINAPI CFindFolder::SearchThreadProc(LPVOID lpParameter)
 {
     _SearchData *data = static_cast<_SearchData*>(lpParameter);
 
+    HRESULT hrCoInit = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
     data->pFindFolder->NotifyConnections(DISPID_SEARCHSTART);
 
     UINT uTotalFound = RecursiveFind(data->szPath, data);
@@ -468,6 +470,9 @@ DWORD WINAPI CFindFolder::SearchThreadProc(LPVOID lpParameter)
 
     CloseHandle(data->hStopEvent);
     delete data;
+
+    if (SUCCEEDED(hrCoInit))
+        CoUninitialize();
 
     return 0;
 }
@@ -671,9 +676,15 @@ STDMETHODIMP CFindFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, SHELL
     if (!pidl)
         return SHSetStrRet(&pDetails->str, _AtlBaseModule.GetResourceInstance(), g_ColumnDefs[iColumn].iResource);
 
-    if (iColumn == 1)
+    if (iColumn == COL_LOCATION_INDEX)
     {
         return SHSetStrRet(&pDetails->str, _ILGetPath(pidl));
+    }
+
+    if (iColumn == COL_RELEVANCE_INDEX)
+    {
+        // TODO: Fill once the relevance is calculated
+        return SHSetStrRet(&pDetails->str, "");
     }
 
     return GetDisplayNameOf(pidl, SHGDN_NORMAL, &pDetails->str);
@@ -716,11 +727,11 @@ STDMETHODIMP CFindFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PC
     WORD wColumn = LOWORD(lParam);
     switch (wColumn)
     {
-    case 0: // Name
+    case COL_NAME_INDEX: // Name
         break;
-    case 1: // Path
+    case COL_LOCATION_INDEX: // Path
         return MAKE_COMPARE_HRESULT(StrCmpW(_ILGetPath(pidl1), _ILGetPath(pidl2)));
-    case 2: // Relevance
+    case COL_RELEVANCE_INDEX: // Relevance
         return E_NOTIMPL;
     default: // Default columns
         wColumn -= _countof(g_ColumnDefs) - 1;
@@ -798,11 +809,10 @@ class CFindFolderContextMenu :
                 CComHeapPtr<ITEMIDLIST> folderPidl(ILCreateFromPathW(_ILGetPath(apidl[i])));
                 if (!folderPidl)
                     return E_OUTOFMEMORY;
-                CComHeapPtr<ITEMIDLIST> filePidl(ILCombine(folderPidl, _ILGetFSPidl(apidl[i])));
-                if (!filePidl)
-                    return E_OUTOFMEMORY;
-                SHOpenFolderAndSelectItems(folderPidl, 1, &filePidl, 0);
+                LPCITEMIDLIST child = _ILGetFSPidl(apidl[i]);
+                SHOpenFolderAndSelectItems(folderPidl, 1, &child, 0);
             }
+            LocalFree(apidl); // Yes, LocalFree
             return S_OK;
         }
 

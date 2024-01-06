@@ -1,14 +1,14 @@
 /*
- * PROJECT:    ReactOS Paint
- * LICENSE:    LGPL
- * FILE:       base/applications/mspaint/lang/tr-TR.rc
- * PURPOSE:    Turkish Resource file for ReactOS Paint
- * TRANSLATOR: 2013-2014, 2016, 2019 Erdem Ersoy (eersoy93) (erdemersoy [at] erdemersoy [dot] net)
+ * PROJECT:     PAINT for ReactOS
+ * LICENSE:     LGPL-2.0-or-later (https://spdx.org/licenses/LGPL-2.0-or-later)
+ * PURPOSE:     Turkish resource file
+ * TRANSLATORS: Copyright 2013-2016, 2019 Erdem Ersoy (eersoy93) <erdemersoy@erdemersoy.net>
+ *              Copyright 2021-2022 Süleyman Poyraz <zaryob.dev@gmail.com>
  */
 
 LANGUAGE LANG_TURKISH, SUBLANG_DEFAULT
 
-//IDB_FONTSTOOLBAR BITMAP "icons/fontstoolbar-tr-TR.bmp"
+//IDB_FONTSTOOLBAR BITMAP "img/fontstoolbar-tr-TR.bmp"
 
 ID_MENU MENU
 BEGIN
@@ -100,6 +100,25 @@ BEGIN
     END
 END
 
+ID_POPUPMENU MENU
+BEGIN
+    POPUP "Popup #0"
+    BEGIN
+        MENUITEM "&Kes\tCtrl+X", IDM_EDITCUT
+        MENUITEM "K&opyala\tCtrl+C", IDM_EDITCOPY
+        MENUITEM "Y&apıştır\tCtrl+V", IDM_EDITPASTE
+        MENUITEM "&Seçimi Sil\tDel", IDM_EDITDELETESELECTION
+        MENUITEM "&Tümünü Seç\tCtrl+A", IDM_EDITSELECTALL
+        MENUITEM SEPARATOR
+        MENUITEM "Ş&uraya Kopyala...", IDM_EDITCOPYTO
+        MENUITEM "Şu&radan Yapıştır...", IDM_EDITPASTEFROM
+        MENUITEM SEPARATOR
+        MENUITEM "&Döndür ya da Yansıt...\tCtrl+R", IDM_IMAGEROTATEMIRROR
+        MENUITEM "&Yeniden Boyutlandır veya Eğ...\tCtrl+W", IDM_IMAGESTRETCHSKEW
+        MENUITEM "Re&nkleri Tersine Çevir\tCtrl+I", IDM_IMAGEINVERTCOLORS
+    END
+END
+
 ID_ACCELERATORS ACCELERATORS
 BEGIN
     "^N", IDM_FILENEW
@@ -121,6 +140,10 @@ BEGIN
     "^I", IDM_IMAGEINVERTCOLORS
     "^E", IDM_IMAGEATTRIBUTES
     "N", IDM_IMAGEDELETEIMAGE, CONTROL, SHIFT, VIRTKEY
+    VK_ADD, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_SUBTRACT, IDM_CTRL_MINUS, CONTROL, VIRTKEY
+    VK_OEM_PLUS, IDM_CTRL_PLUS, CONTROL, VIRTKEY
+    VK_OEM_MINUS, IDM_CTRL_MINUS, CONTROL, VIRTKEY
 END
 
 IDD_MIRRORROTATE DIALOGEX 100, 100, 180, 100
@@ -144,26 +167,26 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
 CAPTION "Öznitelikler"
 BEGIN
+    LTEXT "&En:", IDD_ATTRIBUTESTEXT1, 10, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT1, 48, 40, 35, 12
+    LTEXT "&Boy:", IDD_ATTRIBUTESTEXT2, 90, 42, 35, 10
     EDITTEXT IDD_ATTRIBUTESEDIT2, 128, 40, 35, 12
-    LTEXT "&En:", IDD_ATTRIBUTESTEXT1, 10, 40, 35, 10
-    LTEXT "&Boy:", IDD_ATTRIBUTESTEXT2, 90, 40, 35, 10
     LTEXT "Dosya Tarihi:", IDD_ATTRIBUTESTEXT3, 10, 5, 60, 10
     LTEXT "Dosya Boyutu:", IDD_ATTRIBUTESTEXT4, 10, 15, 60, 10
     LTEXT "Çözünürlük:", IDD_ATTRIBUTESTEXT5, 10, 25, 60, 10
     LTEXT "Yok", IDD_ATTRIBUTESTEXT6, 60, 5, 90, 10
     LTEXT "Yok", IDD_ATTRIBUTESTEXT7, 60, 15, 90, 10
-    LTEXT "Yok", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10
+    LTEXT "ppcm", IDD_ATTRIBUTESTEXT8, 60, 25, 90, 10 /* This unit must match IDS_PRINTRES */
     GROUPBOX "Birim", IDD_ATTRIBUTESGROUP1, 6, 57, 158, 27
     AUTORADIOBUTTON "&İnç", IDD_ATTRIBUTESRB1, 12, 69, 45, 10, WS_GROUP
     AUTORADIOBUTTON "&cm", IDD_ATTRIBUTESRB2, 62, 69, 45, 10
     AUTORADIOBUTTON "&Piksel", IDD_ATTRIBUTESRB3, 112, 69, 45, 10
     GROUPBOX "Renk", IDD_ATTRIBUTESGROUP2, 6, 88, 158, 27
     AUTORADIOBUTTON "&Siyah ve Beyaz", IDD_ATTRIBUTESRB4, 12, 100, 70, 10, WS_GROUP
-    AUTORADIOBUTTON "&Renkli", IDD_ATTRIBUTESRB5, 92, 100, 35, 10
+    AUTORADIOBUTTON "&Renkli", IDD_ATTRIBUTESRB5, 92, 100, 42, 10
     DEFPUSHBUTTON "Tamam", IDOK, 170, 8, 48, 14
     PUSHBUTTON "İptal", IDCANCEL, 170, 24, 48, 14
-    PUSHBUTTON "Varsayılan", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
+    PUSHBUTTON "&Varsayılan", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
 END
 
 IDD_STRETCHSKEW DIALOGEX 100, 100, 225, 150
@@ -232,14 +255,18 @@ BEGIN
     IDS_ALLFILES "Tüm Dosyalar"
     IDS_ALLPICTUREFILES "Tüm Resim Dosyaları"
     IDS_FILESIZE "%d bayt"
-    IDS_PRINTRES "Metre başına %d x %d piksel"
     IDS_INTNUMBERS "Lütfen yalnızca tamsayı giriniz!"
     IDS_PERCENTAGE "Yüzde 1 ile 500 arasında olmalıdır."
     IDS_ANGLE "Açı -89 ile 89 arasında olmalıdır."
     IDS_LOADERRORTEXT "%s dosyası yüklenemedi."
 	IDS_ENLARGEPROMPTTEXT "Panodaki resim bit eşleminden daha büyük.\nBit eşlemin genişletilmişini ister misiniz?"
-    IDS_BOLD "Bold"
-    IDS_ITALIC "Italic"
-    IDS_UNDERLINE "Underline"
-    IDS_VERTICAL "Vertical"
+    IDS_BOLD "Kalın"
+    IDS_ITALIC "İtalik"
+    IDS_UNDERLINE "Altı Çizgili"
+    IDS_VERTICAL "Düşey"
+    IDS_PRINTRES "%d x %d pixel/cm"
+    IDS_CANTPASTE "Failed to paste from the clipboard. The data format is either incorrect or not supported."
+    IDS_SAVEERROR "Failed to save the bitmap to file:\n\n%s"
+    IDS_CANTSENDMAIL "Failed to send a mail."
+    IDS_LOSECOLOR "The color information will be lost in this operation. Are you sure to proceed?"
 END

@@ -37,9 +37,7 @@ static void output_writeconsole(const WCHAR *str, DWORD wlen)
 #ifdef __REACTOS__
     /* This is win32gui application, don't ever try writing to console.
      * For the console version we have a separate reg.exe application. */
-    WCHAR AppStr[255];
-    LoadStringW(hInst, IDS_APP_TITLE, AppStr, ARRAY_SIZE(AppStr));
-    MessageBoxW(NULL, str, AppStr, MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(NULL, str, NULL, MB_ICONERROR);
 #else
     DWORD count;
 
@@ -123,7 +121,11 @@ typedef enum {
     ACTION_ADD, ACTION_EXPORT, ACTION_DELETE
 } REGEDIT_ACTION;
 
+#ifdef __REACTOS__
+static void PerformRegAction(REGEDIT_ACTION action, WCHAR **argv, int *i, BOOL silent)
+#else
 static void PerformRegAction(REGEDIT_ACTION action, WCHAR **argv, int *i)
+#endif
 {
     switch (action) {
     case ACTION_ADD: {
@@ -131,6 +133,41 @@ static void PerformRegAction(REGEDIT_ACTION action, WCHAR **argv, int *i)
             WCHAR *realname = NULL;
             FILE *reg_file;
 
+#ifdef __REACTOS__
+            /* Request import confirmation */
+            if (!silent)
+            {
+                WCHAR szText[512];
+                int choice;
+                UINT mbType = MB_YESNO;
+
+                LoadStringW(hInst, IDS_IMPORT_PROMPT, szText, ARRAY_SIZE(szText));
+
+                if (argv[*i + 1] != NULL)
+                {
+                    /* Enable three buttons if there's another file coming */
+                    mbType = MB_YESNOCANCEL;
+                }
+
+                choice = InfoMessageBox(NULL, mbType | MB_ICONQUESTION, szTitle, szText, filename);
+                switch (choice)
+                {
+                    case IDNO:
+                        return;
+                    case IDCANCEL:
+                        /* The cancel case is useful if the user is importing more than one registry file
+                         * at a time, and wants to back out anytime during the import process. This way, the
+                         * user doesn't have to resort to ending the regedit process abruptly just to cancel
+                         * the operation.
+                         * To achieve this, we skip all further command line arguments.
+                         */
+                        *i = INT_MAX - 1;
+                        return;
+                    default:
+                        break;
+                }
+            }
+#endif
             if (!lstrcmpW(filename, L"-"))
                 reg_file = stdin;
             else
@@ -180,7 +217,11 @@ static void PerformRegAction(REGEDIT_ACTION action, WCHAR **argv, int *i)
             break;
         }
     default:
+#ifdef __REACTOS__
+        output_message(STRING_UNHANDLED_ACTION);
+#else
         error_exit(STRING_UNHANDLED_ACTION);
+#endif
         break;
     }
 }
@@ -190,6 +231,9 @@ BOOL ProcessCmdLine(WCHAR *cmdline)
     WCHAR **argv;
     int argc, i;
     REGEDIT_ACTION action = ACTION_ADD;
+#ifdef __REACTOS__
+    BOOL silent = FALSE;
+#endif
 
     argv = CommandLineToArgvW(cmdline, &argc);
 
@@ -231,6 +275,10 @@ BOOL ProcessCmdLine(WCHAR *cmdline)
             /* unhandled */;
             break;
         case 'S':
+#ifdef __REACTOS__
+            silent = TRUE;
+            break;
+#endif
         case 'V':
             /* ignored */;
             break;
@@ -256,7 +304,11 @@ BOOL ProcessCmdLine(WCHAR *cmdline)
     }
 
     for (; i < argc; i++)
+#ifdef __REACTOS__
+        PerformRegAction(action, argv, &i, silent);
+#else
         PerformRegAction(action, argv, &i);
+#endif
 
     LocalFree(argv);
 
