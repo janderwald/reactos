@@ -183,7 +183,7 @@ WdmAudOpenSysAudioDevices(
         if (NT_SUCCESS(Status))
         {
             WdmAudOpenSysAudioDeviceInterfaces(DeviceExtension, SymbolicLinkList);
-            FreeItem(SymbolicLinkList);
+            //FreeItem(SymbolicLinkList);
         }
 
         Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange,
