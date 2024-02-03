@@ -142,10 +142,11 @@ WdmAudGetCapabilitiesByLegacy(
     SND_ASSERT( Capabilities );
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
-
-    if ( ! MMSUCCESS(Result) )
+    if (!MMSUCCESS(Result))
+    {
+        SND_TRACE(L"WDMAUD GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
         return Result;
+    }
 
     SND_TRACE(L"WDMAUD - GetWdmDeviceCapabilities DeviceType %u DeviceId %u\n", DeviceType, DeviceId);
 
@@ -339,7 +340,11 @@ WdmAudCloseSoundDeviceByLegacy(
     SND_ASSERT( KernelHandle != INVALID_HANDLE_VALUE );
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
+        return Result;
+    }
 
     if (SoundDeviceInstance->Handle != (PVOID)KernelHandle)
     {
@@ -498,8 +503,11 @@ WdmAudSetWaveDeviceFormatByLegacy(
     }
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
+        return Result;
+    }
 
     ZeroMemory(&DeviceInfo, sizeof(WDMAUD_DEVICE_INFO));
     DeviceInfo.DeviceType = DeviceType;
@@ -640,8 +648,11 @@ WdmAudCommitWaveBufferByLegacy(
     }
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
-
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
+        return Result;
+    }
     DeviceInfo = (PWDMAUD_DEVICE_INFO)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WDMAUD_DEVICE_INFO));
     if (!DeviceInfo)
     {
@@ -712,7 +723,11 @@ WdmAudSetWaveStateByLegacy(
     }
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
+        return Result;
+    }
 
     Result = GetSoundDeviceInstanceHandle(SoundDeviceInstance, &Handle);
     SND_ASSERT( Result == MMSYSERR_NOERROR );
@@ -820,7 +835,11 @@ WdmAudGetWavePositionByLegacy(
     }
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceType DeviceType %u failed %x\n", DeviceType, Result);
+        return Result;
+    }
 
     Result = GetSoundDeviceInstanceHandle(SoundDeviceInstance, &Handle);
     SND_ASSERT( Result == MMSYSERR_NOERROR );
@@ -896,7 +915,11 @@ WdmAudQueryMixerInfoByLegacy(
     SND_TRACE(L"uMsg %x Flags %x\n", uMsg, Flags);
 
     Result = GetSoundDeviceInstanceHandle(SoundDeviceInstance, &Handle);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    if (Result != MMSYSERR_NOERROR)
+    {
+        SND_TRACE(L"GetSoundDeviceInstanceHandle failed with %x\n", Result);
+        return Result;
+    }
 
     ZeroMemory(&DeviceInfo, sizeof(WDMAUD_DEVICE_INFO));
     DeviceInfo.hDevice = Handle;
