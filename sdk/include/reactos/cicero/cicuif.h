@@ -236,7 +236,7 @@ public:
     void StartTimer(WPARAM wParam);
     void EndTimer();
 
-    STDMETHOD_(void, Initialize)() { }
+    STDMETHOD_(BOOL, Initialize)() { return TRUE; }
     STDMETHOD_(void, OnPaint)(HDC hDC);
     STDMETHOD_(void, OnTimer)() { }
     STDMETHOD_(void, OnLButtonDown)(LONG x, LONG y) { }
@@ -568,7 +568,7 @@ public:
     static CUIFWindow* GetThis(HWND hWnd);
     static void SetThis(HWND hWnd, LONG_PTR dwNewLong);
 
-    STDMETHOD_(void, Initialize)() override;
+    STDMETHOD_(BOOL, Initialize)() override;
     STDMETHOD_(void, Show)(BOOL bVisible) override;
     STDMETHOD_(void, SetRect)(LPCRECT prc) override;
     STDMETHOD_(void, PaintObject)(HDC hDC, LPCRECT prc) override;
@@ -592,7 +592,7 @@ public:
     STDMETHOD_(void, Move)(INT x, INT y, INT nWidth, INT nHeight);
     STDMETHOD_(BOOL, AnimateWnd)(DWORD dwTime, DWORD dwFlags);
     STDMETHOD_(void, OnObjectMoved)(CUIFObject *pObject);
-    STDMETHOD_(void, OnPointingEnded)(LONG x, LONG y) { }
+    STDMETHOD_(void, OnMouseOutFromWindow)(LONG x, LONG y) { }
     STDMETHOD_(void, OnCreate)(HWND hWnd) { }
     STDMETHOD_(void, OnDestroy)(HWND hWnd) { }
     STDMETHOD_(void, OnNCDestroy)(HWND hWnd) { }
@@ -653,6 +653,7 @@ protected:
     COLORREF m_rgbToolTipBkColor;
     COLORREF m_rgbToolTipTextColor;
     friend class CUIFObject;
+    friend class CTipbarWnd;
 
 public:
     enum { TOOLTIP_TIMER_ID = 0x3216 };
@@ -697,7 +698,7 @@ public:
     void AdjustWindowPos();
     void OnOwnerWndMoved(BOOL bDoSize);
 
-    STDMETHOD_(void, Initialize)() override;
+    STDMETHOD_(BOOL, Initialize)() override;
     STDMETHOD_(DWORD, GetWndStyleEx)() override;
     STDMETHOD_(void, OnPaint)(HDC hDC) override;
     STDMETHOD_(LRESULT, OnWindowPosChanging)(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) override;
@@ -1064,7 +1065,7 @@ public:
     CUIFBalloonWindow(HINSTANCE hInst, DWORD style);
     ~CUIFBalloonWindow() override;
 
-    STDMETHOD_(void, Initialize)() override;
+    STDMETHOD_(BOOL, Initialize)() override;
     STDMETHOD_(LPCTSTR, GetClassName)() override { return TEXT("MSIME_PopupMessage"); }
     STDMETHOD_(LPCTSTR, GetWndTitle)() override { return TEXT("MSIME_PopupMessage"); }
     STDMETHOD_(void, OnCreate)(HWND hWnd) override;
@@ -1109,6 +1110,28 @@ inline void cicDoneUIFLib(void)
     cicDoneUIFScheme();
     cicDoneUIFSys();
     cicDoneUIFUtil();
+}
+
+inline void cicGetScreenRect(POINT pt, LPRECT prc)
+{
+    *prc = { 0, 0, ::GetSystemMetrics(SM_CXSCREEN), ::GetSystemMetrics(SM_CYSCREEN) };
+    HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    if (hMon)
+    {
+        MONITORINFO mi = { sizeof(mi) };
+        GetMonitorInfo(hMon, &mi);
+            *prc = mi.rcMonitor;
+    }
+}
+
+inline BOOL cicIsFullScreenSize(HWND hWnd)
+{
+    RECT rc;
+
+    ::GetWindowRect(hWnd, &rc);
+    return (rc.left <= 0) && (rc.top <= 0) &&
+           (rc.right >= GetSystemMetrics(SM_CXFULLSCREEN)) &&
+           (rc.bottom >= GetSystemMetrics(SM_CYFULLSCREEN));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2561,7 +2584,7 @@ inline CUIFWindow::~CUIFWindow()
     }
 }
 
-inline STDMETHODIMP_(void)
+inline STDMETHODIMP_(BOOL)
 CUIFWindow::Initialize()
 {
     LPCTSTR pszClass = GetClassName();
@@ -2976,7 +2999,7 @@ CUIFWindow::WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         ::KillTimer(m_hWnd, POINTING_TIMER_ID);
                         m_bPointing = FALSE;
                         SetObjectPointed(NULL, pt2);
-                        OnPointingEnded(pt2.x, pt2.y);
+                        OnMouseOutFromWindow(pt2.x, pt2.y);
                     }
 
                     if (m_pToolTip)
@@ -3366,11 +3389,11 @@ inline void CUIFShadow::OnOwnerWndMoved(BOOL bDoSize)
     }
 }
 
-inline STDMETHODIMP_(void)
+inline STDMETHODIMP_(BOOL)
 CUIFShadow::Initialize()
 {
     InitSettings();
-    CUIFWindow::Initialize();
+    return CUIFWindow::Initialize();
 }
 
 inline STDMETHODIMP_(DWORD)
@@ -5060,7 +5083,7 @@ CUIFBalloonWindow::~CUIFBalloonWindow()
     }
 }
 
-inline STDMETHODIMP_(void)
+inline STDMETHODIMP_(BOOL)
 CUIFBalloonWindow::Initialize()
 {
     CUIFWindow::Initialize();
@@ -5074,6 +5097,8 @@ CUIFBalloonWindow::Initialize()
         AddButton(IDYES);
         AddButton(IDNO);
     }
+
+    return TRUE;
 }
 
 inline STDMETHODIMP_(void)
