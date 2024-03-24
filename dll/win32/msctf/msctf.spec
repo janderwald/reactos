@@ -6,7 +6,7 @@
 @ stub SetInputScopeXML
 @ stdcall SetInputScopes(long ptr long ptr long wstr wstr)
 @ stub TF_CUASAppFix
-@ stub TF_CheckThreadInputIdle
+@ stdcall -stub TF_CheckThreadInputIdle(long long)
 @ stub TF_ClearLangBarAddIns
 @ stdcall -stub TF_CreateCategoryMgr(ptr)
 @ stdcall -stub TF_CreateCicLoadMutex(ptr)
@@ -19,19 +19,19 @@
 @ stdcall -stub TF_GetGlobalCompartment(ptr)
 @ stub TF_GetInputScope
 @ stdcall -stub TF_GetLangIcon(long ptr long)
-@ stdcall -stub TF_GetMlngHKL(long ptr ptr long)
-@ stdcall -stub TF_GetMlngIconIndex(long)
-@ stub TF_GetThreadFlags
+@ stdcall TF_GetMlngHKL(long ptr ptr long)
+@ stdcall TF_GetMlngIconIndex(long)
+@ stdcall -stub TF_GetThreadFlags(long ptr ptr ptr)
 @ stdcall TF_GetThreadMgr(ptr)
-@ stdcall -stub TF_InatExtractIcon(long)
+@ stdcall TF_InatExtractIcon(long)
 @ stdcall TF_InitMlngInfo()
 @ stdcall -stub TF_InitSystem()
 @ stdcall -stub TF_UninitSystem()
 @ stdcall -stub TF_InvalidAssemblyListCache()
 @ stdcall TF_InvalidAssemblyListCacheIfExist()
 @ stdcall TF_IsCtfmonRunning()
-@ stub TF_IsInMarshaling
-@ stdcall -stub TF_MlngInfoCount()
+@ stdcall -stub TF_IsInMarshaling(long)
+@ stdcall TF_MlngInfoCount()
 @ stdcall TF_RunInputCPL()
 @ stdcall -stub TF_PostAllThreadMsg(long long)
 @ stdcall TF_RegisterLangBarAddIn(ptr wstr long)

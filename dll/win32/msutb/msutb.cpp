@@ -9,6 +9,23 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(msutb);
 
+//#define ENABLE_DESKBAND
+
+typedef struct LANGBARITEMSTATE
+{
+    CLSID m_clsid;
+    DWORD m_dwDemoteLevel;
+    UINT_PTR m_nTimerID;
+    UINT m_uTimeOut;
+    BOOL m_bStartedIntentionally;
+    BOOL m_bDisableDemoting;
+
+    BOOL IsShown()
+    {
+        return m_dwDemoteLevel < 2;
+    }
+} LANGBARITEMSTATE, *PLANGBARITEMSTATE;
+
 HINSTANCE g_hInst = NULL;
 UINT g_wmTaskbarCreated = 0;
 UINT g_uACP = CP_ACP;
@@ -18,6 +35,12 @@ LONG g_DllRefCount = 0;
 BOOL g_bWinLogon = FALSE;
 BOOL g_fInClosePopupTipbar = FALSE;
 HWND g_hwndParent = NULL;
+CIC_LIBTHREAD g_libTLS = { NULL, NULL };
+#ifdef ENABLE_DESKBAND
+BOOL g_bEnableDeskBand = TRUE;
+#else
+BOOL g_bEnableDeskBand = FALSE;
+#endif
 
 BOOL g_bShowTipbar = TRUE;
 BOOL g_bShowDebugMenu = FALSE;
@@ -66,10 +89,6 @@ EXTERN_C void __cxa_pure_virtual(void)
 class CMsUtbModule : public CComModule
 {
 };
-
-BEGIN_OBJECT_MAP(ObjectMap)
-    //OBJECT_ENTRY(CLSID_MSUTBDeskBand, CDeskBand) // FIXME: Implement this
-END_OBJECT_MAP()
 
 CMsUtbModule gModule;
 
@@ -138,7 +157,11 @@ void InitSkipRedrawHKLArray(void)
     if (!g_prghklSkipRedrawing)
         return;
 
-    g_prghklSkipRedrawing->Add((HKL)UlongToHandle(0xE0010411)); // Japanese IME will be skipped
+    if (g_bEnableDeskBand && (g_dwOSInfo & CIC_OSINFO_XPPLUS))
+    {
+        // Japanese IME will be skipped
+        g_prghklSkipRedrawing->Add((HKL)UlongToHandle(0xE0010411));
+    }
 
     CicRegKey regKey;
     LSTATUS error = regKey.Open(HKEY_LOCAL_MACHINE,
@@ -387,7 +410,7 @@ BOOL CheckEAFonts(void)
 
 BOOL IsDeskBandFromReg()
 {
-    if (!(g_dwOSInfo & CIC_OSINFO_XPPLUS)) // Desk band is for XP+
+    if (!g_bEnableDeskBand || !(g_dwOSInfo & CIC_OSINFO_XPPLUS)) // Desk band is for XP+
         return FALSE;
 
     CicRegKey regKey;
@@ -536,12 +559,15 @@ BOOL InitFromReg(void)
         error = regKey2.QueryDword(TEXT("TimerElapseENSUREFOCUS"), &dwValue);
         if (error == ERROR_SUCCESS)
             g_uTimerElapseENSUREFOCUS = dwValue;
-        error = regKey2.QueryDword(TEXT("ShowDeskBand"), &dwValue);
-        if (error == ERROR_SUCCESS)
-            g_bShowDeskBand = !!dwValue;
-        error = regKey2.QueryDword(TEXT("TimerElapseSHOWWDESKBAND"), &dwValue);
-        if (error == ERROR_SUCCESS)
-            g_uTimerElapseSHOWDESKBAND = dwValue;
+        if (g_bEnableDeskBand && (g_dwOSInfo & CIC_OSINFO_XPPLUS))
+        {
+            error = regKey2.QueryDword(TEXT("ShowDeskBand"), &dwValue);
+            if (error == ERROR_SUCCESS)
+                g_bShowDeskBand = !!dwValue;
+            error = regKey2.QueryDword(TEXT("TimerElapseSHOWWDESKBAND"), &dwValue);
+            if (error == ERROR_SUCCESS)
+                g_uTimerElapseSHOWDESKBAND = dwValue;
+        }
     }
 
     CicRegKey regKey3;
@@ -1051,6 +1077,27 @@ public:
 
 /***********************************************************************/
 
+class CLangBarItemList : public CicArray<LANGBARITEMSTATE>
+{
+public:
+    BOOL IsStartedIntentionally(REFCLSID rclsid);
+
+    LANGBARITEMSTATE *AddItem(REFCLSID rclsid);
+    void Clear();
+    BOOL SetDemoteLevel(REFCLSID rclsid, DWORD dwDemoteLevel);
+
+    LANGBARITEMSTATE *FindItem(REFCLSID rclsid);
+    LANGBARITEMSTATE *GetItemStateFromTimerId(UINT_PTR nTimerID);
+
+    void Load();
+    void SaveItem(CicRegKey *pRegKey, const LANGBARITEMSTATE *pState);
+
+    void StartDemotingTimer(REFCLSID rclsid, BOOL bIntentional);
+    UINT_PTR FindDemotingTimerId();
+};
+
+/***********************************************************************/
+
 class CTrayIconWnd
 {
 protected:
@@ -1249,9 +1296,161 @@ public:
 /***********************************************************************/
 
 class CTipbarItem;
-class CTipbarThread;
+class CTipbarBalloonItem;
+
+class CTipbarThread
+{
+protected:
+    CTipbarWnd *m_pTipbarWnd;
+    ITfLangBarItemMgr *m_pLangBarItemMgr;
+    CicArray<CTipbarItem*> m_UIObjects;
+    CicArray<CUIFObject*> m_Separators;
+    DWORD m_dwUnknown32;
+    DWORD m_dwThreadId;
+    DWORD m_dwFlags1;
+    DWORD m_dwFlags2;
+    INT m_cxGrip;
+    INT m_cyGrip;
+    DWORD m_dwFlags3;
+    DWORD m_dwUnknown34;
+    LONG m_cRefs;
+    friend class CTipbarWnd;
+    friend class CTipbarItem;
+
+public:
+    CTipbarThread(CTipbarWnd *pTipbarWnd);
+    virtual ~CTipbarThread();
+
+    HRESULT Init(DWORD dwThreadId);
+
+    HRESULT InitItemList();
+    HRESULT _UninitItemList(BOOL bUnAdvise);
+
+    DWORD IsDirtyItem();
+    BOOL IsFocusThread();
+    BOOL IsVertical();
+
+    void AddAllSeparators();
+    void RemoveAllSeparators();
+
+    void AddUIObjs();
+    void RemoveUIObjs();
+
+    CTipbarItem *GetItem(REFCLSID rclsid);
+    void GetTextSize(BSTR bstr, LPSIZE pSize);
+    void LocateItems();
+    void MyMoveWnd(LONG xDelta, LONG yDelta);
+
+    HRESULT _UnadviseItemsSink();
+    LONG _AddRef() { return ++m_cRefs; }
+    LONG _Release();
+
+    /// @unimplemented
+    BOOL SetFocus(CTipbarBalloonItem *pTarget)
+    {
+        return FALSE;
+    }
+
+    /// @unimplemented
+    HRESULT CallOnUpdateHandler()
+    {
+        return E_NOTIMPL;
+    }
+
+    //FIXME
+};
+
+/***********************************************************************/
+
+class CTipbarItem : public CTipbarAccItem
+{
+protected:
+    DWORD m_dwCookie;
+    TF_LANGBARITEMINFO m_ItemInfo;
+    DWORD m_dwUnknown16;
+    DWORD m_dwUnknown17;
+    CTipbarThread *m_pTipbarThread;
+    ITfLangBarItem *m_pLangBarItem;
+    DWORD m_dwUnknown18[2];
+    DWORD m_dwItemFlags;
+    DWORD m_dwDirty;
+    DWORD m_dwUnknown19[4];
+    friend class CTipbarThread;
+    friend class CTipbarWnd;
+
+public:
+    CTipbarItem(
+        CTipbarThread *pThread,
+        ITfLangBarItem *pLangBarItem,
+        TF_LANGBARITEMINFO *pItemInfo,
+        DWORD dwUnknown16);
+    ~CTipbarItem() override;
+
+    void _AddedToUI();
+    void _RemovedToUI();
+    void AddRemoveMeToUI(BOOL bFlag);
+
+    BOOL IsConnected();
+    void ClearConnections();
+
+    void StartDemotingTimer(BOOL bStarted);
+
+    void MyClientToScreen(LPPOINT ppt, LPRECT prc);
+    void MyClientToScreen(LPRECT prc) { return MyClientToScreen(NULL, prc); }
+
+    STDMETHOD_(BSTR, GetAccName)() override;
+    STDMETHOD_(void, GetAccLocation)(LPRECT prc) override;
+    STDMETHOD_(BOOL, DoAccDefaultAction)() override;
+    STDMETHOD(OnUnknown40)() { return S_OK; }
+    STDMETHOD(OnUnknown41)() { return S_OK; }
+    STDMETHOD(OnUnknown42)() { return S_OK; }
+    STDMETHOD(OnUnknown43)() { return S_OK; }
+    STDMETHOD(OnUpdate)(DWORD dwDirty);
+    STDMETHOD(OnUnknown44)() { return S_OK; }
+    STDMETHOD_(void, OnUnknown45)(DWORD dwDirty, DWORD dwStatus) { }
+    STDMETHOD_(void, OnUpdateHandler)(ULONG, ULONG);
+    STDMETHOD(OnUnknown46)(CUIFWindow *pWindow) { return S_OK; }
+    STDMETHOD(OnUnknown47)(CUIFWindow *pWindow) { return S_OK; }
+    STDMETHOD(OnUnknown48)() { return S_OK; }
+    STDMETHOD(OnUnknown49)() { return S_OK; }
+    STDMETHOD(OnUnknown50)() { return S_OK; }
+    STDMETHOD(OnUnknown51)() { return S_OK; }
+    STDMETHOD(OnUnknown52)() { return S_OK; }
+    STDMETHOD(OnUnknown53)(BSTR bstr) { return S_OK; }
+    STDMETHOD_(LPCWSTR, OnUnknown55)() { return NULL; }
+    STDMETHOD(OnUnknown56)() { return S_OK; }
+    STDMETHOD_(LPCWSTR, GetToolTip)();
+    STDMETHOD(OnUnknown57)(LPRECT prc) { return S_OK; }
+    STDMETHOD(OnUnknown58)() { return S_OK; }
+    STDMETHOD_(void, OnUnknown59)() { }
+    STDMETHOD_(void, OnUnknown60)() { }
+    STDMETHOD_(void, OnUnknown61)(HWND) { }
+    STDMETHOD_(void, OnUnknown62)(HWND) { }
+    STDMETHOD(OnUnknown63)() { return S_OK; }
+};
+
+/***********************************************************************/
+
 class CTipbarCtrlButtonHolder;
 class CDeskBand;
+
+// Flags for m_dwTipbarWndFlags
+enum
+{
+    TIPBAR_ATTACHED = 0x1,
+    TIPBAR_CHILD = 0x2,
+    TIPBAR_VERTICAL = 0x4,
+    TIPBAR_HIGHCONTRAST = 0x10,
+    TIPBAR_TRAYICON = 0x20,
+    TIPBAR_UPDATING = 0x400,
+    TIPBAR_ENSURING = 0x2000,
+    TIPBAR_NODESKBAND = 0x4000,
+    TIPBAR_TOOLBARENDED = 0x10000,
+    TIPBAR_TOPFIT = 0x40000,
+    TIPBAR_BOTTOMFIT = 0x80000,
+    TIPBAR_RIGHTFIT = 0x100000,
+    TIPBAR_LEFTFIT = 0x200000,
+};
 
 class CTipbarWnd
     : public ITfLangBarEventSink
@@ -1263,7 +1462,7 @@ class CTipbarWnd
     DWORD m_dwSinkCookie;
     CModalMenu *m_pModalMenu;
     CTipbarThread *m_pThread;
-    CicArray<GUID*> m_TipbarGUIDArray;
+    CLangBarItemList m_LangBarItemList;
     DWORD m_dwUnknown20;
     CUIFWndFrame *m_pWndFrame;
     CTipbarGripper *m_pTipbarGripper;
@@ -1302,8 +1501,13 @@ class CTipbarWnd
     LONG m_cRefs;
     friend class CUTBContextMenu;
     friend class CTipbarGripper;
+    friend class CTipbarThread;
+    friend class CTipbarItem;
+    friend class CLBarInatItem;
+    friend class CMainIconItem;
     friend VOID WINAPI ClosePopupTipbar(VOID);
     friend BOOL GetTipbarInternal(HWND hWnd, DWORD dwFlags, CDeskBand *pDeskBand);
+    friend LONG MyWaitForInputIdle(DWORD dwThreadId, DWORD dwMilliseconds);
 
 public:
     CTipbarWnd(DWORD style);
@@ -1389,6 +1593,12 @@ public:
     void OnTerminateToolbar();
     HRESULT OnThreadTerminateInternal(DWORD dwThreadId);
 
+    /// @unimplemented
+    HRESULT OnThreadItemChangeInternal(DWORD dwThreadId)
+    {
+        return E_NOTIMPL;
+    }
+
     // IUnknown methods
     STDMETHOD(QueryInterface)(REFIID riid, void **ppvObj);
     STDMETHOD_(ULONG, AddRef)();
@@ -1431,6 +1641,16 @@ public:
     STDMETHOD_(void, UpdateUI)(LPCRECT prc) override;
     STDMETHOD_(void, HandleMouseMsg)(UINT uMsg, LONG x, LONG y) override;
 };
+
+/***********************************************************************/
+
+#ifdef ENABLE_DESKBAND
+class CDeskBand
+{
+public:
+    // FIXME: Implement this
+};
+#endif
 
 /***********************************************************************
  * CUTBLangBarDlg
@@ -1518,7 +1738,11 @@ CUTBLangBarDlg::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 CUTBCloseLangBarDlg::CUTBCloseLangBarDlg()
 {
     m_cRefs = 1;
-    m_pszDialogName = MAKEINTRESOURCE(IDD_CLOSELANGBAR);
+
+    if (!(g_dwOSInfo & CIC_OSINFO_XPPLUS))
+        m_pszDialogName = MAKEINTRESOURCE(IDD_CLOSELANGBARNOBAND);
+    else
+        m_pszDialogName = MAKEINTRESOURCE(IDD_CLOSELANGBAR);
 }
 
 STDMETHODIMP_(BOOL) CUTBCloseLangBarDlg::DoModal(HWND hDlg)
@@ -1581,7 +1805,10 @@ STDMETHODIMP_(void) CUTBCloseLangBarDlg::SetDlgShown(BOOL bShown)
 CUTBMinimizeLangBarDlg::CUTBMinimizeLangBarDlg()
 {
     m_cRefs = 1;
-    m_pszDialogName = MAKEINTRESOURCE(IDD_MINIMIZELANGBAR);
+    if (!(g_dwOSInfo & CIC_OSINFO_XPPLUS))
+        m_pszDialogName = MAKEINTRESOURCE(IDD_MINIMIZELANGBARNOBAND);
+    else
+        m_pszDialogName = MAKEINTRESOURCE(IDD_MINIMIZELANGBAR);
 }
 
 STDMETHODIMP_(BOOL) CUTBMinimizeLangBarDlg::DoModal(HWND hDlg)
@@ -1660,13 +1887,12 @@ CCicLibMenu::~CCicLibMenu()
 
 STDMETHODIMP CCicLibMenu::QueryInterface(REFIID riid, LPVOID *ppvObj)
 {
-    if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_ITfMenu))
+    static const QITAB c_tab[] =
     {
-        *ppvObj = this;
-        AddRef();
-        return S_OK;
-    }
-    return E_NOINTERFACE;
+        QITABENT(CCicLibMenu, ITfMenu),
+        { NULL }
+    };
+    return ::QISearch(this, c_tab, riid, ppvObj);
 }
 
 STDMETHODIMP_(ULONG) CCicLibMenu::AddRef()
@@ -1964,15 +2190,13 @@ STDMETHODIMP CTipbarAccessible::QueryInterface(
     REFIID riid,
     void **ppvObject)
 {
-    if (IsEqualIID(riid, IID_IUnknown) ||
-        IsEqualIID(riid, IID_IDispatch) ||
-        IsEqualIID(riid, IID_IAccessible))
+    static const QITAB c_tab[] =
     {
-        *ppvObject = this;
-        AddRef();
-        return S_OK;
-    }
-    return E_NOINTERFACE;
+        QITABENT(CTipbarAccessible, IDispatch),
+        QITABENT(CTipbarAccessible, IAccessible),
+        { NULL }
+    };
+    return ::QISearch(this, c_tab, riid, ppvObject);
 }
 
 STDMETHODIMP_(ULONG) CTipbarAccessible::AddRef()
@@ -2597,7 +2821,7 @@ CUTBContextMenu::CUTBContextMenu(CTipbarWnd *pTipbarWnd)
     m_pTipbarWnd = pTipbarWnd;
 }
 
-/// @unimplemented
+/// @implemented
 BOOL CUTBContextMenu::Init()
 {
     m_pTipbarThread = m_pTipbarWnd->m_pFocusThread;
@@ -2657,7 +2881,7 @@ CUTBMenuWnd *CUTBContextMenu::CreateMenuUI(BOOL bFlag)
 
             CUTBMenuItem *pVertical = InsertItem(pMenuUI, ID_VERTICAL, IDS_VERTICAL);
             if (pVertical)
-                pVertical->Check(!!(m_pTipbarWnd->m_dwTipbarWndFlags & 0x800000));
+                pVertical->Check(!!(m_pTipbarWnd->m_dwTipbarWndFlags & TIPBAR_VERTICAL));
         }
     }
 
@@ -2752,13 +2976,20 @@ BOOL CUTBContextMenu::SelectMenuItem(UINT nCommandId)
 
         case ID_DESKBAND:
         {
-            DWORD dwStatus;
-            m_pTipbarWnd->m_pLangBarMgr->GetShowFloatingStatus(&dwStatus);
+            if (!g_bEnableDeskBand || !(g_dwOSInfo & CIC_OSINFO_XPPLUS))
+            {
+                m_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_MINIMIZED);
+            }
+            else
+            {
+                DWORD dwStatus;
+                m_pTipbarWnd->m_pLangBarMgr->GetShowFloatingStatus(&dwStatus);
 
-            if (dwStatus & TF_SFT_DESKBAND)
-                break;
+                if (dwStatus & TF_SFT_DESKBAND)
+                    break;
 
-            m_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_DESKBAND);
+                m_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_DESKBAND);
+            }
 
             CUTBMinimizeLangBarDlg *pDialog = new(cicNoThrow) CUTBMinimizeLangBarDlg();
             if (pDialog)
@@ -2783,12 +3014,12 @@ BOOL CUTBContextMenu::SelectMenuItem(UINT nCommandId)
         }
 
         case ID_EXTRAICONS:
-            m_pTipbarWnd->m_dwTipbarWndFlags &= ~0x4000;
+            m_pTipbarWnd->m_dwTipbarWndFlags &= ~TIPBAR_NODESKBAND;
             m_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_EXTRAICONSONMINIMIZED);
             break;
 
         case ID_NOEXTRAICONS:
-            m_pTipbarWnd->m_dwTipbarWndFlags &= ~0x4000;
+            m_pTipbarWnd->m_dwTipbarWndFlags &= ~TIPBAR_NODESKBAND;
             m_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_NOEXTRAICONSONMINIMIZED);
             break;
 
@@ -2797,7 +3028,7 @@ BOOL CUTBContextMenu::SelectMenuItem(UINT nCommandId)
             break;
 
         case ID_VERTICAL:
-            m_pTipbarWnd->SetVertical((m_pTipbarWnd->m_dwTipbarWndFlags & 0x4) ? TRUE : FALSE);
+            m_pTipbarWnd->SetVertical(!!(m_pTipbarWnd->m_dwTipbarWndFlags & TIPBAR_VERTICAL));
             break;
 
         case ID_ADJUSTDESKBAND:
@@ -2925,17 +3156,19 @@ STDMETHODIMP_(BOOL) CButtonIconItem::OnDelayMsg(UINT uMsg)
  * CMainIconItem
  */
 
+/// @implemented
 CMainIconItem::CMainIconItem(CTrayIconWnd *pWnd)
     : CButtonIconItem(pWnd, 1)
 {
 }
 
+/// @implemented
 BOOL CMainIconItem::Init(HWND hWnd)
 {
     return CTrayIconItem::_Init(hWnd, WM_USER, 0, GUID_LBI_TRAYMAIN);
 }
 
-/// @unimplemented
+/// @implemented
 STDMETHODIMP_(BOOL) CMainIconItem::OnDelayMsg(UINT uMsg)
 {
     if (!CButtonIconItem::OnDelayMsg(uMsg))
@@ -2943,14 +3176,12 @@ STDMETHODIMP_(BOOL) CMainIconItem::OnDelayMsg(UINT uMsg)
 
     if (uMsg == WM_LBUTTONDBLCLK)
     {
-        //FIXME
-        //if (g_pTipbarWnd->m_dwUnknown20)
-        //    g_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_SHOWNORMAL);
+        if (g_pTipbarWnd->m_dwUnknown20)
+            g_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_SHOWNORMAL);
     }
     else if (uMsg == WM_LBUTTONDOWN || uMsg == WM_RBUTTONDOWN)
     {
-        //FIXME
-        //g_pTipbarWnd->ShowContextMenu(m_ptCursor, &m_rcClient, uMsg == WM_RBUTTONDOWN);
+        g_pTipbarWnd->ShowContextMenu(m_ptCursor, &m_rcMenu, uMsg == WM_RBUTTONDOWN);
     }
     return TRUE;
 }
@@ -3059,16 +3290,15 @@ HWND CTrayIconWnd::GetNotifyWnd()
     return m_hNotifyWnd;
 }
 
-/// @unimplemented
+/// @implemented
 BOOL CTrayIconWnd::OnIconMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    //FIXME
-    //if (g_pTipbarWnd)
-    //    g_pTipbarWnd->AttachFocusThread();
+    if (g_pTipbarWnd)
+        g_pTipbarWnd->AttachFocusThread();
 
     for (size_t iItem = 0; iItem < m_Items.size(); ++iItem)
     {
-        auto pItem = m_Items[iItem];
+        auto *pItem = m_Items[iItem];
         if (pItem)
         {
             if (uMsg == pItem->m_uCallbackMessage)
@@ -3434,25 +3664,14 @@ CLBarItemButtonBase::~CLBarItemButtonBase()
 
 STDMETHODIMP CLBarItemButtonBase::QueryInterface(REFIID riid, void **ppvObject)
 {
-    if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_ITfLangBarItem))
+    static const QITAB c_tab[] =
     {
-        *ppvObject = static_cast<ITfLangBarItem*>(this);
-        AddRef();
-        return S_OK;
-    }
-    if (IsEqualIID(riid, IID_ITfLangBarItemButton))
-    {
-        *ppvObject = static_cast<ITfLangBarItemButton*>(this);
-        AddRef();
-        return S_OK;
-    }
-    if (IsEqualIID(riid, IID_ITfSource))
-    {
-        *ppvObject = static_cast<ITfSource*>(this);
-        AddRef();
-        return S_OK;
-    }
-    return E_NOINTERFACE;
+        QITABENT(CLBarItemButtonBase, ITfLangBarItem),
+        QITABENT(CLBarItemButtonBase, ITfLangBarItemButton),
+        QITABENT(CLBarItemButtonBase, ITfSource),
+        { NULL }
+    };
+    return ::QISearch(this, c_tab, riid, ppvObject);
 }
 
 STDMETHODIMP_(ULONG) CLBarItemButtonBase::AddRef()
@@ -3602,7 +3821,6 @@ STDMETHODIMP CLBarInatItem::InitMenu(ITfMenu *pMenu)
         }
     }
 
-#if 0 // FIXME: g_pTipbarWnd
     DWORD dwStatus;
     if (g_pTipbarWnd &&
         g_pTipbarWnd->m_pLangBarMgr &&
@@ -3615,7 +3833,6 @@ STDMETHODIMP CLBarInatItem::InitMenu(ITfMenu *pMenu)
         ::LoadStringW(g_hInst, IDS_RESTORELANGBAR2, szText, _countof(szText));
         LangBarInsertMenu(pMenu, 2000, szText, FALSE, NULL);
     }
-#endif
 
     return S_OK;
 }
@@ -3628,18 +3845,14 @@ STDMETHODIMP CLBarInatItem::OnMenuSelect(INT nCommandId)
     {
         if (g_pTipbarWnd)
         {
-#if 0 // FIXME: g_pTipbarWnd
             ITfLangBarMgr *pLangBarMgr = g_pTipbarWnd->m_pLangBarMgr;
             if (pLangBarMgr)
                 pLangBarMgr->ShowFloating(TF_SFT_SHOWNORMAL);
-#endif
         }
     }
     else if (TF_GetMlngHKL(nCommandId, &hKL, NULL, 0))
     {
-#if 0 // FIXME: g_pTipbarWnd
-        g_pTipbarWnd->RestoreLastFocus(0, (g_pTipbarWnd->m_dwTipbarWndFlags & 2) != 0);
-#endif
+        g_pTipbarWnd->RestoreLastFocus(NULL, !!(g_pTipbarWnd->m_dwTipbarWndFlags & TIPBAR_CHILD));
         HWND hwndFore = ::GetForegroundWindow();
         if (m_dwThreadId == ::GetWindowThreadProcessId(hwndFore, NULL))
         {
@@ -3667,15 +3880,19 @@ STDMETHODIMP_(void) CTipbarGripper::OnLButtonUp(LONG x, LONG y)
 {
     m_pTipbarWnd->RestoreFromStub();
 
-    APPBARDATA AppBar = { sizeof(AppBar) };
-    AppBar.hWnd = ::FindWindowW(L"Shell_TrayWnd", NULL);
-    if (::SHAppBarMessage(ABM_GETTASKBARPOS, &AppBar))
+    if (g_bEnableDeskBand && (g_dwOSInfo & CIC_OSINFO_XPPLUS))
     {
-        RECT rc = AppBar.rc;
-        POINT pt;
-        ::GetCursorPos(&pt);
-        if (g_pTipbarWnd && ::PtInRect(&rc, pt))
-            g_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_DESKBAND | TF_SFT_EXTRAICONSONMINIMIZED);
+        APPBARDATA AppBar = { sizeof(AppBar) };
+        AppBar.hWnd = ::FindWindowW(L"Shell_TrayWnd", NULL);
+        if (::SHAppBarMessage(ABM_GETTASKBARPOS, &AppBar))
+        {
+            RECT rc = AppBar.rc;
+            POINT pt;
+            ::GetCursorPos(&pt);
+            if (g_pTipbarWnd && ::PtInRect(&rc, pt))
+                g_pTipbarWnd->m_pLangBarMgr->ShowFloating(TF_SFT_DESKBAND |
+                                                          TF_SFT_EXTRAICONSONMINIMIZED);
+        }
     }
 
     CUIFGripper::OnLButtonUp(x, y);
@@ -3697,6 +3914,229 @@ STDMETHODIMP_(BOOL) CTipbarGripper::OnSetCursor(UINT uMsg, LONG x, LONG y)
         return FALSE;
 
     return CUIFGripper::OnSetCursor(uMsg, x, y);
+}
+
+/***********************************************************************
+ * CLangBarItemList
+ */
+
+BOOL CLangBarItemList::IsStartedIntentionally(REFCLSID rclsid)
+{
+    auto *pItem = FindItem(rclsid);
+    if (!pItem)
+        return FALSE;
+    return pItem->m_bStartedIntentionally;
+}
+
+LANGBARITEMSTATE *CLangBarItemList::AddItem(REFCLSID rclsid)
+{
+    auto *pItem = FindItem(rclsid);
+    if (pItem)
+        return pItem;
+
+    pItem = Append(1);
+    if (!pItem)
+        return NULL;
+
+    ZeroMemory(pItem, sizeof(*pItem));
+    pItem->m_clsid = rclsid;
+    pItem->m_dwDemoteLevel = 0;
+    return pItem;
+}
+
+void CLangBarItemList::Clear()
+{
+    clear();
+
+    CicRegKey regKey;
+    LSTATUS error;
+    error = regKey.Open(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\CTF\\LangBar", KEY_ALL_ACCESS);
+    if (error == ERROR_SUCCESS)
+        regKey.RecurseDeleteKey(L"ItemState");
+}
+
+BOOL CLangBarItemList::SetDemoteLevel(REFCLSID rclsid, DWORD dwDemoteLevel)
+{
+    auto *pItem = AddItem(rclsid);
+    if (!pItem)
+        return TRUE;
+
+    pItem->m_dwDemoteLevel = dwDemoteLevel;
+    if (!pItem->IsShown())
+    {
+        if (pItem->m_nTimerID)
+        {
+            if (g_pTipbarWnd)
+                g_pTipbarWnd->KillTimer(pItem->m_nTimerID);
+            pItem->m_nTimerID = 0;
+            pItem->m_uTimeOut = 0;
+        }
+        pItem->m_bDisableDemoting = FALSE;
+    }
+
+    SaveItem(0, pItem);
+    return TRUE;
+}
+
+LANGBARITEMSTATE *CLangBarItemList::FindItem(REFCLSID rclsid)
+{
+    for (size_t iItem = 0; iItem < size(); ++iItem)
+    {
+        auto& item = (*this)[iItem];
+        if (IsEqualCLSID(item.m_clsid, rclsid))
+            return &item;
+    }
+    return NULL;
+}
+
+LANGBARITEMSTATE *CLangBarItemList::GetItemStateFromTimerId(UINT_PTR nTimerID)
+{
+    for (size_t iItem = 0; iItem < size(); ++iItem)
+    {
+        auto& item = (*this)[iItem];
+        if (item.m_nTimerID == nTimerID)
+            return &item;
+    }
+    return NULL;
+}
+
+void CLangBarItemList::Load()
+{
+    CicRegKey regKey;
+    LSTATUS error;
+    error = regKey.Open(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\CTF\\LangBar\\ItemState");
+    if (error != ERROR_SUCCESS)
+        return;
+
+    WCHAR szKeyName[MAX_PATH];
+    for (DWORD dwIndex = 0; ; ++dwIndex)
+    {
+        error = ::RegEnumKeyW(regKey, dwIndex, szKeyName, _countof(szKeyName));
+        if (error != ERROR_SUCCESS)
+            break;
+
+        CLSID clsid;
+        if (::CLSIDFromString(szKeyName, &clsid) != S_OK)
+            continue;
+
+        CicRegKey regKey2;
+        error = regKey2.Open(regKey, szKeyName);
+        if (error != ERROR_SUCCESS)
+            continue;
+
+        auto *pItem = AddItem(clsid);
+        if (!pItem)
+            continue;
+
+        DWORD Data = 0;
+        regKey2.QueryDword(L"DemoteLevel", &Data);
+        pItem->m_dwDemoteLevel = Data;
+        regKey2.QueryDword(L"DisableDemoting", &Data);
+        pItem->m_bDisableDemoting = !!Data;
+    }
+}
+
+void CLangBarItemList::SaveItem(CicRegKey *pRegKey, const LANGBARITEMSTATE *pState)
+{
+    LSTATUS error;
+    CicRegKey regKey;
+
+    if (!pRegKey)
+    {
+        error = regKey.Create(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\CTF\\LangBar\\ItemState");
+        if (error != ERROR_SUCCESS)
+            return;
+
+        pRegKey = &regKey;
+    }
+
+    WCHAR szSubKey[MAX_PATH];
+    ::StringFromGUID2(pState->m_clsid, szSubKey, _countof(szSubKey));
+
+    if (pState->m_dwDemoteLevel || pState->m_bDisableDemoting)
+    {
+        CicRegKey regKey2;
+        error = regKey2.Create(*pRegKey, szSubKey);
+        if (error == ERROR_SUCCESS)
+        {
+            DWORD dwDemoteLevel = pState->m_dwDemoteLevel;
+            if (dwDemoteLevel)
+                regKey2.SetDword(L"DemoteLevel", dwDemoteLevel);
+            else
+                regKey2.DeleteValue(L"DemoteLevel");
+
+            regKey2.SetDword(L"DisableDemoting", pState->m_bDisableDemoting);
+        }
+    }
+    else
+    {
+        pRegKey->RecurseDeleteKey(szSubKey);
+    }
+}
+
+void CLangBarItemList::StartDemotingTimer(REFCLSID rclsid, BOOL bIntentional)
+{
+    if (!g_bIntelliSense)
+        return;
+
+    auto *pItem = AddItem(rclsid);
+    if (!pItem || pItem->m_bDisableDemoting)
+        return;
+
+    if (pItem->m_nTimerID)
+    {
+        if (!bIntentional)
+            return;
+
+        if (g_pTipbarWnd)
+            g_pTipbarWnd->KillTimer(pItem->m_nTimerID);
+
+        pItem->m_nTimerID = 0;
+    }
+
+    pItem->m_bStartedIntentionally |= bIntentional;
+
+    UINT uTimeOut = (bIntentional ? g_uTimeOutIntentional : g_uTimeOutNonIntentional);
+    pItem->m_uTimeOut += uTimeOut;
+
+    if (pItem->m_uTimeOut < g_uTimeOutMax)
+    {
+        UINT_PTR uDemotingTimerId = FindDemotingTimerId();
+        pItem->m_nTimerID = uDemotingTimerId;
+        if (uDemotingTimerId)
+        {
+            if (g_pTipbarWnd)
+                g_pTipbarWnd->SetTimer(uDemotingTimerId, uTimeOut);
+        }
+    }
+    else
+    {
+        pItem->m_bDisableDemoting = TRUE;
+    }
+}
+
+UINT_PTR CLangBarItemList::FindDemotingTimerId()
+{
+    UINT_PTR nTimerID = 10000;
+
+    if (empty())
+        return nTimerID;
+
+    for (;;)
+    {
+        size_t iItem = 0;
+
+        while ((*this)[iItem].m_nTimerID != nTimerID)
+        {
+            ++iItem;
+            if (iItem >= size())
+                return nTimerID;
+        }
+
+        ++nTimerID;
+        if (nTimerID >= 10050)
+            return 0;
+    }
 }
 
 /***********************************************************************
@@ -3751,7 +4191,6 @@ CTipbarWnd::CTipbarWnd(DWORD style)
     m_cRefs = 1;
 }
 
-/// @unimplemented
 CTipbarWnd::~CTipbarWnd()
 {
     UnInit();
@@ -3761,23 +4200,66 @@ CTipbarWnd::~CTipbarWnd()
     if (m_hTextFont)
         ::DeleteObject(m_hTextFont);
 
-    //TFUninitLib_Thread(&g_libTLS); //FIXME
+    TFUninitLib_Thread(&g_libTLS);
 }
 
 /// @unimplemented
 void CTipbarWnd::Init(BOOL bChild, CDeskBand *pDeskBand)
 {
+    if (bChild)
+        m_dwTipbarWndFlags |= TIPBAR_CHILD;
+    else
+        m_dwTipbarWndFlags &= ~TIPBAR_CHILD;
+
+    if (m_dwTipbarWndFlags & TIPBAR_CHILD)
+        m_dwTipbarWndFlags &= TIPBAR_HIGHCONTRAST;
+
+    m_pDeskBand = pDeskBand;
+
+    RECT rc = { 0, 0, 0, 0 };
+
+    if (g_bNewLook && !m_pWndFrame && (m_style & 0x20000000))
+    {
+        CUIFWndFrame *pWndFrame = new(cicNoThrow) CUIFWndFrame(GetWindow(), &rc, 0);
+        if (pWndFrame)
+        {
+            pWndFrame->Initialize();
+            AddUIObj(m_pWndFrame);
+        }
+    }
+
+    if (!m_pTipbarGripper && !(m_dwTipbarWndFlags & TIPBAR_CHILD))
+    {
+        m_pTipbarGripper =
+            new(cicNoThrow) CTipbarGripper(this, &rc, !!(m_dwTipbarWndFlags & TIPBAR_VERTICAL));
+        if (m_pTipbarGripper)
+        {
+            m_pTipbarGripper->Initialize();
+            AddUIObj(m_pTipbarGripper);
+        }
+    }
+
+    //FIXME: CTipbarCtrlButtonHolder
+
+    if (m_dwTipbarWndFlags & TIPBAR_VERTICAL)
+    {
+        Move(m_nLeft, m_nTop, GetTipbarHeight(), 0);
+    }
+    else
+    {
+        Move(m_nLeft, m_nTop, 0, GetTipbarHeight());
+    }
 }
 
 void CTipbarWnd::InitHighContrast()
 {
-    m_dwTipbarWndFlags &= ~0x10;
+    m_dwTipbarWndFlags &= ~TIPBAR_HIGHCONTRAST;
 
     HIGHCONTRAST HiCon = { sizeof(HiCon) };
     if (::SystemParametersInfo(SPI_GETHIGHCONTRAST, sizeof(HiCon), &HiCon, 0))
     {
         if (HiCon.dwFlags & HCF_HIGHCONTRASTON)
-            m_dwTipbarWndFlags |= 0x10;
+            m_dwTipbarWndFlags |= TIPBAR_HIGHCONTRAST;
     }
 }
 
@@ -3838,9 +4320,29 @@ void CTipbarWnd::InitThemeMargins()
     theme.CloseThemeData();
 }
 
-/// @unimplemented
 void CTipbarWnd::UnInit()
 {
+    SetFocusThread(NULL);
+    for (size_t iItem = 0; iItem < m_Threads.size(); ++iItem)
+    {
+        CTipbarThread* pThread = m_Threads[iItem];
+        if (pThread)
+        {
+            pThread->_UninitItemList(TRUE);
+            pThread->m_pTipbarWnd = NULL;
+            pThread->_Release();
+        }
+    }
+    m_Threads.clear();
+
+    if (m_pLangBarMgr)
+        m_pLangBarMgr->UnAdviseEventSink(m_dwSinkCookie);
+
+    if (m_pLangBarMgr)
+    {
+        m_pLangBarMgr->Release();
+        m_pLangBarMgr = NULL;
+    }
 }
 
 BOOL CTipbarWnd::IsFullScreenWindow(HWND hWnd)
@@ -3868,10 +4370,11 @@ BOOL CTipbarWnd::IsHKLToSkipRedrawOnNoItem()
     return IsSkipRedrawHKL(hKL);
 }
 
-/// @unimplemented
 BOOL CTipbarWnd::IsInItemChangeOrDirty(CTipbarThread *pTarget)
 {
-    return FALSE;
+    if (pTarget->m_dwThreadId == m_dwChangingThreadId)
+        return TRUE;
+    return pTarget->IsDirtyItem();
 }
 
 void CTipbarWnd::AddThreadToThreadCreatingList(CTipbarThread *pThread)
@@ -3886,9 +4389,30 @@ void CTipbarWnd::RemoveThredFromThreadCreatingList(CTipbarThread *pTarget)
         m_ThreadCreatingList.Remove(iItem);
 }
 
-/// @unimplemented
 void CTipbarWnd::MoveToStub(BOOL bFlag)
 {
+    m_dwTipbarWndFlags |= 0x40;
+
+    RECT rcWorkArea;
+    ::SystemParametersInfo(SPI_GETWORKAREA, 0, &rcWorkArea, 0);
+
+    if (bFlag)
+    {
+        m_nLeft = rcWorkArea.right - 38;
+        m_dwTipbarWndFlags &= ~0x80;
+    }
+    else
+    {
+        RECT Rect;
+        ::GetWindowRect(m_hWnd, &Rect);
+        m_nLeft = rcWorkArea.right + Rect.left - Rect.right;
+        m_dwTipbarWndFlags |= 0x80;
+    }
+
+    m_nTop = rcWorkArea.bottom - m_cyDlgFrameX2 - GetTipbarHeight();
+
+    if (m_pFocusThread)
+        m_pFocusThread->MyMoveWnd(0, 0);
 }
 
 void CTipbarWnd::RestoreFromStub()
@@ -3938,10 +4462,23 @@ INT CTipbarWnd::GetTipbarHeight()
     return m_cySmallIcon + cy + (2 * size.cy);
 }
 
-/// @unimplemented
 BOOL CTipbarWnd::AutoAdjustDeskBandSize()
 {
-    return FALSE;
+    if ((m_dwTipbarWndFlags & TIPBAR_NODESKBAND) ||
+        !m_pFocusThread ||
+        (m_pFocusThread->m_dwFlags1 & 0x800))
+    {
+        return FALSE;
+    }
+
+    DWORD dwOldWndFlags = m_dwTipbarWndFlags;
+    m_dwTipbarWndFlags &= ~0x8000;
+
+    if (!AdjustDeskBandSize(!(dwOldWndFlags & 0x8000)))
+        return FALSE;
+
+    m_dwTipbarWndFlags |= TIPBAR_NODESKBAND;
+    return TRUE;
 }
 
 /// @unimplemented
@@ -3963,13 +4500,13 @@ void CTipbarWnd::AdjustPosOnDisplayChange()
         return;
 
     INT x = m_nLeft, y = m_nTop;
-    if (m_dwTipbarWndFlags & 0x200000)
+    if (m_dwTipbarWndFlags & TIPBAR_LEFTFIT)
         x = rcWorkArea.left;
-    if (m_dwTipbarWndFlags & 0x40000)
+    if (m_dwTipbarWndFlags & TIPBAR_TOPFIT)
         y = rcWorkArea.top;
-    if (m_dwTipbarWndFlags & 0x100000)
+    if (m_dwTipbarWndFlags & TIPBAR_RIGHTFIT)
         x = rcWorkArea.right - m_nWidth;
-    if (m_dwTipbarWndFlags & 0x80000)
+    if (m_dwTipbarWndFlags & TIPBAR_BOTTOMFIT)
         y = rcWorkArea.bottom - m_nHeight;
     if (x != m_nLeft || y != m_nTop)
         Move(x, y, m_nWidth, m_nHeight);
@@ -3978,9 +4515,9 @@ void CTipbarWnd::AdjustPosOnDisplayChange()
 void CTipbarWnd::SetVertical(BOOL bVertical)
 {
     if (bVertical)
-        m_dwTipbarWndFlags |= 0x4;
+        m_dwTipbarWndFlags |= TIPBAR_VERTICAL;
     else
-        m_dwTipbarWndFlags &= ~0x4;
+        m_dwTipbarWndFlags &= ~TIPBAR_VERTICAL;
 
     if (m_pTipbarGripper)
     {
@@ -3993,11 +4530,11 @@ void CTipbarWnd::SetVertical(BOOL bVertical)
     }
 
     if (g_fTaskbarTheme)
-        SetActiveTheme(L"TASKBAR", !!(m_dwTipbarWndFlags & 0x4), 1);
+        SetActiveTheme(L"TASKBAR", !!(m_dwTipbarWndFlags & TIPBAR_VERTICAL), 1);
 
-    if (!(m_dwTipbarWndFlags & 2))
+    if (!(m_dwTipbarWndFlags & TIPBAR_CHILD))
     {
-        if (m_dwTipbarWndFlags & 4)
+        if (m_dwTipbarWndFlags & TIPBAR_VERTICAL)
         {
             Move(m_nLeft, m_nTop, GetTipbarHeight(), 0);
         }
@@ -4016,37 +4553,48 @@ void CTipbarWnd::SetVertical(BOOL bVertical)
 
 void CTipbarWnd::UpdatePosFlags()
 {
-    if (m_dwTipbarWndFlags & 0x2)
+    if (m_dwTipbarWndFlags & TIPBAR_CHILD)
         return;
 
     RECT rc = { m_nLeft, m_nTop, m_nLeft + m_nWidth, m_nTop + m_nHeight }, rcWorkArea;
     if (!GetWorkArea(&rc, &rcWorkArea))
         return;
 
-    if (m_nLeft > rcWorkArea.left + 2)
-        m_dwTipbarWndFlags &= ~0x200000;
+    if (rcWorkArea.left + 2 < m_nLeft)
+        m_dwTipbarWndFlags &= ~TIPBAR_LEFTFIT;
     else
-        m_dwTipbarWndFlags |= 0x200000;
+        m_dwTipbarWndFlags |= TIPBAR_LEFTFIT;
 
-    if ( m_nTop> rcWorkArea.top + 2 )
-        m_dwTipbarWndFlags &= ~0x40000;
+    if (rcWorkArea.top + 2 < m_nTop)
+        m_dwTipbarWndFlags &= ~TIPBAR_TOPFIT;
     else
-        m_dwTipbarWndFlags |= 0x40000;
+        m_dwTipbarWndFlags |= TIPBAR_TOPFIT;
 
     if (m_nLeft + m_nWidth < rcWorkArea.right - 2)
-        m_dwTipbarWndFlags &= ~0x100000;
+        m_dwTipbarWndFlags &= ~TIPBAR_RIGHTFIT;
     else
-        m_dwTipbarWndFlags |= 0x100000;
+        m_dwTipbarWndFlags |= TIPBAR_RIGHTFIT;
 
     if (m_nTop + m_nHeight < rcWorkArea.bottom - 2)
-        m_dwTipbarWndFlags &= ~0x80000;
+        m_dwTipbarWndFlags &= ~TIPBAR_BOTTOMFIT;
     else
-        m_dwTipbarWndFlags |= 0x80000;
+        m_dwTipbarWndFlags |= TIPBAR_BOTTOMFIT;
 }
 
-/// @unimplemented
 void CTipbarWnd::CancelMenu()
 {
+    if (!m_pThread)
+        return;
+
+    CTipbarWnd *pTipbarWnd = m_pThread->m_pTipbarWnd;
+    if (pTipbarWnd)
+    {
+        if (pTipbarWnd->m_pLangBarMgr)
+            pTipbarWnd->StartModalInput(NULL, m_pThread->m_dwThreadId);
+    }
+
+    m_pModalMenu->CancelMenu();
+    StartBackToAlphaTimer();
 }
 
 BOOL CTipbarWnd::CheckExcludeCaptionButtonMode(LPRECT prc1, LPCRECT prc2)
@@ -4054,9 +4602,11 @@ BOOL CTipbarWnd::CheckExcludeCaptionButtonMode(LPRECT prc1, LPCRECT prc2)
     return (prc1->top < prc2->top + 5) && (prc2->right <= prc1->right + (5 * m_ButtonWidth));
 }
 
-/// @unimplemented
 void CTipbarWnd::ClearLBItemList()
 {
+    m_LangBarItemList.Clear();
+    if (m_pFocusThread)
+        OnThreadItemChange(m_pFocusThread->m_dwThreadId);
 }
 
 HFONT CTipbarWnd::CreateVerticalFont()
@@ -4092,7 +4642,7 @@ HFONT CTipbarWnd::CreateVerticalFont()
 
 void CTipbarWnd::UpdateVerticalFont()
 {
-    if (m_dwTipbarWndFlags & 4)
+    if (m_dwTipbarWndFlags & TIPBAR_VERTICAL)
     {
         if (m_hTextFont)
         {
@@ -4112,6 +4662,7 @@ void CTipbarWnd::UpdateVerticalFont()
 /// @unimplemented
 void CTipbarWnd::ShowOverScreenSizeBalloon()
 {
+    //FIXME: CTipbarCtrlButtonHolder
 }
 
 void CTipbarWnd::DestroyOverScreenSizeBalloon()
@@ -4131,15 +4682,26 @@ void CTipbarWnd::DestroyWnd()
         ::DestroyWindow(m_hWnd);
 }
 
-/// @unimplemented
 HKL CTipbarWnd::GetFocusKeyboardLayout()
 {
-    return NULL;
+    DWORD dwThreadId = 0;
+    if (m_pFocusThread)
+        dwThreadId = m_pFocusThread->m_dwThreadId;
+    return ::GetKeyboardLayout(dwThreadId);
 }
 
-/// @unimplemented
 void CTipbarWnd::KillOnTheadItemChangeTimer()
 {
+    DWORD dwChangingThreadId = m_dwChangingThreadId;
+    m_dwChangingThreadId = 0;
+    KillTimer(4);
+
+    if (dwChangingThreadId)
+    {
+        CTipbarThread *pThread = _FindThread(dwChangingThreadId);
+        if (pThread)
+            pThread->m_dwUnknown34 |= 0x1;
+    }
 }
 
 UINT_PTR CTipbarWnd::SetTimer(UINT_PTR nIDEvent, UINT uElapse)
@@ -4159,6 +4721,10 @@ BOOL CTipbarWnd::KillTimer(UINT_PTR uIDEvent)
 /// @unimplemented
 void CTipbarWnd::MoveToTray()
 {
+    if (!g_bEnableDeskBand || !(g_dwOSInfo & CIC_OSINFO_XPPLUS))
+    {
+        //FIXME
+    }
 }
 
 void CTipbarWnd::MyClientToScreen(LPPOINT lpPoint, LPRECT prc)
@@ -4182,7 +4748,7 @@ void CTipbarWnd::SavePosition()
         ::ClientToScreen(m_hWnd, &pt);
         regKey.SetDword(TEXT("Left"), pt.x);
         regKey.SetDword(TEXT("Top"), pt.y);
-        regKey.SetDword(TEXT("Vertical"), !!(m_dwTipbarWndFlags & 4));
+        regKey.SetDword(TEXT("Vertical"), !!(m_dwTipbarWndFlags & TIPBAR_VERTICAL));
     }
 }
 
@@ -4214,13 +4780,10 @@ BOOL CTipbarWnd::SetLangBand(BOOL bDeskBand, BOOL bFlag2)
         ret = FALSE;
     }
 
-    if (!(m_dwTipbarWndFlags & 2))
+    if (!(m_dwTipbarWndFlags & TIPBAR_CHILD) && bDeskBand)
     {
-        if (bDeskBand)
-        {
-            KillTimer(7);
-            SetTimer(7, g_uTimerElapseSYSCOLORCHANGED);
-        }
+        KillTimer(7);
+        SetTimer(7, g_uTimerElapseSYSCOLORCHANGED);
     }
 
     return ret;
@@ -4228,7 +4791,7 @@ BOOL CTipbarWnd::SetLangBand(BOOL bDeskBand, BOOL bFlag2)
 
 void CTipbarWnd::SetMoveRect(INT X, INT Y, INT nWidth, INT nHeight)
 {
-    if (m_dwTipbarWndFlags & 0x2)
+    if (m_dwTipbarWndFlags & TIPBAR_CHILD)
     {
         m_nWidth = nWidth;
         m_nHeight = nHeight;
@@ -4237,7 +4800,7 @@ void CTipbarWnd::SetMoveRect(INT X, INT Y, INT nWidth, INT nHeight)
 
     ++m_bInCallOn;
 
-    m_dwTipbarWndFlags |= 0x400;
+    m_dwTipbarWndFlags |= TIPBAR_UPDATING;
 
     m_X = X;
     m_Y = Y;
@@ -4255,7 +4818,7 @@ void CTipbarWnd::SetMoveRect(INT X, INT Y, INT nWidth, INT nHeight)
 
     if (m_pTipbarGripper)
     {
-        if (m_dwTipbarWndFlags & 4)
+        if (m_dwTipbarWndFlags & TIPBAR_VERTICAL)
         {
             INT GripperWidth = GetGripperWidth();
             ::SetRect(&rc, size.cx, size.cy, nWidth - m_cxDlgFrameX2 - size.cx, size.cy + GripperWidth);
@@ -4272,19 +4835,27 @@ void CTipbarWnd::SetMoveRect(INT X, INT Y, INT nWidth, INT nHeight)
     --m_bInCallOn;
 }
 
-/// @unimplemented
 void CTipbarWnd::SetShowText(BOOL bShow)
 {
+    if (bShow)
+        m_dwTipbarWndFlags |= TIPBAR_HIGHCONTRAST;
+    else
+        m_dwTipbarWndFlags &= ~TIPBAR_HIGHCONTRAST;
+
+    if (m_pFocusThread)
+        OnThreadItemChange(m_pFocusThread->m_dwThreadId);
+
+    TerminateAllThreads(FALSE);
 }
 
 void CTipbarWnd::SetShowTrayIcon(BOOL bShow)
 {
-    if (m_dwTipbarWndFlags & 0x20)
-        m_dwTipbarWndFlags &= ~0x20;
+    if (m_dwTipbarWndFlags & TIPBAR_TRAYICON)
+        m_dwTipbarWndFlags &= ~TIPBAR_TRAYICON;
     else
-        m_dwTipbarWndFlags |= 0x20;
+        m_dwTipbarWndFlags |= TIPBAR_TRAYICON;
 
-    if ((m_dwTipbarWndFlags & 0x20) && m_pFocusThread)
+    if ((m_dwTipbarWndFlags & TIPBAR_TRAYICON) && m_pFocusThread)
     {
         KillTimer(10);
         SetTimer(10, g_uTimerElapseMOVETOTRAY);
@@ -4296,9 +4867,45 @@ void CTipbarWnd::SetShowTrayIcon(BOOL bShow)
     }
 }
 
-/// @unimplemented
 void CTipbarWnd::ShowContextMenu(POINT pt, LPCRECT prc, BOOL bFlag)
 {
+    AddRef();
+
+    RECT rc;
+    if (!prc)
+    {
+        rc = { pt.x, pt.y, pt.x, pt.y };
+        prc = &rc;
+    }
+
+    if (m_pFocusThread)
+    {
+        CUTBContextMenu *pContextMenu = new(cicNoThrow) CUTBContextMenu(this);
+        if (pContextMenu)
+        {
+            if (pContextMenu->Init())
+            {
+                m_pThread = m_pFocusThread;
+                StartModalInput(this, m_pFocusThread->m_dwThreadId);
+
+                m_pModalMenu = pContextMenu;
+                DWORD dwCommandId = pContextMenu->ShowPopup(GetWindow(), pt, prc, bFlag);
+                m_pModalMenu = NULL;
+
+                if (m_pThread)
+                    StopModalInput(m_pThread->m_dwThreadId);
+
+                m_pThread = NULL;
+
+                if (dwCommandId != (DWORD)-1)
+                    pContextMenu->SelectMenuItem(dwCommandId);
+            }
+
+            delete pContextMenu;
+        }
+    }
+
+    Release();
 }
 
 void CTipbarWnd::StartBackToAlphaTimer()
@@ -4307,10 +4914,17 @@ void CTipbarWnd::StartBackToAlphaTimer()
     ::SetTimer(m_hWnd, 3, 3 * uTime, NULL);
 }
 
-/// @unimplemented
 BOOL CTipbarWnd::StartDoAccDefaultActionTimer(CTipbarItem *pTarget)
 {
-    return FALSE;
+    if (!m_pTipbarAccessible)
+        return FALSE;
+    INT IDOfItem = m_pTipbarAccessible->GetIDOfItem(pTarget);
+    m_nID = IDOfItem;
+    if (!IDOfItem || IDOfItem == -1)
+        return FALSE;
+    KillTimer(11);
+    SetTimer(11, g_uTimerElapseDOACCDEFAULTACTION);
+    return TRUE;
 }
 
 void CTipbarWnd::StartModalInput(ITfLangBarEventSink *pSink, DWORD dwThreadId)
@@ -4339,27 +4953,87 @@ void CTipbarWnd::StopModalInput(DWORD dwThreadId)
     m_pLangBarMgr->SetModalInput(NULL, dwCurThreadId, 0);
 }
 
-/// @unimplemented
-CTipbarThread *CTipbarWnd::_CreateThread(DWORD dwThreadId)
+LONG MyWaitForInputIdle(DWORD dwThreadId, DWORD dwMilliseconds)
 {
-    return NULL;
+    if (g_pTipbarWnd && (g_pTipbarWnd->m_dwShowType & TF_SFT_DESKBAND))
+        return 0;
+
+    if (TF_IsInMarshaling(dwThreadId))
+        return STATUS_TIMEOUT;
+
+    DWORD dwFlags1 = 0, dwFlags2 = 0;
+    if (!TF_GetThreadFlags(dwThreadId, &dwFlags1, &dwFlags2, NULL) && dwFlags2)
+        return -1;
+
+    return TF_CheckThreadInputIdle(dwThreadId, dwMilliseconds);
 }
 
-/// @unimplemented
+CTipbarThread *CTipbarWnd::_CreateThread(DWORD dwThreadId)
+{
+    CTipbarThread *pTarget = _FindThread(dwThreadId);
+    if (pTarget)
+        return pTarget;
+
+    MyWaitForInputIdle(dwThreadId, 2000);
+
+    pTarget = new(cicNoThrow) CTipbarThread(this);
+    if (!pTarget)
+        return NULL;
+
+    AddThreadToThreadCreatingList(pTarget);
+
+    HRESULT hr = pTarget->Init(dwThreadId);
+
+    RemoveThredFromThreadCreatingList(pTarget);
+
+    if (SUCCEEDED(hr) && !m_Threads.Add(pTarget))
+    {
+        pTarget->_UninitItemList(TRUE);
+        pTarget->m_pTipbarWnd = NULL;
+        pTarget->_Release();
+        return NULL;
+    }
+
+    return pTarget;
+}
+
 CTipbarThread *CTipbarWnd::_FindThread(DWORD dwThreadId)
 {
-    return NULL;
+    if (g_bWinLogon)
+        return NULL;
+
+    CTipbarThread *pTarget = NULL;
+    for (size_t iItem = 0; iItem < m_Threads.size(); ++iItem)
+    {
+        CTipbarThread *pThread = m_Threads[iItem];
+        if (pThread && pThread->m_dwThreadId == dwThreadId)
+        {
+            pTarget = pThread;
+            break;
+        }
+    }
+
+    if (!pTarget)
+        return NULL;
+
+    DWORD dwFlags1, dwFlags2, dwFlags3;
+    TF_GetThreadFlags(dwThreadId, &dwFlags1, &dwFlags2, &dwFlags3);
+
+    if (!dwFlags2 || (dwFlags2 != pTarget->m_dwFlags2) || (dwFlags3 != pTarget->m_dwFlags3))
+    {
+        OnThreadTerminateInternal(dwThreadId);
+        return NULL;
+    }
+
+    return pTarget;
 }
 
 void CTipbarWnd::EnsureFocusThread()
 {
-    if (m_pFocusThread)
+    if (m_pFocusThread || (m_dwTipbarWndFlags & (TIPBAR_TOOLBARENDED | TIPBAR_ENSURING)))
         return;
 
-    if (m_dwTipbarWndFlags & 0x12000)
-        return;
-
-    m_dwTipbarWndFlags |= 0x2000;
+    m_dwTipbarWndFlags |= TIPBAR_ENSURING;
 
     HWND hwndFore = ::GetForegroundWindow();
     if (!hwndFore)
@@ -4369,19 +5043,41 @@ void CTipbarWnd::EnsureFocusThread()
     if (dwThreadId)
         OnSetFocus(dwThreadId);
 
-    m_dwTipbarWndFlags &= ~0x2000;
+    m_dwTipbarWndFlags &= ~TIPBAR_ENSURING;
 }
 
-/// @unimplemented
 HRESULT CTipbarWnd::SetFocusThread(CTipbarThread *pFocusThread)
 {
-    return E_NOTIMPL;
+    if (pFocusThread == m_pFocusThread)
+        return S_OK;
+
+    DWORD dwThreadId = ::GetCurrentThreadId();
+    DestroyOverScreenSizeBalloon();
+
+    if (m_pFocusThread)
+    {
+        m_pFocusThread->SetFocus(NULL);
+        ::AttachThreadInput(dwThreadId, m_pFocusThread->m_dwThreadId, FALSE);
+    }
+
+    m_dwTipbarWndFlags &= ~TIPBAR_ATTACHED;
+    m_pFocusThread = pFocusThread;
+    return S_OK;
 }
 
-/// @unimplemented
 HRESULT CTipbarWnd::AttachFocusThread()
 {
-    return E_NOTIMPL;
+    if (m_dwTipbarWndFlags & TIPBAR_ATTACHED)
+        return S_FALSE;
+
+    if (m_pFocusThread)
+    {
+        DWORD dwThreadId = ::GetCurrentThreadId();
+        ::AttachThreadInput(dwThreadId, m_pFocusThread->m_dwThreadId, TRUE);
+        m_dwTipbarWndFlags |= TIPBAR_ATTACHED;
+    }
+
+    return S_OK;
 }
 
 void CTipbarWnd::RestoreLastFocus(DWORD *pdwThreadId, BOOL fPrev)
@@ -4409,26 +5105,42 @@ void CTipbarWnd::CleanUpThreadPointer(CTipbarThread *pThread, BOOL bRemove)
         m_pUnknownThread = NULL;
 }
 
-/// @unimplemented
 void CTipbarWnd::TerminateAllThreads(BOOL bFlag)
 {
+    const size_t cItems = m_Threads.size();
+
+    DWORD *pdwThreadIds = new(cicNoThrow) DWORD[cItems];
+    if (!pdwThreadIds)
+        return;
+
+    for (size_t iItem = 0; iItem < cItems; ++iItem)
+    {
+        pdwThreadIds[iItem] = 0;
+        CTipbarThread* pThread = m_Threads[iItem];
+        if (pThread && (bFlag || (pThread != m_pFocusThread)))
+        {
+            pdwThreadIds[iItem] = pThread->m_dwThreadId;
+        }
+    }
+
+    for (size_t iItem = 0; iItem < cItems; ++iItem)
+    {
+        if (pdwThreadIds[iItem])
+            OnThreadTerminateInternal(pdwThreadIds[iItem]);
+    }
+
+    delete[] pdwThreadIds;
 }
 
 STDMETHODIMP CTipbarWnd::QueryInterface(REFIID riid, void **ppvObj)
 {
-    if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_ITfLangBarEventSink))
+    static const QITAB c_tab[] =
     {
-        *ppvObj = this;
-        AddRef();
-        return S_OK;
-    }
-    if (IsEqualIID(riid, IID_ITfLangBarEventSink_P))
-    {
-        *ppvObj = static_cast<ITfLangBarEventSink_P*>(this);
-        AddRef();
-        return S_OK;
-    }
-    return E_NOINTERFACE;
+        QITABENT(CTipbarWnd, ITfLangBarEventSink),
+        QITABENT(CTipbarWnd, ITfLangBarEventSink_P),
+        { NULL }
+    };
+    return ::QISearch(this, c_tab, riid, ppvObj);
 }
 
 STDMETHODIMP_(ULONG) CTipbarWnd::AddRef()
@@ -4467,16 +5179,61 @@ STDMETHODIMP CTipbarWnd::OnThreadTerminate(DWORD dwThreadId)
     return hr;
 }
 
-/// @unimplemented
 HRESULT CTipbarWnd::OnThreadTerminateInternal(DWORD dwThreadId)
 {
-    return E_NOTIMPL;
+    for (size_t iItem = 0; iItem < m_Threads.size(); ++iItem)
+    {
+        CTipbarThread *pThread = m_Threads[iItem];
+        if (pThread && pThread->m_dwThreadId == dwThreadId)
+        {
+            m_Threads.Remove(iItem);
+            pThread->RemoveUIObjs();
+            CleanUpThreadPointer(pThread, FALSE);
+            pThread->_UninitItemList(TRUE);
+            pThread->m_pTipbarWnd = NULL;
+            pThread->_Release();
+            break;
+        }
+    }
+
+    return S_OK;
 }
 
-/// @unimplemented
 STDMETHODIMP CTipbarWnd::OnThreadItemChange(DWORD dwThreadId)
 {
-    return E_NOTIMPL;
+    if (m_dwTipbarWndFlags & TIPBAR_TOOLBARENDED)
+        return S_OK;
+    if (!(m_dwTipbarWndFlags & TIPBAR_CHILD) && (m_dwShowType & TF_SFT_DESKBAND))
+        return S_OK;
+
+    CTipbarThread *pThread = _FindThread(dwThreadId);
+    if (pThread)
+    {
+        if ((!m_dwUnknown23 || m_dwUnknown23 == dwThreadId) && pThread == m_pFocusThread)
+        {
+            KillOnTheadItemChangeTimer();
+            m_dwChangingThreadId = dwThreadId;
+            KillTimer(6);
+            SetTimer(4, g_uTimerElapseONTHREADITEMCHANGE);
+        }
+        else
+        {
+            pThread->m_dwUnknown34 |= 0x1;
+        }
+    }
+    else
+    {
+        for (size_t iItem = 0; iItem < m_ThreadCreatingList.size(); ++iItem)
+        {
+            CTipbarThread *pItem = m_ThreadCreatingList[iItem];
+            if (pItem && pItem->m_dwThreadId == dwThreadId)
+            {
+                pItem->m_dwUnknown34 |= 0x1;
+            }
+        }
+    }
+
+    return S_OK;
 }
 
 STDMETHODIMP CTipbarWnd::OnModalInput(DWORD dwThreadId, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -4535,10 +5292,28 @@ STDMETHODIMP CTipbarWnd::ShowFloating(DWORD dwFlags)
     return E_NOTIMPL;
 }
 
-/// @unimplemented
 STDMETHODIMP CTipbarWnd::GetItemFloatingRect(DWORD dwThreadId, REFGUID rguid, RECT *prc)
 {
-    return E_NOTIMPL;
+    if (m_dwTipbarWndFlags & TIPBAR_TRAYICON)
+        return E_UNEXPECTED;
+
+    if (!m_pFocusThread || (m_pFocusThread->m_dwThreadId != dwThreadId))
+        return E_FAIL;
+
+    for (size_t iItem = 0; iItem < m_pFocusThread->m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_pFocusThread->m_UIObjects[iItem];
+        if (pItem)
+        {
+            if ((pItem->m_dwItemFlags & 0x8) && IsEqualGUID(pItem->m_ItemInfo.guidItem, rguid))
+            {
+                pItem->OnUnknown57(prc);
+                return S_OK;
+            }
+        }
+    }
+
+    return E_FAIL;
 }
 
 /// @unimplemented
@@ -4559,9 +5334,20 @@ STDMETHODIMP_(void) CTipbarWnd::GetAccLocation(LPRECT lprc)
     GetRect(lprc);
 }
 
-/// @unimplemented
 STDMETHODIMP_(void) CTipbarWnd::PaintObject(HDC hDC, LPCRECT prc)
 {
+    if (m_dwTipbarWndFlags & TIPBAR_UPDATING)
+    {
+        Move(m_X, m_Y, m_CX, m_CY);
+        m_dwTipbarWndFlags &= ~TIPBAR_UPDATING;
+    }
+
+    if (!m_pFocusThread || !m_pFocusThread->IsDirtyItem())
+    {
+        m_pFocusThread->CallOnUpdateHandler();
+        if (g_pTipbarWnd)
+            CUIFWindow::PaintObject(hDC, prc);
+    }
 }
 
 STDMETHODIMP_(DWORD) CTipbarWnd::GetWndStyle()
@@ -4610,6 +5396,151 @@ STDMETHODIMP_(void) CTipbarWnd::OnDestroy(HWND hWnd)
 /// @unimplemented
 STDMETHODIMP_(void) CTipbarWnd::OnTimer(WPARAM wParam)
 {
+    AddRef();
+    switch (wParam)
+    {
+        case 1:
+            KillTimer(1);
+            MoveToStub(FALSE);
+            break;
+        case 2:
+            KillTimer(2);
+            MoveToStub(TRUE);
+            break;
+        case 3:
+            KillTimer(3);
+            SetAlpha((BYTE)m_dwAlphaValue, TRUE);
+            break;
+        case 4:
+        {
+            LONG status = MyWaitForInputIdle(m_dwChangingThreadId, 2000);
+            if (status)
+            {
+                if (status != STATUS_TIMEOUT)
+                {
+                    KillTimer(4);
+                    m_dwChangingThreadId = 0;
+                }
+            }
+            else if (!m_pThread)
+            {
+                KillTimer(4);
+                DWORD dwOldThreadId = m_dwChangingThreadId;
+                m_dwChangingThreadId = 0;
+                OnThreadItemChangeInternal(dwOldThreadId);
+            }
+            break;
+        }
+        case 5:
+            KillTimer(5);
+            ::SetWindowPos(m_hWnd, NULL, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+            break;
+        case 6:
+            KillTimer(6);
+            if (m_pFocusThread)
+            {
+                if (m_pFocusThread->m_dwThreadId != m_dwChangingThreadId &&
+                    !m_pFocusThread->CallOnUpdateHandler())
+                {
+                    if (m_pFocusThread)
+                        OnThreadItemChange(m_pFocusThread->m_dwThreadId);
+                }
+            }
+            break;
+        case 7:
+        {
+            DWORD dwThreadId = 0;
+            if (KillTimer(7))
+            {
+                if (m_pFocusThread)
+                    dwThreadId = m_pFocusThread->m_dwThreadId;
+
+                TerminateAllThreads(TRUE);
+                UpdateVerticalFont();
+
+                if (dwThreadId)
+                    OnSetFocus(dwThreadId);
+
+                InitMetrics();
+                // FIXME: CTipbarCtrlButtonHolder
+
+                InitHighContrast();
+                SetAlpha(0xFF, TRUE);
+                ::RedrawWindow(m_hWnd, NULL, NULL, (RDW_FRAME | RDW_UPDATENOW | RDW_INVALIDATE));
+            }
+            break;
+        }
+        case 8:
+            KillTimer(8);
+            UpdateUI(NULL);
+            break;
+        case 9:
+            KillTimer(9);
+            //FIXME
+            if (m_pUnknownThread == m_pFocusThread)
+                Show(!!(m_dwUnknown23_5[3] & 0x80000000));
+            m_pUnknownThread = NULL;
+            if ((m_dwUnknown23_5[3] & 0x2))
+                ShowOverScreenSizeBalloon();
+            break;
+        case 10:
+            KillTimer(10);
+            MoveToTray();
+            break;
+        case 11:
+            KillTimer(11);
+            if (m_pTipbarAccessible)
+            {
+                if (m_nID)
+                {
+                    m_pTipbarAccessible->DoDefaultActionReal(m_nID);
+                    m_nID = 0;
+                }
+            }
+            break;
+        case 12:
+            KillTimer(12);
+            AdjustPosOnDisplayChange();
+            break;
+        case 13:
+#ifdef ENABLE_DESKBAND
+            if (!m_pDeskBand || !m_pDeskBand->m_dwUnknown19)
+            {
+                KillTimer(13);
+                if (!m_pFocusThread)
+                EnsureFocusThread();
+            }
+#endif
+            break;
+        case 14:
+            if (SetLangBand(TRUE, TRUE))
+            {
+                m_dwShowType = TF_SFT_DESKBAND;
+                KillTimer(14);
+            }
+            break;
+        default:
+        {
+            if (10000 <= wParam && wParam < 10050)
+            {
+                auto *pItem = m_LangBarItemList.GetItemStateFromTimerId(wParam);
+                if (pItem)
+                {
+                    auto& clsid = pItem->m_clsid;
+                    m_LangBarItemList.SetDemoteLevel(pItem->m_clsid, 2);
+                    if (m_pFocusThread)
+                    {
+                        auto *pThreadItem = m_pFocusThread->GetItem(clsid);
+                        if (pThreadItem)
+                            pThreadItem->AddRemoveMeToUI(FALSE);
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    Release();
 }
 
 STDMETHODIMP_(void) CTipbarWnd::OnSysColorChange()
@@ -4620,10 +5551,10 @@ STDMETHODIMP_(void) CTipbarWnd::OnSysColorChange()
 
 void CTipbarWnd::OnTerminateToolbar()
 {
-    m_dwTipbarWndFlags |= 0x10000;
+    m_dwTipbarWndFlags |= TIPBAR_TOOLBARENDED;
     DestroyOverScreenSizeBalloon();
     TerminateAllThreads(TRUE);
-    if (!(m_dwTipbarWndFlags & 0x2))
+    if (!(m_dwTipbarWndFlags & TIPBAR_CHILD))
         SavePosition();
 }
 
@@ -4664,11 +5595,20 @@ STDMETHODIMP_(void) CTipbarWnd::OnUser(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
     }
 }
 
-/// @unimplemented
 STDMETHODIMP_(LRESULT)
 CTipbarWnd::OnWindowPosChanged(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    return 0;
+    if (m_pFocusThread)
+    {
+        for (size_t iItem = 0; iItem < m_pFocusThread->m_UIObjects.size(); ++iItem)
+        {
+            CTipbarItem *pItem = m_pFocusThread->m_UIObjects[iItem];
+            if (pItem)
+                pItem->OnUnknown44();
+        }
+    }
+
+    return ::DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
 STDMETHODIMP_(LRESULT)
@@ -4715,7 +5655,7 @@ CTipbarWnd::OnSettingChange(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 STDMETHODIMP_(LRESULT)
 CTipbarWnd::OnDisplayChange(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    if (!(m_dwTipbarWndFlags & 2))
+    if (!(m_dwTipbarWndFlags & TIPBAR_CHILD))
     {
         KillTimer(12);
         SetTimer(12, g_uTimerElapseDISPLAYCHANGE);
@@ -4762,14 +5702,569 @@ STDMETHODIMP_(void) CTipbarWnd::OnThemeChanged(HWND hWnd, WPARAM wParam, LPARAM 
     CUIFWindow::OnThemeChanged(hWnd, wParam, lParam);
 }
 
-/// @unimplemented
 STDMETHODIMP_(void) CTipbarWnd::UpdateUI(LPCRECT prc)
 {
+    KillTimer(8);
+
+    if (m_dwChangingThreadId || m_bInCallOn || (m_pFocusThread && m_pFocusThread->IsDirtyItem()))
+    {
+        SetTimer(8, g_uTimerElapseUPDATEUI);
+        return;
+    }
+
+    if (m_dwTipbarWndFlags & TIPBAR_UPDATING)
+    {
+        ++m_bInCallOn;
+        Move(m_X, m_Y, m_CX, m_CY);
+        m_dwTipbarWndFlags &= ~TIPBAR_UPDATING;
+        --m_bInCallOn;
+    }
+
+    CUIFWindow::UpdateUI(NULL);
 }
 
 /// @unimplemented
 STDMETHODIMP_(void) CTipbarWnd::HandleMouseMsg(UINT uMsg, LONG x, LONG y)
 {
+}
+
+/***********************************************************************
+ * CTipbarThread
+ */
+
+CTipbarThread::CTipbarThread(CTipbarWnd *pTipbarWnd)
+{
+    m_pTipbarWnd = pTipbarWnd;
+    m_dwThreadId = 0;
+    m_pLangBarItemMgr = NULL;
+    m_cRefs = 1;
+}
+
+CTipbarThread::~CTipbarThread()
+{
+    if (m_pTipbarWnd)
+    {
+        RemoveUIObjs();
+        m_pTipbarWnd->CleanUpThreadPointer(this, 1);
+    }
+
+    _UninitItemList(1);
+
+    if (m_pLangBarItemMgr)
+    {
+        m_pLangBarItemMgr->Release();
+        m_pLangBarItemMgr = NULL;
+    }
+}
+
+HRESULT CTipbarThread::Init(DWORD dwThreadId)
+{
+    m_dwThreadId = dwThreadId;
+    if (!TF_GetThreadFlags(dwThreadId, &m_dwFlags1, &m_dwFlags2, &m_dwFlags3))
+        return E_FAIL;
+    if (m_dwFlags1 & 0x8)
+        return S_OK;
+    return m_pTipbarWnd->m_pLangBarMgr->GetThreadLangBarItemMgr(m_dwThreadId,
+                                                                &m_pLangBarItemMgr,
+                                                                &dwThreadId);
+}
+
+/// @unimplemented
+HRESULT CTipbarThread::InitItemList()
+{
+    return E_NOTIMPL;
+}
+
+HRESULT CTipbarThread::_UninitItemList(BOOL bUnAdvise)
+{
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem)
+            pItem->m_dwItemFlags |= 0x10;
+    }
+
+    HRESULT hr = S_OK;
+    if (bUnAdvise)
+    {
+        if (m_dwThreadId == ::GetCurrentThreadId() || !MyWaitForInputIdle(m_dwThreadId, 2000))
+            hr = _UnadviseItemsSink();
+    }
+
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem)
+        {
+            if (m_pTipbarWnd)
+                pItem->OnUnknown47(m_pTipbarWnd->GetWindow());
+
+            pItem->ClearConnections();
+
+            if (m_pTipbarWnd)
+                pItem->OnUnknown50();
+            else
+                pItem->OnUnknown51();
+
+            pItem->OnUnknown59();
+            pItem->OnUnknown42();
+        }
+    }
+
+    m_UIObjects.clear();
+
+    RemoveAllSeparators();
+
+    return hr;
+}
+
+void CTipbarThread::AddAllSeparators()
+{
+    for (size_t iItem = 0; iItem < m_Separators.size(); ++iItem)
+    {
+        CUIFObject *pItem = m_Separators[iItem];
+        if (pItem)
+            m_pTipbarWnd->AddUIObj(pItem);
+    }
+}
+
+void CTipbarThread::RemoveAllSeparators()
+{
+    for (size_t iItem = 0; iItem < m_Separators.size(); ++iItem)
+    {
+        CUIFObject *pItem = m_Separators[iItem];
+        if (pItem)
+        {
+            if (m_pTipbarWnd)
+                m_pTipbarWnd->RemoveUIObj(pItem);
+            delete pItem;
+        }
+    }
+    m_Separators.clear();
+}
+
+void CTipbarThread::AddUIObjs()
+{
+    _AddRef();
+
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem && (pItem->m_dwItemFlags & 0x8))
+        {
+            pItem->OnUnknown46(m_pTipbarWnd ? m_pTipbarWnd->GetWindow() : NULL);
+        }
+    }
+
+    AddAllSeparators();
+    MyMoveWnd(0, 0);
+
+    _Release();
+}
+
+void CTipbarThread::RemoveUIObjs()
+{
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem)
+        {
+            pItem->OnUnknown47(m_pTipbarWnd ? m_pTipbarWnd->GetWindow() : NULL);
+        }
+    }
+    RemoveAllSeparators();
+}
+
+CTipbarItem *CTipbarThread::GetItem(REFCLSID rclsid)
+{
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        auto *pItem = m_UIObjects[iItem];
+        if (pItem && IsEqualCLSID(pItem->m_ItemInfo.guidItem, rclsid))
+            return pItem;
+    }
+    return NULL;
+}
+
+void CTipbarThread::GetTextSize(BSTR bstr, LPSIZE pSize)
+{
+    HWND hWnd = *m_pTipbarWnd->GetWindow();
+
+    HGDIOBJ hFontOld = NULL;
+
+    HDC hDC = ::GetDC(hWnd);
+    if (FAILED(m_pTipbarWnd->EnsureThemeData(*m_pTipbarWnd->GetWindow())))
+    {
+        HFONT hFont = m_pTipbarWnd->m_hFont;
+        if (hFont)
+            hFontOld = ::SelectObject(hDC, hFont);
+        INT cch = ::SysStringLen(bstr);
+        ::GetTextExtentPoint32W(hDC, bstr, cch, pSize);
+        if (hFontOld)
+            ::SelectObject(hDC, hFontOld);
+    }
+    else
+    {
+        CUIFTheme theme;
+        theme.m_iPartId = 1;
+        theme.m_iStateId = 0;
+        theme.m_pszClassList = L"TOOLBAR";
+
+        HFONT hFont = NULL;
+
+        if (SUCCEEDED(theme.InternalOpenThemeData(hWnd)))
+        {
+            LOGFONTW lf;
+            if (SUCCEEDED(::GetThemeFont(theme.m_hTheme, NULL, theme.m_iPartId, 0, 210, &lf)))
+            {
+                hFont = ::CreateFontIndirectW(&lf);
+                if (hFont)
+                    hFontOld = ::SelectObject(hDC, hFont);
+            }
+
+            RECT rc;
+            INT cch = ::SysStringLen(bstr);
+            ::GetThemeTextExtent(theme.m_hTheme, hDC, theme.m_iPartId, 0, bstr, cch, 0, NULL, &rc);
+
+            pSize->cx = rc.right;
+            pSize->cy = rc.bottom;
+        }
+
+        if (hFontOld)
+            ::SelectObject(hDC, hFontOld);
+        if (hFont)
+            ::DeleteObject(hFont);
+    }
+
+    ::ReleaseDC(hWnd, hDC);
+}
+
+DWORD CTipbarThread::IsDirtyItem()
+{
+    DWORD dwDirty = 0;
+    for (size_t iItem = 0; iItem < m_UIObjects.size(); ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem)
+            dwDirty |= pItem->m_dwDirty;
+    }
+    return dwDirty;
+}
+
+BOOL CTipbarThread::IsFocusThread()
+{
+    if (!m_pTipbarWnd)
+        return FALSE;
+    return this == m_pTipbarWnd->m_pFocusThread;
+}
+
+BOOL CTipbarThread::IsVertical()
+{
+    if (!m_pTipbarWnd)
+        return FALSE;
+    return !!(m_pTipbarWnd->m_dwTipbarWndFlags & TIPBAR_VERTICAL);
+}
+
+/// @unimplemented
+void CTipbarThread::LocateItems()
+{
+}
+
+LONG CTipbarThread::_Release()
+{
+    if (--m_cRefs == 0)
+    {
+        delete this;
+        return 0;
+    }
+    return m_cRefs;
+}
+
+HRESULT CTipbarThread::_UnadviseItemsSink()
+{
+    if (!m_pLangBarItemMgr)
+        return E_FAIL;
+
+    DWORD *pdwCoolkies = new(cicNoThrow) DWORD[m_UIObjects.size()];
+    if (!pdwCoolkies)
+        return E_OUTOFMEMORY;
+
+    const size_t cItems = m_UIObjects.size();
+    for (size_t iItem = 0; iItem < cItems; ++iItem)
+    {
+        CTipbarItem* pItem = m_UIObjects[iItem];
+        if (pItem)
+            pdwCoolkies[iItem] = pItem->m_dwCookie;
+    }
+
+    HRESULT hr = m_pLangBarItemMgr->UnadviseItemsSink((LONG)cItems, pdwCoolkies);
+
+    delete[] pdwCoolkies;
+
+    return hr;
+}
+
+void CTipbarThread::MyMoveWnd(LONG xDelta, LONG yDelta)
+{
+    if (!m_pTipbarWnd || (m_pTipbarWnd->m_pFocusThread != this))
+        return;
+
+    RECT Rect, rcWorkArea;
+    m_pTipbarWnd->GetRect(&Rect);
+    POINT pt = { Rect.left, Rect.top };
+    cicGetWorkAreaRect(pt, &rcWorkArea);
+
+    ::GetWindowRect(*m_pTipbarWnd->GetWindow(), &Rect);
+
+    LONG X0 = Rect.left + xDelta, Y0 = Rect.top + yDelta;
+    if (m_pTipbarWnd->m_dwTipbarWndFlags & 0x1000)
+    {
+        if (m_pTipbarWnd->CheckExcludeCaptionButtonMode(&Rect, &rcWorkArea))
+        {
+            X0 = rcWorkArea.right - (3 * m_pTipbarWnd->m_ButtonWidth +
+                                     m_pTipbarWnd->m_cxDlgFrameX2 + m_cxGrip);
+            Y0 = 0;
+        }
+        else
+        {
+            m_pTipbarWnd->m_dwTipbarWndFlags &= ~0x1000;
+        }
+    }
+
+    if (IsVertical())
+    {
+        LONG width = m_pTipbarWnd->m_cxDlgFrameX2 + m_pTipbarWnd->GetTipbarHeight();
+        LONG height = m_cyGrip + m_pTipbarWnd->m_cyDlgFrameX2;
+        m_pTipbarWnd->SetMoveRect(X0, Y0, width, height);
+    }
+    else
+    {
+        LONG width = m_cxGrip + m_pTipbarWnd->m_cxDlgFrameX2;
+        LONG height = m_pTipbarWnd->m_cyDlgFrameX2 + m_pTipbarWnd->GetTipbarHeight();
+        m_pTipbarWnd->SetMoveRect(X0, Y0, width, height);
+    }
+
+    SIZE frameSize = { 0, 0 };
+    if (m_pTipbarWnd->m_pWndFrame)
+        m_pTipbarWnd->m_pWndFrame->GetFrameSize(&frameSize);
+
+    m_pTipbarWnd->LocateCtrlButtons();
+    m_pTipbarWnd->AutoAdjustDeskBandSize();
+}
+
+/***********************************************************************
+ * CTipbarItem
+ */
+
+CTipbarItem::CTipbarItem(
+    CTipbarThread *pThread,
+    ITfLangBarItem *pLangBarItem,
+    TF_LANGBARITEMINFO *pItemInfo,
+    DWORD dwUnknown16)
+{
+    m_dwUnknown19[1] = 0;
+    m_dwUnknown19[2] = 0;
+    m_dwUnknown19[3] = 0;
+    m_pTipbarThread = pThread;
+    m_ItemInfo = *pItemInfo;
+    m_pLangBarItem = pLangBarItem;
+    m_pLangBarItem->AddRef();
+    m_dwItemFlags = 0;
+    m_dwUnknown16 = dwUnknown16;
+    m_dwDirty = 0x1001F;
+}
+
+CTipbarItem::~CTipbarItem()
+{
+    if (g_pTipbarWnd)
+    {
+        if (g_pTipbarWnd->m_pTipbarAccessible)
+            g_pTipbarWnd->m_pTipbarAccessible->RemoveAccItem(this);
+    }
+
+    if (m_pLangBarItem)
+        m_pLangBarItem->Release();
+}
+
+void CTipbarItem::_AddedToUI()
+{
+    if (!IsConnected())
+        return;
+
+    OnUnknown41();
+
+    m_dwItemFlags |= 0x2;
+
+    DWORD dwStatus;
+    if (m_dwDirty)
+    {
+        if (m_dwDirty & 0x10000)
+            m_pLangBarItem->GetStatus(&dwStatus);
+        else
+            dwStatus = 0;
+        OnUnknown45(m_dwDirty, dwStatus);
+        m_dwDirty = 0;
+    }
+
+    if (m_pTipbarThread)
+    {
+        CTipbarWnd *pTipbarWnd = m_pTipbarThread->m_pTipbarWnd;
+        if (pTipbarWnd)
+        {
+            CTipbarAccessible *pTipbarAccessible = pTipbarWnd->m_pTipbarAccessible;
+            if (pTipbarAccessible)
+                pTipbarAccessible->AddAccItem(this);
+        }
+    }
+
+    OnUnknown42();
+}
+
+void CTipbarItem::_RemovedToUI()
+{
+    m_dwItemFlags &= ~0x2;
+
+    if (g_pTipbarWnd)
+    {
+        CTipbarAccessible *pAccessible = g_pTipbarWnd->m_pTipbarAccessible;
+        if (pAccessible)
+            pAccessible->RemoveAccItem(this);
+    }
+}
+
+void CTipbarItem::AddRemoveMeToUI(BOOL bFlag)
+{
+    if (!IsConnected())
+        return;
+
+    m_pTipbarThread->LocateItems();
+
+    if (!IsConnected())
+        return;
+
+    m_pTipbarThread->AddAllSeparators();
+
+    CTipbarWnd *pTipbarWnd = m_pTipbarThread->m_pTipbarWnd;
+    if (bFlag)
+        OnUnknown46(pTipbarWnd ? pTipbarWnd->GetWindow() : NULL);
+    else
+        OnUnknown47(pTipbarWnd ? pTipbarWnd->GetWindow() : NULL);
+}
+
+BOOL CTipbarItem::IsConnected()
+{
+    return (!(m_dwItemFlags & 0x10) && m_pTipbarThread && m_pTipbarThread->m_pTipbarWnd &&
+            m_pLangBarItem);
+}
+
+void CTipbarItem::ClearConnections()
+{
+    m_pTipbarThread = NULL;
+    if (m_pLangBarItem)
+    {
+        m_pLangBarItem->Release();
+        m_pLangBarItem = NULL;
+    }
+}
+
+/// @unimplemented
+void CTipbarItem::StartDemotingTimer(BOOL bStarted)
+{
+    if (!g_bIntelliSense)
+        return;
+
+    if (!m_pTipbarThread)
+        return;
+
+    CTipbarWnd *pTipbarWnd = m_pTipbarThread->m_pTipbarWnd;
+    if (!pTipbarWnd)
+        return;
+
+    //FIXME
+}
+
+STDMETHODIMP_(BOOL) CTipbarItem::DoAccDefaultAction()
+{
+    if (!m_pTipbarThread)
+        return FALSE;
+    CTipbarWnd *pTipbarWnd = m_pTipbarThread->m_pTipbarWnd;
+    if (!pTipbarWnd)
+        return FALSE;
+    pTipbarWnd->StartDoAccDefaultActionTimer(this);
+    return TRUE;
+}
+
+/// @unimplemented
+STDMETHODIMP_(void) CTipbarItem::OnUpdateHandler(ULONG, ULONG)
+{
+}
+
+STDMETHODIMP_(void) CTipbarItem::GetAccLocation(LPRECT prc)
+{
+    OnUnknown57(prc);
+}
+
+STDMETHODIMP_(BSTR) CTipbarItem::GetAccName()
+{
+    return ::SysAllocString(m_ItemInfo.szDescription);
+}
+
+STDMETHODIMP_(LPCWSTR) CTipbarItem::GetToolTip()
+{
+    OnUnknown41();
+
+    if (!(m_dwItemFlags & 0x1))
+    {
+        m_dwItemFlags |= 0x1;
+
+        BSTR bstrString;
+        if (FAILED(m_pLangBarItem->GetTooltipString(&bstrString)))
+            return NULL;
+
+        if (bstrString)
+        {
+            OnUnknown53(bstrString);
+            ::SysFreeString(bstrString);
+        }
+    }
+
+    LPCWSTR pszToolTip = OnUnknown55();
+
+    OnUnknown42();
+
+    return pszToolTip;
+}
+
+HRESULT CTipbarItem::OnUpdate(DWORD dwDirty)
+{
+    if (!IsConnected())
+        return S_OK;
+
+    m_dwDirty |= dwDirty;
+    m_dwItemFlags |= 0x20;
+
+    if ((dwDirty & 0x10000) || (m_dwItemFlags & 0x6))
+    {
+        if (m_pTipbarThread)
+        {
+            CTipbarWnd *pTipBarWnd = m_pTipbarThread->m_pTipbarWnd;
+            if (pTipBarWnd && *pTipBarWnd)
+            {
+                pTipBarWnd->KillTimer(6);
+                pTipBarWnd->SetTimer(6, g_uTimerElapseONUPDATECALLED);
+            }
+        }
+    }
+
+    return S_OK;
+}
+
+void CTipbarItem::MyClientToScreen(LPPOINT ppt, LPRECT prc)
+{
+    if (!m_pTipbarThread)
+        return;
+    if (m_pTipbarThread->m_pTipbarWnd)
+        m_pTipbarThread->m_pTipbarWnd->MyClientToScreen(ppt, prc);
 }
 
 /***********************************************************************
@@ -4814,7 +6309,7 @@ BOOL GetTipbarInternal(HWND hWnd, DWORD dwFlags, CDeskBand *pDeskBand)
     g_pTipbarWnd->ShowFloating(dwStatus);
 
     if (!bParent && (dwOldStatus & TF_SFT_DESKBAND))
-        g_pTipbarWnd->m_dwTipbarWndFlags |= 0x4000;
+        g_pTipbarWnd->m_dwTipbarWndFlags |= TIPBAR_NODESKBAND;
 
     g_hwndParent = hWnd;
     return TRUE;
@@ -4823,13 +6318,13 @@ BOOL GetTipbarInternal(HWND hWnd, DWORD dwFlags, CDeskBand *pDeskBand)
 /***********************************************************************
  *              GetLibTls (MSUTB.@)
  *
- * @unimplemented
+ * @implemented
  */
-EXTERN_C LPVOID WINAPI
+EXTERN_C PCIC_LIBTHREAD WINAPI
 GetLibTls(VOID)
 {
-    FIXME("stub:()\n");
-    return NULL;
+    TRACE("()\n");
+    return &g_libTLS;
 }
 
 /***********************************************************************
@@ -4858,7 +6353,7 @@ SetRegisterLangBand(BOOL bRegister)
 {
     TRACE("(%d)\n", bRegister);
 
-    if (!(g_dwOSInfo & CIC_OSINFO_XPPLUS)) // Desk band is for XP+
+    if (!g_bEnableDeskBand || !(g_dwOSInfo & CIC_OSINFO_XPPLUS)) // Desk band is for XP+
         return E_FAIL;
 
     BOOL bDeskBand = IsDeskBandFromReg();
@@ -4966,6 +6461,17 @@ MsUtbCoCreateInstance(
     if (IsEqualCLSID(rclsid, CLSID_TF_DisplayAttributeMgr))
         return TF_CreateDisplayAttributeMgr((ITfDisplayAttributeMgr **)ppv);
     return cicRealCoCreateInstance(rclsid, pUnkOuter, dwClsContext, iid, ppv);
+}
+
+BEGIN_OBJECT_MAP(ObjectMap)
+#ifdef ENABLE_DESKBAND
+    OBJECT_ENTRY(CLSID_MSUTBDeskBand, CDeskBand) // FIXME: Implement this
+#endif
+END_OBJECT_MAP()
+
+EXTERN_C VOID TFUninitLib(VOID)
+{
+    // Do nothing
 }
 
 /// @implemented

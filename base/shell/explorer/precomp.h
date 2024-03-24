@@ -106,10 +106,10 @@ FormatMenuString(IN HMENU hMenu,
                  IN UINT uFlags,
                  ...);
 
-BOOL
-GetExplorerRegValueSet(IN HKEY hKey,
-                       IN LPCWSTR lpSubKey,
-                       IN LPCWSTR lpValue);
+BOOL GetRegValue(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
+BOOL SetRegDword(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN DWORD dwValue);
+BOOL GetAdvancedBool(IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
+BOOL SetAdvancedDword(IN LPCWSTR pszValueName, IN DWORD dwValue);
 
 /*
  *  rshell.c
@@ -203,7 +203,7 @@ typedef struct _TW_STUCKRECTS2
         {
             DWORD AutoHide : 1;
             DWORD AlwaysOnTop : 1;
-            DWORD SmallIcons : 1;
+            DWORD SmSmallIcons : 1; // Start menu Small Icons
             DWORD HideClock : 1;
         };
     };
@@ -326,16 +326,23 @@ DECLARE_INTERFACE_(ITrayBandSite, IUnknown)
 HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBand, OUT ITrayBandSite** pBandSite);
 
 /*
- * startmnu.cpp
+ * startctxmnu.cpp
  */
-
 HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndOwner, IContextMenu ** ppCtxMenu);
 
+/*
+ * startmnu.cpp
+ */
 IMenuPopup*
 CreateStartMenu(IN ITrayWindow *Tray,
                 OUT IMenuBand **ppMenuBand,
                 IN HBITMAP hbmBanner OPTIONAL,
                 IN BOOL bSmallIcons);
+HRESULT
+UpdateStartMenu(IN OUT IMenuPopup *pMenuPopup,
+                IN HBITMAP hbmBanner  OPTIONAL,
+                IN BOOL bSmallIcons,
+                IN BOOL bRefresh);
 
 /*
  * startmnucust.cpp
@@ -346,7 +353,6 @@ ShowCustomizeClassic(HINSTANCE, HWND);
 /*
 * startmnusite.cpp
 */
-
 HRESULT
 CStartMenuSite_CreateInstance(IN OUT ITrayWindow *Tray, const IID & riid, PVOID * ppv);
 
