@@ -21,19 +21,19 @@
         { \
             WCHAR dbg_popup_msg[1024]; \
             wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugString(dbg_popup_msg); \
+            OutputDebugStringW(dbg_popup_msg); \
         }
     #define SND_WARN(...) \
         { \
             WCHAR dbg_popup_msg[1024]; \
             wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugString(dbg_popup_msg); \
+            OutputDebugStringW(dbg_popup_msg); \
         }
     #define SND_TRACE(...) \
         { \
             WCHAR dbg_popup_msg[1024]; \
             wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugString(dbg_popup_msg); \
+            OutputDebugStringW(dbg_popup_msg); \
         }
 
     #define SND_ASSERT(condition) \

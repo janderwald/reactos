@@ -794,7 +794,6 @@ KsHandleSizedListQuery(
     {
         /* buffer too small */
         Irp->IoStatus.Information = Size;
-
         return STATUS_BUFFER_OVERFLOW;
     }
 
@@ -815,7 +814,7 @@ KsHandleSizedListQuery(
     }
 
     Item->Count = DataItemsCount;
-    Item->Size = DataItemSize;
+    Item->Size = Size;
 
     if (IoStack->Parameters.DeviceIoControl.OutputBufferLength == sizeof(KSMULTIPLE_ITEM))
     {
@@ -828,8 +827,10 @@ KsHandleSizedListQuery(
     {
         /* copy items */
         RtlMoveMemory((PVOID)(Item + 1), DataItems, DataItemSize * DataItemsCount);
+
         /* store result */
         Irp->IoStatus.Information = Size;
+
         /* done */
         return STATUS_SUCCESS;
     }

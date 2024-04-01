@@ -21,7 +21,7 @@ public:
         POOL_TYPE PoolType,
         ULONG Tag)
     {
-        return ExAllocatePoolWithTag(PoolType, Size, Tag);
+        return ExAllocatePoolZero(PoolType, Size, Tag);
     }
 
     STDMETHODIMP QueryInterface( REFIID InterfaceId, PVOID* Interface);
@@ -52,7 +52,7 @@ public:
         m_Descriptor(nullptr),
         m_EventListLock(0),
         m_EventList({nullptr}),
-        m_ResetState(KSRESET_BEGIN),
+        m_ResetState(KSRESET_END),
         m_Delay(0)
     {
     }
@@ -1003,7 +1003,7 @@ CPortPinWaveCyclic::Close(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp)
 {
-    DPRINT("CPortPinWaveCyclic::Close entered\n");
+    DPRINT1("CPortPinWaveCyclic::Close entered\n");
 
     PC_ASSERT_IRQL(PASSIVE_LEVEL);
 
@@ -1033,8 +1033,20 @@ CPortPinWaveCyclic::Close(
         // remove member from service group
         m_ServiceGroup->RemoveMember(PSERVICESINK(this));
 
-        // do not release service group, it is released by the miniport object
+        // release service group
+        m_ServiceGroup->Release();
+
+        // freed
         m_ServiceGroup = NULL;
+    }
+
+    if (m_DmaChannel)
+    {
+        // release reference
+        m_DmaChannel->Release();
+
+        // freed
+        m_DmaChannel = NULL;
     }
 
     if (m_Stream)

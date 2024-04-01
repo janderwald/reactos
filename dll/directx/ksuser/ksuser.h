@@ -1,6 +1,7 @@
 #pragma once
 
 #define _KSDDK_
+#define BUILDING_KS
 
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS

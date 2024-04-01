@@ -385,8 +385,10 @@ GetSysAudioDevicePnpName(
     Status = KsSynchronousIoControlDevice(DeviceEntry->FileObject, KernelMode, IOCTL_KS_PROPERTY, (PVOID)&Pin, sizeof(KSPROPERTY) + sizeof(ULONG), NULL, 0, &BytesReturned);
 
     /* check if the request failed */
-    if (Status != STATUS_BUFFER_TOO_SMALL || BytesReturned == 0)
+    if (Status != STATUS_SUCCESS || BytesReturned == 0)
+    {
         return STATUS_UNSUCCESSFUL;
+    }
 
     /* allocate buffer for the device */
     *Device = AllocateItem(NonPagedPool, BytesReturned);

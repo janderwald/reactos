@@ -37,7 +37,7 @@ extern "C" {
 #ifdef BUILDING_KS
     #define KSDDKAPI
 #else
-    #define KSDDKAPI //DECLSPEC_IMPORT /* TODO */
+    #define KSDDKAPI DECLSPEC_IMPORT
 #endif
 
 

@@ -142,6 +142,11 @@ PcAddAdapterDevice(
     KeInitializeSpinLock(&portcls_ext->TimerListLock);
     // initialize timer list
     InitializeListHead(&portcls_ext->TimerList);
+    // initialize power notify list
+    InitializeListHead(&portcls_ext->PowerNotifyList);
+    //initialize power notify list lock
+    KeInitializeSpinLock(&portcls_ext->PowerNotifyListLock);
+
     // initialize io timer
     IoInitializeTimer(fdo, PcIoTimerRoutine, NULL);
     // start the io timer
@@ -157,6 +162,7 @@ PcAddAdapterDevice(
     // did we succeed
     if (!NT_SUCCESS(status))
     {
+        DPRINT("KsAllocateDeviceHeader failed with %x\n", status);
         goto cleanup;
     }
 
@@ -166,11 +172,12 @@ PcAddAdapterDevice(
     if (PrevDeviceObject)
     {
         // store the device object in the device header
-        //KsSetDevicePnpBaseObject(portcls_ext->KsDeviceHeader, fdo, PrevDeviceObject);
+        KsSetDevicePnpAndBaseObject(portcls_ext->KsDeviceHeader, fdo, PrevDeviceObject);
         portcls_ext->PrevDeviceObject = PrevDeviceObject;
     }
     else
     {
+        DPRINT("IoAttachDevice failed\n");
         // return error code
         status = STATUS_UNSUCCESSFUL;
         goto cleanup;
@@ -197,7 +204,8 @@ cleanup:
 
     // delete created fdo
     IoDeleteDevice(fdo);
-
+    DPRINT("PcAddAdapterDevice completed failed with %x\n", status);
+    
     return status;
 }
 
@@ -217,14 +225,14 @@ PcRegisterSubdevice(
     UNICODE_STRING RefName;
     PSYMBOLICLINK_ENTRY SymEntry;
 
-    DPRINT("PcRegisterSubdevice DeviceObject %p Name %S Unknown %p\n", DeviceObject, Name, Unknown);
+    DPRINT1("PcRegisterSubdevice DeviceObject %p Name %S Unknown %p\n", DeviceObject, Name, Unknown);
 
     PC_ASSERT_IRQL_EQUAL(PASSIVE_LEVEL);
 
     // check if all parameters are valid
     if (!DeviceObject || !Name || !Unknown)
     {
-        DPRINT("PcRegisterSubdevice invalid parameter\n");
+        DPRINT1("PcRegisterSubdevice invalid parameter\n");
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -242,7 +250,7 @@ PcRegisterSubdevice(
     Status = Unknown->QueryInterface(IID_ISubdevice, (LPVOID*)&SubDevice);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("No ISubdevice interface\n");
+        DPRINT1("No ISubdevice interface\n");
         // the provided port driver doesnt support ISubdevice
         return STATUS_INVALID_PARAMETER;
     }
@@ -251,18 +259,19 @@ PcRegisterSubdevice(
     Status = SubDevice->GetDescriptor(&SubDeviceDescriptor);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT("Failed to get subdevice descriptor %x\n", Status);
+        DPRINT1("Failed to get subdevice descriptor %x\n", Status);
         SubDevice->Release();
         return STATUS_UNSUCCESSFUL;
     }
 
     // add an create item to the device header
+    DPRINT1("PcRegisterSubDevice Name %S SubDevice %p\n", Name, SubDevice);
     Status = KsAddObjectCreateItemToDeviceHeader(DeviceExt->KsDeviceHeader, PcCreateItemDispatch, (PVOID)SubDevice, Name, NULL);
     if (!NT_SUCCESS(Status))
     {
         // failed to attach
         SubDevice->Release();
-        DPRINT("KsAddObjectCreateItemToDeviceHeader failed with %x\n", Status);
+        DPRINT1("KsAddObjectCreateItemToDeviceHeader failed with %x\n", Status);
         return Status;
     }
 
@@ -300,9 +309,6 @@ PcRegisterSubdevice(
             }
         }
     }
-
-    // release SubDevice reference
-    SubDevice->Release();
 
     return STATUS_SUCCESS;
 }

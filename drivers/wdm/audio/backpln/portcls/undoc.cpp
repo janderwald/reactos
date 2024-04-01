@@ -278,7 +278,8 @@ PropertyItemDispatch(
         // now call the handler
         UNICODE_STRING GuidBuffer;
         RtlStringFromGUID(Property->Set, &GuidBuffer);
-        DPRINT("Calling Node %lu MajorTarget %p MinorTarget %p PropertySet %S PropertyId %lu PropertyFlags %lx InstanceSize %lu ValueSize %lu Handler %p PropertyRequest %p PropertyItemFlags %lx PropertyItemId %lu\n",
+        DPRINT("Calling Verb %x Node %lu MajorTarget %p MinorTarget %p PropertySet %S PropertyId %lu PropertyFlags %lx InstanceSize %lu ValueSize %lu Handler %p PropertyRequest %p PropertyItemFlags %lx PropertyItemId %lu\n",
+                PropertyRequest->Verb,
                 PropertyRequest->Node, PropertyRequest->MajorTarget, PropertyRequest->MinorTarget, GuidBuffer.Buffer, Property->Id, Property->Flags, PropertyRequest->InstanceSize, PropertyRequest->ValueSize,
                 PropertyRequest->PropertyItem->Handler, PropertyRequest, PropertyRequest->PropertyItem->Flags, PropertyRequest->PropertyItem->Id);
         RtlFreeUnicodeString(&GuidBuffer);
@@ -757,14 +758,18 @@ PcCreateSubdeviceDescriptor(
     InitializeListHead(&Descriptor->SymbolicLinkList);
     InitializeListHead(&Descriptor->PhysicalConnectionList);
 
-    //FIXME add driver category guids
-    Descriptor->Interfaces = (GUID*)AllocateItem(NonPagedPool, sizeof(GUID) * InterfaceCount, TAG_PORTCLASS);
+    // add driver category guids
+    Descriptor->Interfaces = (GUID*)AllocateItem(NonPagedPool, sizeof(GUID) * (InterfaceCount + FilterDescription->CategoryCount), TAG_PORTCLASS);
     if (!Descriptor->Interfaces)
         goto cleanup;
 
     // copy interface guids
     RtlCopyMemory(Descriptor->Interfaces, InterfaceGuids, sizeof(GUID) * InterfaceCount);
-    Descriptor->InterfaceCount = InterfaceCount;
+    RtlCopyMemory(
+        &Descriptor->Interfaces[InterfaceCount], FilterDescription->Categories,
+        sizeof(GUID) * FilterDescription->CategoryCount);
+
+    Descriptor->InterfaceCount = InterfaceCount + FilterDescription->CategoryCount;
 
     //DumpFilterDescriptor(FilterDescription);
 
@@ -802,6 +807,7 @@ PcCreateSubdeviceDescriptor(
     // now check if the filter descriptor supports filter properties
     if (FilterDescription->AutomationTable)
     {
+#if 0
         // get first entry
         PropertyItem = (PPCPROPERTY_ITEM)FilterDescription->AutomationTable->Properties;
 
@@ -821,6 +827,7 @@ PcCreateSubdeviceDescriptor(
             // move to next entry
             PropertyItem = (PPCPROPERTY_ITEM)((ULONG_PTR)PropertyItem + FilterDescription->AutomationTable->PropertyItemSize);
         }
+#endif
     }
 
     // check if the filter has pins
