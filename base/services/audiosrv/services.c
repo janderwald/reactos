@@ -21,7 +21,7 @@ WaitForService(
     {
         if (!QueryServiceStatusEx(hService, SC_STATUS_PROCESS_INFO, (LPBYTE)&Info, sizeof(SERVICE_STATUS_PROCESS), &dwSize))
         {
-            logmsg("QueryServiceStatusEx failed %x\n", GetLastError());
+            ////logmsg("QueryServiceStatusEx failed %x\n", GetLastError());
             break;
         }
 
@@ -32,7 +32,7 @@ WaitForService(
 
     } while (Index++ < RetryCount);
 
-    logmsg("Timeout while waiting for service to become ready %p\n", hService);
+    ////logmsg("Timeout while waiting for service to become ready %p\n", hService);
 
     return FALSE;
 }
@@ -49,13 +49,13 @@ StartAudioService(
     hService = OpenService(hSCManager, ServiceName, SERVICE_ALL_ACCESS);
     if (!hService)
     {
-        logmsg("Failed to open service %S %x\n", ServiceName, GetLastError());
+        ////logmsg("Failed to open service %S %x\n", ServiceName, GetLastError());
         return FALSE;
     }
 
     if (!StartService(hService, 0, NULL))
     {
-        logmsg("Failed to start service %S %x\n", ServiceName, GetLastError());
+        //logmsg("Failed to start service %S %x\n", ServiceName, GetLastError());
         CloseServiceHandle(hService);
         return FALSE;
     }
@@ -71,12 +71,12 @@ StartSystemAudioServices(VOID)
 {
     SC_HANDLE hSCManager;
 
-    logmsg("Starting system audio services\n");
+    //logmsg("Starting system audio services\n");
 
     hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
     if (!hSCManager)
     {
-        logmsg("Failed to open service manager %x\n", GetLastError());
+        //logmsg("Failed to open service manager %x\n", GetLastError());
         return FALSE;
     }
 

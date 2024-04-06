@@ -170,7 +170,19 @@ FxInterrupt::ConnectInternal(
         m_InterruptInfo.ShareDisposition == CmResourceShareShared ? TRUE : FALSE;
     connectParams.FullySpecified.SynchronizeIrql      = m_SynchronizeIrql;
 
-    return fxPkgPnp->m_IoConnectInterruptEx(&connectParams);
+    return IoConnectInterrupt(&m_Interrupt,
+                                _InterruptThunk,
+                                (PVOID)this,
+                                m_SpinLock,
+                                m_InterruptInfo.Vector,
+                                (KIRQL)m_InterruptInfo.Irql,
+                                (KIRQL)m_SynchronizeIrql,
+                                (KINTERRUPT_MODE)m_InterruptInfo.Mode,
+                                m_InterruptInfo.ShareDisposition == CmResourceShareShared ? TRUE : FALSE,
+                                m_InterruptInfo.TargetProcessorSet,
+                                FALSE);
+
+    //return fxPkgPnp->m_IoConnectInterruptEx(&connectParams);
 }
 
 VOID
@@ -194,7 +206,7 @@ FxInterrupt::DisconnectInternal(
     //
     // Disconnect the interrupt.
     //
-    ASSERT(fxPkgPnp->m_IoDisconnectInterruptEx != NULL);
+    //ASSERT(fxPkgPnp->m_IoDisconnectInterruptEx != NULL);
 
     RtlZeroMemory(&params, sizeof(params));
 
@@ -207,8 +219,12 @@ FxInterrupt::DisconnectInternal(
 
     params.ConnectionContext.InterruptObject = interruptObject;
 
-    fxPkgPnp->m_IoDisconnectInterruptEx(&params);
-
+    //fxPkgPnp->m_IoDisconnectInterruptEx(&params);
+    if (m_Interrupt != NULL) {
+        IoDisconnectInterrupt(m_Interrupt);
+        m_Interrupt = NULL;
+    }
+        
     return;
 }
 

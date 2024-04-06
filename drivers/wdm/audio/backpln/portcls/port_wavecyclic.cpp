@@ -231,12 +231,7 @@ CPortWaveCyclic::Init(
         Miniport->Release();
         return Status;
     }
-    if (m_pDescriptor->AutomationTable)
-    {
-        ASSERT(FALSE);
-        ASSERT(m_pDescriptor->AutomationTable->EventCount == 0);
-    }
-    ASSERT(FALSE);
+
     // create the subdevice descriptor
     Status = PcCreateSubdeviceDescriptor(&m_SubDeviceDescriptor,
                                          4,

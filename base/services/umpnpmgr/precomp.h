@@ -43,6 +43,9 @@ typedef struct
 {
     LIST_ENTRY ListEntry;
     PWSTR pszName;
+    BOOL DeviceInterface;
+    GUID DeviceInterfaceGUID;
+    DWORD_PTR hRecipient;
 } NOTIFY_ENTRY, *PNOTIFY_ENTRY;
 
 /* event.c */

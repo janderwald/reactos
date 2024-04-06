@@ -4701,26 +4701,37 @@ PNP_RegisterNotification(
     PDEV_BROADCAST_DEVICEINTERFACE_W pBroadcastDeviceInterface;
     PDEV_BROADCAST_HANDLE pBroadcastDeviceHandle;
     PNOTIFY_ENTRY pNotifyData = NULL;
+    UNICODE_STRING lp;
 
-    DPRINT1("PNP_RegisterNotification(%p %p '%S' %p %lu 0x%lx %p %lx %p)\n",
-           hBinding, hRecipient, pszName, pNotificationFilter,
-           ulNotificationFilterSize, ulFlags, pNotifyHandle, ulProcessId, pulUnknown9);
+    DPRINT1(
+        "PNP_RegisterNotification(%p %p '%S' %p %lu 0x%lx %p %lx %p)\n", hBinding, hRecipient, pszName,
+        pNotificationFilter, ulNotificationFilterSize, ulFlags, pNotifyHandle, ulProcessId, pulUnknown9);
 
     if (pNotifyHandle == NULL)
+    {
+        DPRINT1("pNotifyHandle is NULL");
         return CR_INVALID_POINTER;
+    }
 
     *pNotifyHandle = NULL;
 
-    if (pNotificationFilter == NULL ||
-        pulUnknown9 == NULL)
+    if (pNotificationFilter == NULL || pulUnknown9 == NULL)
+    {
+        DPRINT1("pNotificationFilter %p pulUnknown9 %p\n", pNotificationFilter, pulUnknown9);
         return CR_INVALID_POINTER;
-
+    }
     if (ulFlags & ~0x7)
+    {
+        DPRINT1("Invalid flag %x\n", ulFlags);
         return CR_INVALID_FLAG;
-
+    }
+        
     if ((ulNotificationFilterSize < sizeof(DEV_BROADCAST_HDR)) ||
         (((PDEV_BROADCAST_HDR)pNotificationFilter)->dbch_size < sizeof(DEV_BROADCAST_HDR)))
+    {
+        DPRINT1("ulNotificationFilterSize %u too small\n", ulNotificationFilterSize);
         return CR_INVALID_DATA;
+    }
 
     if (((PDEV_BROADCAST_HDR)pNotificationFilter)->dbch_devicetype == DBT_DEVTYP_DEVICEINTERFACE)
     {
@@ -4729,11 +4740,19 @@ PNP_RegisterNotification(
 
         if ((ulNotificationFilterSize < sizeof(DEV_BROADCAST_DEVICEINTERFACE_W)) ||
             (pBroadcastDeviceInterface->dbcc_size < sizeof(DEV_BROADCAST_DEVICEINTERFACE_W)))
+        {
+            DPRINT1(
+                "invalid ulNotificationFilterSize %u dbcc_size %u\n", ulNotificationFilterSize,
+                pBroadcastDeviceInterface->dbcc_size);
             return CR_INVALID_DATA;
+        }
 
         pNotifyData = RtlAllocateHeap(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NOTIFY_ENTRY));
         if (pNotifyData == NULL)
+        {
+            DPRINT1("outof memory\n");
             return CR_OUT_OF_MEMORY;
+        }
 
         if (pszName != NULL)
         {
@@ -4742,15 +4761,24 @@ PNP_RegisterNotification(
                                                    (wcslen(pszName) + 1) * sizeof(WCHAR));
             if (pNotifyData->pszName == NULL)
             {
+                 DPRINT1("OutOfMemory\n");
                 RtlFreeHeap(GetProcessHeap(), 0, pNotifyData);
                 return CR_OUT_OF_MEMORY;
             }
+            wcscpy(pNotifyData->pszName, pszName);
         }
+
+        pNotifyData->DeviceInterface = TRUE;
+        RtlMoveMemory(&pNotifyData->DeviceInterfaceGUID, &pBroadcastDeviceInterface->dbcc_classguid, sizeof(GUID));
+        pNotifyData->hRecipient = hRecipient;
+        DPRINT1("dbcc_name %S\n", pBroadcastDeviceInterface->dbcc_name);
+        RtlStringFromGUID(&pBroadcastDeviceInterface->dbcc_classguid, &lp);
+        DPRINT1("guid %wZ\n", &lp);
 
         /* Add the entry to the notification list */
         InsertTailList(&NotificationListHead, &pNotifyData->ListEntry);
 
-        DPRINT("pNotifyData: %p\n", pNotifyData);
+        DPRINT1("pNotifyData: %p\n", pNotifyData);
         *pNotifyHandle = (PNP_NOTIFY_HANDLE)pNotifyData;
     }
     else if (((PDEV_BROADCAST_HDR)pNotificationFilter)->dbch_devicetype == DBT_DEVTYP_HANDLE)

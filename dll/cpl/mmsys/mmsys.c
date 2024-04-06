@@ -499,6 +499,7 @@ MMSYS_InstallDevice(HDEVINFO hDevInfo, PSP_DEVINFO_DATA pspDevInfoData)
                                 NULL,
                                 NULL);
 
+    SetupInstallServicesFromInfSectionW(hInf, L"Audio_Inst.NT", 0);
 
     SetupTermDefaultQueueCallback(Context);
     SetupCloseInfFile(hInf);

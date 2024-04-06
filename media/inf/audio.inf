@@ -23,17 +23,37 @@ HKR, , ,               0, %AUDIOClassName%
 HKR, , EnumPropPages32,0, "MmSys.Cpl,MediaPropPageProvider"
 HKR, , Icon,           0, "3004"
 HKR, , Installer32,    0, "MmSys.Cpl,MediaClassInstaller"
+;HKR, , UpperFilters,   0x00010000, "ksthunk"
 
 ;-------------------------- AUDIO INSTALLATION --------------------------
 
 [AUDIO_Inst.NT]
+;Copyfiles = Audio_Inst.CopyFiles.NT
 
+;[Audio_Inst.CopyFiles.NT]
+;ksthunk.sys
+
+[Audio_Inst.NT.Services]
+;AddService = ksthunk,, ksthunk_Service_Inst
+
+;---------------------------- ksthunk DRIVER ---------------------------
+
+;[ksthunk_CopyFiles.NT]
+;ksthunk.sys
+
+;[ksthunk_Service_Inst]
+;ServiceType   = 1
+;StartType     = 1
+;ErrorControl  = 1
+;ServiceBinary = %11%\ksthunk.sys
+;LoadOrderGroup = Keyboard Class
 
 ;-------------------------------- STRINGS -------------------------------
 
 [Strings]
 ; Non-localizable
 ReactOS = "ReactOS Project"
+;ksthunk.SvcDesc          = "ReactOS KSThunk Driver"
 
 ; Localizable
 AUDIOClassName = "Audio & Videocontroller"

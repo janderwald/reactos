@@ -1106,7 +1106,7 @@ KsSynchronousIoControlDevice(
     IN  ULONG OutSize,
     OUT PULONG BytesReturned)
 {
-    PKSIOBJECT_HEADER ObjectHeader;
+    //PKSIOBJECT_HEADER ObjectHeader;
     PDEVICE_OBJECT DeviceObject;
     KEVENT Event;
     PIRP Irp;
@@ -1123,7 +1123,7 @@ KsSynchronousIoControlDevice(
     if (!DeviceObject)
         return STATUS_UNSUCCESSFUL;
 
-
+#if 0
     /* get object header */
     ObjectHeader = (PKSIOBJECT_HEADER)FileObject->FsContext2;
 
@@ -1145,7 +1145,7 @@ KsSynchronousIoControlDevice(
             return IoStatusBlock.Status;
         }
     }
-
+#endif
     /* initialize the event */
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
 

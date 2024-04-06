@@ -258,7 +258,7 @@ function(set_subsystem MODULE SUBSYSTEM)
     elseif(ARCH STREQUAL "arm64")
         target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
     else()
-        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},5.01")
+        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
     endif()
 endfunction()
 
@@ -268,7 +268,7 @@ endfunction()
 
 function(set_module_type_toolchain MODULE TYPE)
     # Set the PE image version numbers from the NT OS version ReactOS is based on
-    target_link_options(${MODULE} PRIVATE "/VERSION:5.01")
+    target_link_options(${MODULE} PRIVATE "/VERSION:6.02")
 
     if((TYPE STREQUAL win32dll) OR (TYPE STREQUAL win32ocx) OR (TYPE STREQUAL cpl))
         target_link_options(${MODULE} PRIVATE /DLL)

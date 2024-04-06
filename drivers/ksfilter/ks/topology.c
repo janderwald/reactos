@@ -159,6 +159,7 @@ KsTopologyPropertyHandler(
 
     if (Property->Flags != KSPROPERTY_TYPE_GET)
     {
+        UNIMPLEMENTED;
         Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
         Irp->IoStatus.Information = 0;
         return STATUS_NOT_IMPLEMENTED;

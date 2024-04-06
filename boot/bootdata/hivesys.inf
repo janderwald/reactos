@@ -1593,6 +1593,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\AudioSrv","ObjectName",0x00000000,"Local
 HKLM,"SYSTEM\CurrentControlSet\Services\AudioSrv","Start",0x00010001,0x00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\AudioSrv","Type",0x00010001,0x00000010
 
+; KS Thunk WOW Service device driver
+;HKLM,"SYSTEM\CurrentControlSet\Services\ksthunk","ErrorControl",0x00010001,0x00000001
+;HKLM,"SYSTEM\CurrentControlSet\Services\ksthunk","Group",0x00000000,"PNP Filter"
+;HKLM,"SYSTEM\CurrentControlSet\Services\ksthunk","ImagePath",0x00020000,"system32\drivers\ksthunk.sys"
+;HKLM,"SYSTEM\CurrentControlSet\Services\ksthunk","Start",0x00010001,0x00000003
+;HKLM,"SYSTEM\CurrentControlSet\Services\ksthunk","Type",0x00010001,0x00000001
+
 ; Background Intelligent Transfer Service (BITS)
 HKLM,"SYSTEM\CurrentControlSet\Services\BITS","DisplayName",0x00000000,%BITS_SERVICE%
 HKLM,"SYSTEM\CurrentControlSet\Services\BITS","Description",0x00000000,%BITS_SERVICE_DESCRIPTION%
@@ -2222,7 +2229,7 @@ HKLM,"SYSTEM\Setup","SystemPrefix",0x00000001
 HKLM,"SYSTEM\Setup","SystemSetupInProgress",0x00010001,0x00000001
 
 ; Debug channels
-;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","DEBUGCHANNEL",0x00020000,"+ole,+rpc"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","DEBUGCHANNEL",0x00020000,"-setupapi"
 
 ; Winsrv configuration
 HKLM,"SYSTEM\CurrentControlSet\Control\PriorityControl",,0x00000012
