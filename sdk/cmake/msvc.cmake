@@ -258,7 +258,7 @@ function(set_subsystem MODULE SUBSYSTEM)
     elseif(ARCH STREQUAL "arm64")
         target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
     else()
-        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},6.02")
+        target_link_options(${MODULE} PRIVATE "/SUBSYSTEM:${_subsystem},5.01")
     endif()
 endfunction()
 

@@ -165,7 +165,7 @@ NTSTATUS StartHDAController(PFDO_CONTEXT fdoCtx) {
 	NTSTATUS status;
 	status = ResetHDAController(fdoCtx, TRUE);
 	if (!NT_SUCCESS(status)) {
-		goto exit;
+        return status;
 	}
 
 	//Clear STATESTS
@@ -189,8 +189,6 @@ NTSTATUS StartHDAController(PFDO_CONTEXT fdoCtx) {
 	udelay(1000);
 
 	fdoCtx->ControllerEnabled = TRUE;
-
-exit:
 	return status;
 }
 
@@ -257,7 +255,6 @@ NTSTATUS RunSingleHDACmd(PFDO_CONTEXT fdoCtx, ULONG val, ULONG* res) {
 
 	LARGE_INTEGER StartTime;
 	KeQuerySystemTime(&StartTime);
-    DPRINT1("StartTime %ul\n", StartTime.QuadPart);
 
 	int timeout_ms = 1000;
 	for (ULONG loopcounter = 0; ; loopcounter++) {

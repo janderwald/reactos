@@ -94,7 +94,7 @@ HDA_TransferCodecVerbs(
     PTRANSFER_CODEC_CONTEXT StreamContext = NULL;
 	//SklHdAudBusPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL, "%s called (Count: %d)!\n", __func__, Count);
 
-    DPRINT("HDA_TransferCodecVerbs %p Count %u CodecTransfer %p Callback %p Context %p\n", _context, Count, CodecTransfer, Callback, Context);
+    DPRINT1("HDA_TransferCodecVerbs %p Count %u CodecTransfer %p Callback %p Context %p\n", _context, Count, CodecTransfer, Callback, Context);
 
 	if (!_context)
     {

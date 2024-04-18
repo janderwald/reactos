@@ -114,7 +114,7 @@ PowerMeterDetail_UpdateStats(HWND hwndDlg)
         bqi.InformationLevel = BatteryInformation;
         if (DeviceIoControl(hDevice, IOCTL_BATTERY_QUERY_INFORMATION, &bqi, sizeof(bqi), &bi, sizeof(bi), &dwReceived, NULL))
         {
-            UCHAR Chem[5];
+            CHAR Chem[5];
             memset(Chem, 0x0, sizeof(Chem));
             RtlCopyMemory(Chem, bi.Chemistry, sizeof(bi.Chemistry));
             SetDlgItemTextA(hwndDlg, IDC_BATTERYCHEMISTRY, Chem);

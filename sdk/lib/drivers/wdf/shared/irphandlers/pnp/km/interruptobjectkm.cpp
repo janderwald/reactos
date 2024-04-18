@@ -192,10 +192,7 @@ FxInterrupt::DisconnectInternal(
 {
     IO_DISCONNECT_INTERRUPT_PARAMETERS params;
     PKINTERRUPT interruptObject;
-    FxPkgPnp* fxPkgPnp;
-
-    fxPkgPnp = m_Device->m_PkgPnp;
-
+    
     //
     // Now null these pointers so that we can catch anyone trying to use them
     // erroneously.
