@@ -13,27 +13,24 @@
         MessageBox(0, dbg_popup_msg, dbg_popup_title, MB_OK | MB_TASKMODAL); \
     }
 
-#ifndef NDEBUG
-
-#include <winuser.h>
-
+#if DBG && !defined(NDEBUG)
     #define SND_ERR(...) \
         { \
             WCHAR dbg_popup_msg[1024]; \
-            wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugStringW(dbg_popup_msg); \
+            wsprintf(dbg_popup_msg, __VA_ARGS__); \
+            OutputDebugString(dbg_popup_msg); \
         }
     #define SND_WARN(...) \
         { \
             WCHAR dbg_popup_msg[1024]; \
-            wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugStringW(dbg_popup_msg); \
+            wsprintf(dbg_popup_msg, __VA_ARGS__); \
+            OutputDebugString(dbg_popup_msg); \
         }
     #define SND_TRACE(...) \
         { \
             WCHAR dbg_popup_msg[1024]; \
-            wsprintfW(dbg_popup_msg, __VA_ARGS__); \
-            OutputDebugStringW(dbg_popup_msg); \
+            wsprintf(dbg_popup_msg, __VA_ARGS__); \
+            OutputDebugString(dbg_popup_msg); \
         }
 
     #define SND_ASSERT(condition) \
@@ -58,7 +55,6 @@
                 CurrDumpHdr = CurrDumpHdr->lpNext; \
             } \
         }
-
 #else
     #define SND_ERR(...) do {} while ( 0 )
     #define SND_WARN(...) do {} while ( 0 )

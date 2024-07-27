@@ -292,6 +292,7 @@ KspPropertyHandler(
         {
             /* store custom property item */
             KSPROPERTY_ITEM_IRP_STORAGE(Irp) = PropertyItem;
+            ASSERT(FALSE);
         }
 
         _SEH2_TRY

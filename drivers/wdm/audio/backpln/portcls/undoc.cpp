@@ -325,11 +325,12 @@ PcAddToPropertyTable(
     PKSPROPERTY_SET NewPropertySet;
     PKSPROPERTY_ITEM FilterPropertyItem, NewFilterPropertyItem;
     LPGUID Guid;
-    //UNICODE_STRING GuidBuffer;
+    UNICODE_STRING GuidBuffer;
 
-ASSERT(PropertyItem->Set);
-	//	RtlStringFromGUID(*PropertyItem->Set, &GuidBuffer);
-   // DPRINT1("PcAddToPropertyTable Adding Item Set %S Id %lu Flags %lx\n", GuidBuffer.Buffer, PropertyItem->Id, PropertyItem->Flags);
+    ASSERT(PropertyItem->Set);
+	RtlStringFromGUID(*PropertyItem->Set, &GuidBuffer);
+    DPRINT1("PcAddToPropertyTable Adding Item Set %S Id %lu Flags %lx\n", GuidBuffer.Buffer, PropertyItem->Id, PropertyItem->Flags);
+    RtlFreeUnicodeString(&GuidBuffer);
 
     //DPRINT1("FilterPropertySetCount %lu\n", SubDeviceDescriptor->FilterPropertySetCount);
     // first step check if the property set is present already
@@ -493,6 +494,37 @@ ASSERT(PropertyItem->Set);
     else
     {
         // property set item handler already present
+        // now replace initialize property item
+        DPRINT1("Replacing existing handler\n");
+        FilterPropertyItem = (PKSPROPERTY_ITEM)&SubDeviceDescriptor->FilterPropertySet[PropertySetIndex]
+                                 .PropertyItem[PropertySetItemIndex];
+        // are any set operations supported
+        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_SET)
+        {
+            // setup handler
+            FilterPropertyItem->SetPropertyHandler = PropertyItemDispatch;
+        }
+
+        // are set operation supported
+        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_GET)
+        {
+            // setup handler
+            FilterPropertyItem->GetPropertyHandler = PropertyItemDispatch;
+        }
+
+        // are get operations supported
+        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_GET)
+        {
+            // setup handler
+            FilterPropertyItem->GetPropertyHandler = PropertyItemDispatch;
+        }
+
+        // are basic support operations supported
+        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_BASICSUPPORT)
+        {
+            // setup handler
+            FilterPropertyItem->SupportHandler = PropertyItemDispatch;
+        }
 
         if (bNode)
         {
@@ -807,7 +839,7 @@ PcCreateSubdeviceDescriptor(
     // now check if the filter descriptor supports filter properties
     if (FilterDescription->AutomationTable)
     {
-#if 0
+#if 1
         // get first entry
         PropertyItem = (PPCPROPERTY_ITEM)FilterDescription->AutomationTable->Properties;
 

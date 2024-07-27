@@ -1028,8 +1028,8 @@ EHCI_InitializeHardware(IN PEHCI_EXTENSION EhciExtension)
     DPRINT("EHCI_InitializeHardware: Reset - OK\n");
 
     StructuralParams.AsULONG = READ_REGISTER_ULONG(&CapabilityRegisters->StructParameters.AsULONG);
-
-    EhciExtension->NumberOfPorts = StructuralParams.PortCount;
+    ASSERT(StructuralParams.PortCount > 4);
+    EhciExtension->NumberOfPorts = 4; // StructuralParams.PortCount;
     EhciExtension->PortPowerControl = StructuralParams.PortPowerControl;
 
     DPRINT("EHCI_InitializeHardware: StructuralParams - %X\n", StructuralParams.AsULONG);

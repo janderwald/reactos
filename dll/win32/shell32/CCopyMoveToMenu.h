@@ -13,11 +13,10 @@ class CCopyMoveToMenu :
     public IShellExtInit
 {
 protected:
-    UINT m_idCmdFirst, m_idCmdLast, m_idCmdAction;
     CComPtr<IDataObject> m_pDataObject;
     CComPtr<IUnknown> m_pSite;
 
-    HRESULT DoRealFileOp(LPCMINVOKECOMMANDINFO lpici, PCUIDLIST_ABSOLUTE pidl);
+    HRESULT DoRealFileOp(const CIDA *pCIDA, LPCMINVOKECOMMANDINFO lpici, PCUIDLIST_ABSOLUTE pidlDestination);
     HRESULT DoAction(LPCMINVOKECOMMANDINFO lpici);
 
 public:
@@ -32,6 +31,7 @@ public:
     virtual UINT GetActionTitleStringID() const = 0;
     virtual UINT GetFileOp() const = 0;
     virtual LPCSTR GetVerb() const = 0;
+    STDMETHODIMP QueryContextMenuImpl(BOOL IsCopyOp, HMENU hMenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags);
 
     // IContextMenu
     STDMETHODIMP GetCommandString(UINT_PTR idCommand, UINT uFlags, UINT *lpReserved, LPSTR lpszName, UINT uMaxNameLen) override;
@@ -108,36 +108,4 @@ public:
     UINT GetActionTitleStringID() const override { return IDS_MOVETOTITLE; }
     UINT GetFileOp() const override { return FO_MOVE; }
     LPCSTR GetVerb() const override { return "moveto"; }
-};
-
-class CCopyAsPathMenu
-    : public CComCoClass<CCopyAsPathMenu, &CLSID_CopyAsPathMenu>
-    , public CComObjectRootEx<CComMultiThreadModelNoCS>
-    , public IDropTarget
-{
-public:
-    DECLARE_REGISTRY_RESOURCEID(IDR_COPYASPATHMENU)
-    DECLARE_NOT_AGGREGATABLE(CCopyAsPathMenu)
-    DECLARE_PROTECT_FINAL_CONSTRUCT()
-
-    BEGIN_COM_MAP(CCopyAsPathMenu)
-        COM_INTERFACE_ENTRY_IID(IID_IDropTarget, IDropTarget)
-    END_COM_MAP()
-
-    // IDropTarget
-    STDMETHODIMP DragEnter(IDataObject *pdto, DWORD grfKeyState, POINTL ptl, DWORD *pdwEffect)
-    {
-        *pdwEffect &= DROPEFFECT_COPY;
-        return S_OK;
-    }
-    STDMETHODIMP DragOver(DWORD grfKeyState, POINTL ptl, DWORD *pdwEffect)
-    {
-        *pdwEffect &= DROPEFFECT_COPY;
-        return S_OK;
-    }
-    STDMETHODIMP DragLeave()
-    {
-        return S_OK;
-    }
-    STDMETHODIMP Drop(IDataObject *pdto, DWORD grfKeyState, POINTL ptl, DWORD *pdwEffect);
 };

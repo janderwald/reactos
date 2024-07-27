@@ -40,10 +40,12 @@ typedef struct _INFO2_HEADER
 
 /* recyclebin_generic.c */
 
+EXTERN_C
 HRESULT RecycleBinGeneric_Constructor(OUT IUnknown **ppUnknown);
 
 /* recyclebin_generic_enumerator.c */
 
+EXTERN_C
 HRESULT RecycleBinGenericEnum_Constructor(OUT IRecycleBinEnumList **pprbel);
 
 /* recyclebin_v5.c */

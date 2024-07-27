@@ -94,6 +94,36 @@ inline BOOL _ROS_FAILED_HELPER(HRESULT hr, const char* expr, const char* filenam
 } /* extern "C" */
 #endif /* defined(__cplusplus) */
 
+static inline UINT
+SHELL_ErrorBoxHelper(HWND hwndOwner, UINT Error)
+{
+    WCHAR buf[400];
+    UINT cch;
+
+    if (!IsWindowVisible(hwndOwner))
+        hwndOwner = NULL;
+    if (Error == ERROR_SUCCESS)
+        Error = ERROR_INTERNAL_ERROR;
+
+    cch = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                         NULL, Error, 0, buf, _countof(buf), NULL);
+    if (!cch)
+    {
+        enum { user32_IDS_ERROR = 2 }; // IDS_ERROR from user32 resource.h ("Error" string)
+        cch = LoadStringW(LoadLibraryW(L"USER32"), user32_IDS_ERROR, buf, _countof(buf));
+        wsprintfW(buf + cch, L"\n\n%#x (%d)", Error, Error);
+    }
+    MessageBoxW(hwndOwner, buf, NULL, MB_OK | MB_ICONSTOP);
+    return Error;
+}
+#ifdef __cplusplus
+template<class H> static UINT
+SHELL_ErrorBox(H hwndOwner, UINT Error = GetLastError())
+{
+    return SHELL_ErrorBoxHelper(const_cast<HWND>(hwndOwner), Error);
+}
+#endif
+
 #ifdef __cplusplus
 template <typename T>
 class CComCreatorCentralInstance
@@ -227,25 +257,23 @@ public:
 #endif
 
 template<class T>
-void ReleaseCComPtrExpectZero(CComPtr<T>& cptr, BOOL forceRelease = FALSE)
+ULONG ReleaseCComPtrExpectZeroHelper(const char *file, UINT line, CComPtr<T>& cptr, BOOL forceRelease = FALSE)
 {
+    ULONG r = 0;
     if (cptr.p != NULL)
     {
         T *raw = cptr.Detach();
-        int nrc = raw->Release();
+        int nrc = r = raw->Release();
         if (nrc > 0)
+            Win32DbgPrint(file, line, "WARNING: Unexpected RefCount > 0 (%d)\n", nrc);
+        while (nrc > 0 && forceRelease)
         {
-            DbgPrint("WARNING: Unexpected RefCount > 0 (%d)!\n", nrc);
-            if (forceRelease)
-            {
-                while (nrc > 0)
-                {
-                    nrc = raw->Release();
-                }
-            }
+            nrc = raw->Release();
         }
     }
+    return r;
 }
+#define ReleaseCComPtrExpectZero(...) ReleaseCComPtrExpectZeroHelper(__FILE__, __LINE__, __VA_ARGS__)
 
 template<class T, class R>
 HRESULT inline ShellDebugObjectCreator(REFIID riid, R ** ppv)
@@ -427,6 +455,9 @@ template<class B, class R> static HRESULT SHILCombine(B base, PCUIDLIST_RELATIVE
     R r = *ppOut = (R)ILCombine((PCIDLIST_ABSOLUTE)base, sub);
     return r ? S_OK : E_OUTOFMEMORY;
 }
+
+static inline bool StrIsNullOrEmpty(LPCSTR str) { return !str || !*str; }
+static inline bool StrIsNullOrEmpty(LPCWSTR str) { return !str || !*str; }
 
 HRESULT inline SHSetStrRet(LPSTRRET pStrRet, LPCSTR pstrValue)
 {
@@ -611,34 +642,40 @@ public:
     explicit CDataObjectHIDA(IDataObject* pDataObject)
         : m_cida(nullptr)
     {
-        m_medium.tymed = TYMED_NULL;
-
-        if (g_cfHIDA == NULL)
-        {
-            g_cfHIDA = (CLIPFORMAT)RegisterClipboardFormatW(CFSTR_SHELLIDLISTW);
-        }
-        FORMATETC fmt = { g_cfHIDA, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-
-        m_hr = pDataObject->GetData(&fmt, &m_medium);
-        if (FAILED(m_hr))
-        {
-            m_medium.tymed = TYMED_NULL;
-            return;
-        }
-
-        m_cida = (CIDA*)::GlobalLock(m_medium.hGlobal);
-        if (m_cida == nullptr)
-        {
-            m_hr = E_UNEXPECTED;
-        }
+        m_hr = CreateCIDA(pDataObject, &m_cida, m_medium);
     }
 
     ~CDataObjectHIDA()
     {
-        if (m_cida)
-            ::GlobalUnlock(m_cida);
+        DestroyCIDA(m_cida, m_medium);
+    }
 
-        ReleaseStgMedium(&m_medium);
+    static void DestroyCIDA(CIDA *pcida, STGMEDIUM &medium)
+    {
+        if (pcida)
+            ::GlobalUnlock(medium.hGlobal);
+        ReleaseStgMedium(&medium);
+    }
+
+    static HRESULT CreateCIDA(IDataObject* pDataObject, CIDA **ppcida, STGMEDIUM &medium)
+    {
+        *ppcida = NULL;
+        medium.pUnkForRelease = NULL;
+        if (g_cfHIDA == NULL)
+            g_cfHIDA = (CLIPFORMAT)RegisterClipboardFormatW(CFSTR_SHELLIDLISTW);
+        
+        FORMATETC fmt = { g_cfHIDA, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        HRESULT hr = pDataObject->GetData(&fmt, &medium);
+        if (SUCCEEDED(hr))
+        {
+            *ppcida = (CIDA*)::GlobalLock(medium.hGlobal);
+            if (*ppcida)
+                return S_OK;
+            ReleaseStgMedium(&medium);
+            hr = E_UNEXPECTED;
+        }
+        medium.tymed = TYMED_NULL;
+        return hr;
     }
 
     HRESULT hr() const
@@ -747,6 +784,18 @@ DataObject_SetOffset(IDataObject* pDataObject, POINT* point)
     return DataObject_SetData(pDataObject, g_cfShellIdListOffsets, point, sizeof(point[0]));
 }
 
+#endif
+
+#ifdef __cplusplus
+struct SHELL_GetSettingImpl
+{
+    SHELLSTATE ss;
+    SHELL_GetSettingImpl(DWORD ssf) { SHGetSetSettings(&ss, ssf, FALSE); }
+    const SHELLSTATE* operator ->() { return &ss; }
+};
+#define SHELL_GetSetting(ssf, field) ( SHELL_GetSettingImpl(ssf)->field )
+#else
+#define SHELL_GetSetting(pss, ssf, field) ( SHGetSetSettings((pss), (ssf), FALSE), (pss)->field )
 #endif
 
 

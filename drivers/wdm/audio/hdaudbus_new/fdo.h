@@ -65,6 +65,7 @@ typedef struct _HDAC_STREAM {
 
     BOOLEAN running;
     BOOLEAN irqReceived;
+    HDAUDIO_STREAM_STATE StreamState;
 } HDAC_STREAM, *PHDAC_STREAM;
 
 typedef struct _HDAC_RIRB {

@@ -20,12 +20,71 @@
  */
 
 #include "regedit.h"
+#include <shldisp.h>
+#include <shlguid.h>
 
 ChildWnd* g_pChildWnd;
 static int last_split;
 HBITMAP SizingPattern = 0;
 HBRUSH  SizingBrush = 0;
 WCHAR Suggestions[256];
+
+static HRESULT WINAPI DummyEnumStringsQI(LPVOID This, REFIID riid, void**ppv)
+{
+    if (ppv)
+        *ppv = NULL;
+    if (IsEqualIID(riid, &IID_IEnumString) || IsEqualIID(riid, &IID_IUnknown))
+    {
+        *ppv = This;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI DummyEnumStringsAddRefRelease(LPVOID This)
+{
+    return 1;
+}
+
+static HRESULT WINAPI DummyEnumStringsNext(LPVOID This, ULONG celt, LPWSTR *parr, ULONG *pceltFetched)
+{
+    if (pceltFetched)
+        *pceltFetched = 0;
+    return S_FALSE;
+}
+
+static HRESULT WINAPI DummyEnumStringsSkip(LPVOID This, ULONG celt)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI DummyEnumStringsReset(LPVOID This)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI DummyEnumStringsClone(LPVOID This, void**ppv)
+{
+    return E_NOTIMPL;
+}
+
+struct DummyEnumStringsVtbl {
+    LPVOID QI, AddRef, Release, Next, Skip, Reset, Clone;
+} g_DummyEnumStringsVtbl = {
+    &DummyEnumStringsQI,
+    &DummyEnumStringsAddRefRelease,
+    &DummyEnumStringsAddRefRelease,
+    &DummyEnumStringsNext,
+    &DummyEnumStringsSkip,
+    &DummyEnumStringsReset,
+    &DummyEnumStringsClone
+};
+
+struct DummyEnumStrings {
+    struct DummyEnumStringsVtbl *lpVtbl;
+} g_DummyEnumStrings = {
+    &g_DummyEnumStringsVtbl
+};
 
 extern LPCWSTR get_root_key_name(HKEY hRootKey)
 {
@@ -137,6 +196,7 @@ static void finish_splitbar(HWND hWnd, int x)
     GetClientRect(hWnd, &rt);
     g_pChildWnd->nSplitPos = x;
     ResizeWnd(rt.right, rt.bottom);
+    InvalidateRect(hWnd, &rt, FALSE); // HACK: See CORE-19576
     ReleaseCapture();
 }
 
@@ -155,6 +215,7 @@ static void SuggestKeys(HKEY hRootKey, LPCWSTR pszKeyPath, LPWSTR pszSuggestions
     size_t i;
     HKEY hOtherKey, hSubKey;
     BOOL bFound;
+    const REGSAM regsam = KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE;
 
     memset(pszSuggestions, 0, iSuggestionsLength * sizeof(*pszSuggestions));
     iSuggestionsLength--;
@@ -174,7 +235,7 @@ static void SuggestKeys(HKEY hRootKey, LPCWSTR pszKeyPath, LPWSTR pszSuggestions
                  * loop back */
                 if ((szBuffer[0] != L'\0') && _wcsicmp(szBuffer, pszKeyPath))
                 {
-                    if (RegOpenKeyW(hRootKey, szBuffer, &hOtherKey) == ERROR_SUCCESS)
+                    if (RegOpenKeyExW(hRootKey, szBuffer, 0, regsam, &hOtherKey) == ERROR_SUCCESS)
                     {
                         lstrcpynW(pszSuggestions, L"HKCR\\", (int) iSuggestionsLength);
                         i = wcslen(pszSuggestions);
@@ -197,7 +258,7 @@ static void SuggestKeys(HKEY hRootKey, LPCWSTR pszKeyPath, LPWSTR pszSuggestions
         while(bFound && (iSuggestionsLength > 0));
 
         /* Check CLSID key */
-        if (RegOpenKeyW(hRootKey, pszKeyPath, &hSubKey) == ERROR_SUCCESS)
+        if (RegOpenKeyExW(hRootKey, pszKeyPath, 0, regsam, &hSubKey) == ERROR_SUCCESS)
         {
             if (QueryStringValue(hSubKey, L"CLSID", NULL, szBuffer,
                                  ARRAY_SIZE(szBuffer)) == ERROR_SUCCESS)
@@ -213,6 +274,19 @@ static void SuggestKeys(HKEY hRootKey, LPCWSTR pszKeyPath, LPWSTR pszSuggestions
                 iSuggestionsLength -= i;
             }
             RegCloseKey(hSubKey);
+        }
+    }
+    else if ((hRootKey == HKEY_CURRENT_USER || hRootKey == HKEY_LOCAL_MACHINE) && *pszKeyPath)
+    {
+        LPCWSTR rootstr = hRootKey == HKEY_CURRENT_USER ? L"HKLM" : L"HKCU";
+        hOtherKey = hRootKey == HKEY_CURRENT_USER ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+        if (RegOpenKeyExW(hOtherKey, pszKeyPath, 0, regsam, &hSubKey) == ERROR_SUCCESS)
+        {
+            int cch;
+            RegCloseKey(hSubKey);
+            cch = _snwprintf(pszSuggestions, iSuggestionsLength, L"%s\\%s", rootstr, pszKeyPath);
+            if (cch <= 0 || cch > iSuggestionsLength)
+                pszSuggestions[0] = UNICODE_NULL;
         }
     }
 }
@@ -323,6 +397,7 @@ LRESULT CALLBACK ChildWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
         HFONT hFont;
         WCHAR buffer[MAX_PATH];
         DWORD style;
+        IAutoComplete *pAutoComplete;
 
         /* Load "My Computer" string */
         LoadStringW(hInst, IDS_MY_COMPUTER, buffer, ARRAY_SIZE(buffer));
@@ -347,6 +422,12 @@ LRESULT CALLBACK ChildWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
         g_pChildWnd->hArrowIcon = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(IDI_ARROW),
                                                     IMAGE_ICON, 12, 12, 0);
         SendMessageW(g_pChildWnd->hAddressBtnWnd, BM_SETIMAGE, IMAGE_ICON, (LPARAM)g_pChildWnd->hArrowIcon);
+
+        if (SUCCEEDED(CoCreateInstance(&CLSID_AutoComplete, NULL, CLSCTX_INPROC_SERVER, &IID_IAutoComplete, (void**)&pAutoComplete)))
+        {
+            IAutoComplete_Init(pAutoComplete, g_pChildWnd->hAddressBarWnd, (IUnknown*)&g_DummyEnumStrings, NULL, NULL);
+            IAutoComplete_Release(pAutoComplete);
+        }
 
         GetClientRect(hWnd, &rc);
         g_pChildWnd->hTreeWnd = CreateTreeView(hWnd, g_pChildWnd->szPath, (HMENU) TREE_WINDOW);
@@ -634,7 +715,15 @@ LRESULT CALLBACK ChildWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
                         wID = ID_TREE_SUGGESTION_MIN;
                         while(*s && (wID <= ID_TREE_SUGGESTION_MAX))
                         {
-                            _snwprintf(buffer, ARRAY_SIZE(buffer), resource, s);
+                            WCHAR *path = s, buf[MAX_PATH];
+                            if (hRootKey == HKEY_CURRENT_USER || hRootKey == HKEY_LOCAL_MACHINE)
+                            {
+                                // Windows 10 only displays the root name
+                                LPCWSTR next = PathFindNextComponentW(s);
+                                if (next > s)
+                                    lstrcpynW(path = buf, s, min(next - s, _countof(buf)));
+                            }
+                            _snwprintf(buffer, ARRAY_SIZE(buffer), resource, path);
 
                             memset(&mii, 0, sizeof(mii));
                             mii.cbSize = sizeof(mii);

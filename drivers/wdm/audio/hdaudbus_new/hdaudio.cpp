@@ -396,17 +396,21 @@ HDA_SetDmaEngineState(
 
 		 KIRQL OldLevel = KeAcquireInterruptSpinLock(devData->FdoContext->Interrupt);
 
+        DPRINT1("OldState: %u\n", stream->StreamState);
 		if (StreamState == RunState) {
-			hdac_stream_start(stream);
+            hdac_stream_start(stream);
 			stream->running = TRUE;
+            stream->StreamState = RunState;
 		}
 		else if ((StreamState == PauseState || StreamState == StopState)) {
 			hdac_stream_stop(stream);
 			stream->running = FALSE;
+            stream->StreamState = PauseState;
 		}
 		else if (StreamState == ResetState) {
-			hdac_stream_reset(stream);
             hdac_stream_setup(stream);
+            hdac_stream_reset(stream);
+            stream->StreamState = ResetState;
         }
         else
         {

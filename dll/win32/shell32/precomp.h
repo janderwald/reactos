@@ -36,10 +36,13 @@
 #include <powrprof.h>
 #include <winnetwk.h>
 #include <objsafe.h>
+#include <regstr.h>
 
 #include <comctl32_undoc.h>
 #include <shlguid_undoc.h>
 #include <shlobj_undoc.h>
+
+#define SHLWAPI_ISHELLFOLDER_HELPERS
 #include <shlwapi_undoc.h>
 
 #include <shellapi.h>
@@ -96,6 +99,7 @@
 #include "CNewMenu.h"
 #include "CSendToMenu.h"
 #include "CCopyMoveToMenu.h"
+#include "CCopyAsPathMenu.h"
 #include "dialogs/filedefext.h"
 #include "dialogs/drvdefext.h"
 #include "CQueryAssociations.h"
@@ -123,6 +127,8 @@ extern const GUID SHELL32_AdvtShortcutComponent;
 
 #define MAX_PROPERTY_SHEET_PAGE 32
 
+#define VERBKEY_CCHMAX 64 // Note: 63+\0 seems to be the limit on XP
+
 extern inline
 BOOL
 CALLBACK
@@ -139,8 +145,15 @@ AddPropSheetPageCallback(HPROPSHEETPAGE hPage, LPARAM lParam)
     return FALSE;
 }
 
-HRESULT WINAPI
-Shell_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdtobj);
+HRESULT
+SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
+HRESULT
+SHELL32_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdo, UINT msg);
+UINT
+MapVerbToDfmCmd(_In_ LPCSTR verba);
+UINT
+GetDfmCmd(_In_ IContextMenu *pCM, _In_ LPCSTR verba);
+#define SHELL_ExecuteControlPanelCPL(hwnd, cpl) SHRunControlPanel((cpl), (hwnd))
 
 // CStubWindow32 --- The owner window of file property sheets.
 // This window hides taskbar button of property sheet.
@@ -152,6 +165,8 @@ public:
     BEGIN_MSG_MAP(CStubWindow32)
     END_MSG_MAP()
 };
+
+void PostCabinetMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
 HRESULT
 Shell_TranslateIDListAlias(
@@ -177,6 +192,7 @@ Shell_DisplayNameOf(
     _Out_ LPWSTR pszBuf,
     _In_ UINT cchBuf);
 
+EXTERN_C
 HRESULT SHBindToObject(
     _In_opt_ IShellFolder *psf,
     _In_ LPCITEMIDLIST pidl,
@@ -216,5 +232,30 @@ BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
 BOOL PathIsValidElement(_In_ LPCWSTR pszPath);
 BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
+
+PIDLIST_ABSOLUTE SHELL_CIDA_ILCloneFull(_In_ const CIDA *pCIDA, _In_ UINT Index);
+PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UINT Index);
+
+EXTERN_C HRESULT
+IUnknown_InitializeCommand(
+    _In_ IUnknown *pUnk,
+    _In_ PCWSTR pszCommandName,
+    _In_opt_ IPropertyBag *pPB);
+EXTERN_C HRESULT
+InvokeIExecuteCommand(
+    _In_ IExecuteCommand *pEC,
+    _In_ PCWSTR pszCommandName,
+    _In_opt_ IPropertyBag *pPB,
+    _In_opt_ IShellItemArray *pSIA,
+    _In_opt_ LPCMINVOKECOMMANDINFOEX pICI,
+    _In_opt_ IUnknown *pSite);
+EXTERN_C HRESULT
+InvokeIExecuteCommandWithDataObject(
+    _In_ IExecuteCommand *pEC,
+    _In_ PCWSTR pszCommandName,
+    _In_opt_ IPropertyBag *pPB,
+    _In_ IDataObject *pDO,
+    _In_opt_ LPCMINVOKECOMMANDINFOEX pICI,
+    _In_opt_ IUnknown *pSite);
 
 #endif /* _PRECOMP_H__ */

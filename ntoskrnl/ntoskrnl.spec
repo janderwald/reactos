@@ -1574,6 +1574,7 @@
 @ cdecl _strrev()
 @ cdecl _strset()
 @ cdecl _strupr()
+@ cdecl -version=0x400-0x502 -impsym _swprintf() swprintf # Compatibility with pre NT6
 @ cdecl _vsnprintf()
 @ cdecl _vsnwprintf()
 @ cdecl _wcsicmp()

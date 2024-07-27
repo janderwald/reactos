@@ -13,7 +13,7 @@ void hdac_stream_start(PHDAC_STREAM stream) {
 			stripe_ctl);
 	}
 
-    hda_write32(stream->FdoContext, SSYNC, 0x1);
+    //hda_write32(stream->FdoContext, SSYNC, 0x1);
 
 	/* set DMA start and interrupt mask */
 	stream_update8(stream, SD_CTL, 0, SD_CTL_DMA_START | SD_INT_MASK);

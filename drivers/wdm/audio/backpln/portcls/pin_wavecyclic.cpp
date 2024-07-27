@@ -544,6 +544,7 @@ PinWaveCyclicDataFormat(
 
     if (Request->Flags & KSPROPERTY_TYPE_SET)
     {
+        DPRINT1("PinWaveCyclicDataFormat Set\n");
         // try to change data format
         PKSDATAFORMAT NewDataFormat, DataFormat = (PKSDATAFORMAT)Irp->UserBuffer;
         ULONG Size = min(Pin->m_Format->FormatSize, DataFormat->FormatSize);
@@ -601,16 +602,19 @@ PinWaveCyclicDataFormat(
         }
 
         // done
+        DPRINT1("done Status %x\n");
         return Status;
     }
     else if (Request->Flags & KSPROPERTY_TYPE_GET)
     {
+        DPRINT1("PinWaveCyclicDataFormat Get");
         // get current data format
         PC_ASSERT(Pin->m_Format);
 
         if (Pin->m_Format->FormatSize > IoStack->Parameters.DeviceIoControl.OutputBufferLength)
         {
             // buffer too small
+            DPRINT1("Buffer too small\n");
             Irp->IoStatus.Information = Pin->m_Format->FormatSize;
             return STATUS_MORE_ENTRIES;
         }
@@ -879,23 +883,31 @@ CPortPinWaveCyclic::DeviceIoControl(
     NTSTATUS Status = STATUS_NOT_SUPPORTED;
     ULONG Data = 0;
     KSRESET ResetValue;
+    BOOLEAN CompleteIrp = TRUE;
 
     /* get current irp stack location */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
-
     if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY)
     {
+        Property = (PKSPROPERTY)IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
+
+        RtlStringFromGUID(Property->Set, &GuidString);
+        DPRINT1("Property Set |%S| Id %u Flags %x\n", GuidString.Buffer, Property->Id, Property->Flags);
+        RtlFreeUnicodeString(&GuidString);
+
+        if (IsEqualGUIDAligned(Property->Set, KSPROPSETID_Connection) &&
+            Property->Id == KSPROPERTY_CONNECTION_DATAFORMAT)
+        {
+            DPRINT1("Avoid completion\n");
+            CompleteIrp = FALSE;
+            Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return STATUS_NOT_SUPPORTED;
+        }
+
         /* handle property with subdevice descriptor */
         Status = PcHandlePropertyWithTable(Irp,  m_Descriptor->FilterPropertySetCount, m_Descriptor->FilterPropertySet, m_Descriptor);
-
-        if (Status == STATUS_NOT_FOUND)
-        {
-            Property = (PKSPROPERTY)IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
-
-            RtlStringFromGUID(Property->Set, &GuidString);
-            DPRINT("Unhandled property Set |%S| Id %u Flags %x\n", GuidString.Buffer, Property->Id, Property->Flags);
-            RtlFreeUnicodeString(&GuidString);
-        }
+        DPRINT1("Status %x\n", Status);
     }
     else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_ENABLE_EVENT)
     {
@@ -908,7 +920,7 @@ CPortPinWaveCyclic::DeviceIoControl(
     else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_RESET_STATE)
     {
         Status = KsAcquireResetValue(Irp, &ResetValue);
-        DPRINT("Status %x Value %u\n", Status, ResetValue);
+        DPRINT1("Status %x Value %u\n", Status, ResetValue);
         /* check for success */
         if (NT_SUCCESS(Status))
         {
@@ -934,7 +946,7 @@ CPortPinWaveCyclic::DeviceIoControl(
         /* increment total number of packets */
         InterlockedIncrement((PLONG)&m_TotalPackets);
 
-         DPRINT("New Packet Total %u State %x MinData %u\n", m_TotalPackets, m_State, m_IrpQueue->NumData());
+         DPRINT1("New Packet Total %u State %x MinData %u\n", m_TotalPackets, m_State, m_IrpQueue->NumData());
 
          /* is the device not currently reset */
          if (m_ResetState == KSRESET_END)
@@ -964,7 +976,8 @@ CPortPinWaveCyclic::DeviceIoControl(
     if (Status != STATUS_PENDING)
     {
         Irp->IoStatus.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        if (CompleteIrp)
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
     }
 
     return Status;
@@ -1238,7 +1251,19 @@ CPortPinWaveCyclic::Init(
     DPRINT1("CPortPinWaveCyclic::Init Status %x PinId %u Capture %u\n", Status, ConnectDetails->PinId, Capture);
 
     if (!NT_SUCCESS(Status))
+    {
+        if (m_DmaChannel)
+        {
+            m_DmaChannel->Release();
+            m_DmaChannel = NULL;
+        }
+        if (m_ServiceGroup)
+        {
+            m_ServiceGroup->Release();
+            m_ServiceGroup = NULL;
+        }
         return Status;
+    }
 
     ISubdevice * Subdevice = NULL;
     // get subdevice interface
@@ -1326,6 +1351,7 @@ CPortPinWaveCyclic::Init(
     Status = m_IrpQueue->Init(ConnectDetails, KsPinDescriptor, m_FrameSize, 0, FALSE);
     if (!NT_SUCCESS(Status))
     {
+       DPRINT1("Failed\n");
        m_IrpQueue->Release();
        return Status;
     }
@@ -1341,7 +1367,7 @@ CPortPinWaveCyclic::Init(
 
     m_Port = Port;
     m_Filter = Filter;
-
+    DPRINT1("Success\n");
     return STATUS_SUCCESS;
 }
 
