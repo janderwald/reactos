@@ -68,21 +68,9 @@ END
 
 /* Menus */
 
-IDC_REGEDIT MENU
-BEGIN
-    POPUP "&Файл" //FIXME: Harmonize this string (part 1 of 2)
-    BEGIN
-        MENUITEM "В&ихід", ID_REGISTRY_EXIT
-    END
-    POPUP "&Довідка"
-    BEGIN
-        MENUITEM "Пр&о програму", ID_HELP_ABOUT
-    END
-END
-
 IDR_REGEDIT_MENU MENU
 BEGIN
-    POPUP "Фа&йл" //FIXME: Harmonize this string (part 2 of 2)
+    POPUP "&Файл"
     BEGIN
         MENUITEM "&Імпорт...", ID_REGISTRY_IMPORTREGISTRYFILE
         MENUITEM "&Експорт...", ID_REGISTRY_EXPORTREGISTRYFILE
@@ -453,7 +441,7 @@ BEGIN
     ID_REGISTRY_CONNECTNETWORKREGISTRY "Підключається до реєстру віддаленого комп'ютера"
     ID_REGISTRY_DISCONNECTNETWORKREGISTRY "Відключається від реєстру віддаленого комп'ютера"
     ID_REGISTRY_PRINT "Друкує весь реєстр або його частину"
-/*    ID_HELP_HELPTOPICS "Відкриває довідку редактора реєстра" */
+//    ID_HELP_HELPTOPICS "Відкриває довідку редактора реєстра"
     ID_HELP_ABOUT "Відображає інформацію про програму, номер версії та авторство"
 END
 
@@ -728,12 +716,3 @@ BEGIN
     DEFPUSHBUTTON "Скасувати", IDCANCEL, 93, 29, 45, 14
     LTEXT "Пошук у реєстрі...", IDC_STATIC, 33, 12, 83, 8
 END
-
-/* String Table */
-/*
- *STRINGTABLE
- *BEGIN
- *    ID_HELP_HELPTOPICS "Відкриває довідку редактора реєстра."
- *    ID_HELP_ABOUT "Відображає інформацію про програму, номер версії, та авторські права."
- *END
- */

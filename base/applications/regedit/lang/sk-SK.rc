@@ -1,5 +1,4 @@
-/* TRANSLATOR : Mário Kačmár /Mario Kacmar/ aka Kario (kario@szm.sk)
- * DATE OF TR.: 07-07-2008
+/* TRANSLATOR: 2008 Mário Kačmár /Mario Kacmar/ aka Kario <kario@szm.sk>
  */
 
 LANGUAGE LANG_SLOVAK, SUBLANG_DEFAULT
@@ -69,18 +68,6 @@ Usage examples:\n\
 END
 
 /* Menus */
-
-IDC_REGEDIT MENU
-BEGIN
-    POPUP "&Súbor"
-    BEGIN
-        MENUITEM "S&končiť", ID_REGISTRY_EXIT
-    END
-    POPUP "&Pomocník"
-    BEGIN
-        MENUITEM "Č&o je", ID_HELP_ABOUT
-    END
-END
 
 IDR_REGEDIT_MENU MENU
 BEGIN
@@ -241,7 +228,7 @@ END
 
 IDD_EDIT_BIN_DATA DIALOGEX 32, 24, 252, 174
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_NOIDLEMSG | DS_CONTEXTHELP | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
-CAPTION "Úprava binárnej hodnoty" //upraviť, upravenie
+CAPTION "Úprava binárnej hodnoty"
 FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Value &name:", IDC_STATIC, 6, 6, 134, 8
@@ -455,8 +442,8 @@ BEGIN
     ID_REGISTRY_CONNECTNETWORKREGISTRY "Connects to a remote computer's registry"
     ID_REGISTRY_DISCONNECTNETWORKREGISTRY "Disconnects from a remote computer's registry"
     ID_REGISTRY_PRINT "Prints all or part of the registry"
-/*    ID_HELP_HELPTOPICS "Opens registry editor help" */
-    ID_HELP_ABOUT "Displays program information, version number and copyright"
+//    ID_HELP_HELPTOPICS "Otvorí pomocníka pre Editor registrov"
+    ID_HELP_ABOUT "Zobrazuje informácie programu, číslo verzie a autorské práva"
 END
 
 STRINGTABLE
@@ -730,12 +717,3 @@ BEGIN
     DEFPUSHBUTTON "Zrušiť", IDCANCEL, 93, 29, 45, 14
     LTEXT "Searching the registry...", IDC_STATIC, 33, 12, 83, 8
 END
-
-/* String Table */
-/*
- *STRINGTABLE
- *BEGIN
- *    ID_HELP_HELPTOPICS "Otvorí pomocníka pre Editor registrov."
- *    ID_HELP_ABOUT "Zobrazuje informácie programu, číslo verzie a autorské práva."
- *END
- */

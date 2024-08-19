@@ -1034,6 +1034,10 @@ HRESULT CShellBrowser::BrowseToPath(IShellFolder *newShellFolder,
     if (FAILED_UNEXPECTEDLY(hResult))
         return hResult;
 
+    if (FAILED_UNEXPECTEDLY(hResult = SHILClone(absolutePIDL, &absolutePIDL)))
+        return hResult;
+    CComHeapPtr<ITEMIDLIST> pidlAbsoluteClone(const_cast<LPITEMIDLIST>(absolutePIDL));
+
     // update history
     if (flags & BTP_UPDATE_CUR_HISTORY)
     {
@@ -1078,7 +1082,14 @@ HRESULT CShellBrowser::BrowseToPath(IShellFolder *newShellFolder,
 
     // update current pidl
     ILFree(fCurrentDirectoryPIDL);
-    fCurrentDirectoryPIDL = ILClone(absolutePIDL);
+    fCurrentDirectoryPIDL = pidlAbsoluteClone.Detach();
+    /* CORE-19697: CAddressEditBox::OnWinEvent(CBN_SELCHANGE) causes CAddressEditBox to
+     * call BrowseObject(pidlLastParsed). As part of our browsing we call FireNavigateComplete
+     * and this in turn causes CAddressEditBox::Invoke to ILFree(pidlLastParsed)!
+     * We then call SHBindToParent on absolutePIDL (which is really (the now invalid) pidlLastParsed) and we
+     * end up accessing invalid memory! We therefore set absolutePIDL to be our cloned PIDL here.
+     */
+    absolutePIDL = fCurrentDirectoryPIDL;
 
     // create view window
     hResult = newShellView->CreateViewWindow(saveCurrentShellView, folderSettings,
@@ -1823,6 +1834,19 @@ void CShellBrowser::UpdateViewMenu(HMENU theMenu)
         SetMenuItemInfo(theMenu, IDM_VIEW_TOOLBARS, FALSE, &menuItemInfo);
     }
     SHCheckMenuItem(theMenu, IDM_VIEW_STATUSBAR, m_settings.fStatusBarVisible ? TRUE : FALSE);
+
+    // Check the menu items for Explorer bar
+    BOOL bSearchBand = (IsEqualCLSID(CLSID_SH_SearchBand, fCurrentVertBar) ||
+                        IsEqualCLSID(CLSID_SearchBand, fCurrentVertBar) ||
+                        IsEqualCLSID(CLSID_IE_SearchBand, fCurrentVertBar) ||
+                        IsEqualCLSID(CLSID_FileSearchBand, fCurrentVertBar));
+    BOOL bHistory = IsEqualCLSID(CLSID_SH_HistBand, fCurrentVertBar);
+    BOOL bFavorites = IsEqualCLSID(CLSID_SH_FavBand, fCurrentVertBar);
+    BOOL bFolders = IsEqualCLSID(CLSID_ExplorerBand, fCurrentVertBar);
+    SHCheckMenuItem(theMenu, IDM_EXPLORERBAR_SEARCH, bSearchBand);
+    SHCheckMenuItem(theMenu, IDM_EXPLORERBAR_HISTORY, bHistory);
+    SHCheckMenuItem(theMenu, IDM_EXPLORERBAR_FAVORITES, bFavorites);
+    SHCheckMenuItem(theMenu, IDM_EXPLORERBAR_FOLDERS, bFolders);
 }
 
 HRESULT CShellBrowser::BuildExplorerBandMenu()

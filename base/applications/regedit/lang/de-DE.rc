@@ -66,18 +66,6 @@ END
 
 /* Menus */
 
-IDC_REGEDIT MENU
-BEGIN
-    POPUP "&Datei"
-    BEGIN
-        MENUITEM "&Beenden", ID_REGISTRY_EXIT
-    END
-    POPUP "&Hilfe"
-    BEGIN
-        MENUITEM "Inf&o", ID_HELP_ABOUT
-    END
-END
-
 IDR_REGEDIT_MENU MENU
 BEGIN
     POPUP "&Datei"
@@ -441,7 +429,7 @@ STRINGTABLE
 BEGIN
     ID_EDIT_MODIFY "Ändert die Daten eines Wertes"
     ID_EDIT_NEW_KEY "Fügt einen neuen Schlüssel hinzu"
-    ID_EDIT_NEW_STRINGVALUE "Fügt eine neue Zeichenkette hinzu "
+    ID_EDIT_NEW_STRINGVALUE "Fügt eine neue Zeichenkette hinzu"
     ID_EDIT_NEW_BINARYVALUE "Fügt einen neuen Binärwärt hinzu"
     ID_EDIT_NEW_DWORDVALUE "Fügt einen neuen DWORD-Wert hinzu"
     ID_REGISTRY_IMPORTREGISTRYFILE "Importiert eine Textddatei in die Registry"
@@ -451,8 +439,8 @@ BEGIN
     ID_REGISTRY_CONNECTNETWORKREGISTRY "Verbindet zu einer Registry eines Fremdcomputers"
     ID_REGISTRY_DISCONNECTNETWORKREGISTRY "Trennt die Verbindung zu der Registry eines Fremdcomputers"
     ID_REGISTRY_PRINT "Druckt die gesamte Registry oder Teile davon aus"
-/*    ID_HELP_HELPTOPICS "Öffnet die Hilfe" */
-    ID_HELP_ABOUT "Zeigt Versions- und Copyright-Informationen an"
+//    ID_HELP_HELPTOPICS "Öffnet die Hilfe"
+    ID_HELP_ABOUT "Zeigt Programmname, Version und Copyright an"
 END
 
 STRINGTABLE
@@ -726,12 +714,3 @@ BEGIN
     DEFPUSHBUTTON "Abbrechen", IDCANCEL, 93, 29, 45, 14
     LTEXT "Durchsuche die Registry...", IDC_STATIC, 33, 12, 85, 8
 END
-
-/* String Table */
-/*
- *STRINGTABLE
- *BEGIN
- *    ID_HELP_HELPTOPICS "Öffnet die Hilfe."
- *    ID_HELP_ABOUT "Zeigt Programmname, Version und Copyright an"
- *END
- */

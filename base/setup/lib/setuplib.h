@@ -66,6 +66,16 @@ struct _USETUP_DATA;
 typedef VOID
 (__cdecl *PSETUP_ERROR_ROUTINE)(IN struct _USETUP_DATA*, ...);
 
+typedef enum _ARCHITECTURE_TYPE
+{
+    ARCH_PcAT,      //< Standard BIOS-based PC-AT
+    ARCH_NEC98x86,  //< NEC PC-98
+    ARCH_Xbox,      //< Original Xbox
+    ARCH_Arc,       //< ARC-based (MIPS, SGI)
+    ARCH_Efi,       //< EFI and UEFI
+// Place other architectures supported by the Setup below.
+} ARCHITECTURE_TYPE;
+
 typedef struct _USETUP_DATA
 {
 /* Error handling *****/
@@ -110,7 +120,7 @@ typedef struct _USETUP_DATA
     LONG DestinationDiskNumber;
     LONG DestinationPartitionNumber;
 
-    LONG MBRInstallType;
+    LONG BootLoaderLocation;
     LONG FormatPartition;
     LONG AutoPartition;
     LONG FsType;
@@ -123,6 +133,7 @@ typedef struct _USETUP_DATA
     PGENERIC_LIST LanguageList;
 
 /* Settings *****/
+    ARCHITECTURE_TYPE ArchType; //< Target architecture (MachineType)
     PCWSTR ComputerType;
     PCWSTR DisplayType;
     // PCWSTR KeyboardDriver;
@@ -176,6 +187,20 @@ InitSystemPartition(
     /**/_Out_ PPARTENTRY* pSystemPartition, /* HACK HACK! */
     _In_opt_ PFSVOL_CALLBACK FsVolCallback,
     _In_opt_ PVOID Context);
+
+/**
+ * @brief
+ * Defines the class of characters valid for the installation directory.
+ *
+ * The valid characters are: ASCII alphanumericals (a-z, A-Z, 0-9),
+ * and: '.', '\\', '-', '_' . Spaces are not allowed.
+ **/
+#define IS_VALID_INSTALL_PATH_CHAR(c) \
+    (isalnum(c) || (c) == L'.' || (c) == L'\\' || (c) == L'-' || (c) == L'_')
+
+BOOLEAN
+IsValidInstallDirectory(
+    _In_ PCWSTR InstallDir);
 
 NTSTATUS
 InitDestinationPaths(

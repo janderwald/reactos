@@ -2866,52 +2866,6 @@ FsVolCallback(
 }
 
 
-static BOOLEAN
-IsValidPath(
-    IN PCWSTR InstallDir)
-{
-    UINT i, Length;
-
-    Length = wcslen(InstallDir);
-
-    // TODO: Add check for 8.3 too.
-
-    /* Path must be at least 2 characters long */
-//    if (Length < 2)
-//        return FALSE;
-
-    /* Path must start with a backslash */
-//    if (InstallDir[0] != L'\\')
-//        return FALSE;
-
-    /* Path must not end with a backslash */
-    if (InstallDir[Length - 1] == L'\\')
-        return FALSE;
-
-    /* Path must not contain whitespace characters */
-    for (i = 0; i < Length; i++)
-    {
-        if (iswspace(InstallDir[i]))
-            return FALSE;
-    }
-
-    /* Path component must not end with a dot */
-    for (i = 0; i < Length; i++)
-    {
-        if (InstallDir[i] == L'\\' && i > 0)
-        {
-            if (InstallDir[i - 1] == L'.')
-                return FALSE;
-        }
-    }
-
-    if (InstallDir[Length - 1] == L'.')
-        return FALSE;
-
-    return TRUE;
-}
-
-
 /*
  * Displays the InstallDirectoryPage.
  *
@@ -2951,7 +2905,7 @@ InstallDirectoryPage(PINPUT_RECORD Ir)
      * of an invalid path, or we are in regular setup), display the UI and allow
      * the user to specify a new installation path.
      */
-    if ((RepairUpdateFlag || IsUnattendedSetup) && IsValidPath(InstallDir))
+    if ((RepairUpdateFlag || IsUnattendedSetup) && IsValidInstallDirectory(InstallDir))
     {
         Status = InitDestinationPaths(&USetupData, InstallDir, InstallPartition);
         if (!NT_SUCCESS(Status))
@@ -3059,7 +3013,7 @@ InstallDirectoryPage(PINPUT_RECORD Ir)
              * Check for the validity of the installation directory and pop up
              * an error if it is not the case. Then the user can fix its input.
              */
-            if (!IsValidPath(InstallDir))
+            if (!IsValidInstallDirectory(InstallDir))
             {
                 MUIDisplayError(ERROR_DIRECTORY_NAME, Ir, POPUP_WAIT_ENTER);
                 return INSTALL_DIRECTORY_PAGE;
@@ -3106,8 +3060,9 @@ InstallDirectoryPage(PINPUT_RECORD Ir)
         {
             if (Length < 50)
             {
+                /* Only accept valid characters for the installation path */
                 c = (WCHAR)Ir->Event.KeyEvent.uChar.AsciiChar;
-                if (iswalpha(c) || iswdigit(c) || c == '.' || c == '\\' || c == '-' || c == '_')
+                if (IS_VALID_INSTALL_PATH_CHAR(c))
                 {
                     if (Pos < Length)
                         memmove(&InstallDir[Pos + 1],
@@ -3515,15 +3470,15 @@ BootLoaderSelectPage(PINPUT_RECORD Ir)
      */
     if (RepairUpdateFlag)
     {
-        USetupData.MBRInstallType = 0;
+        USetupData.BootLoaderLocation = 0;
         goto Quit;
     }
 
     /* For unattended setup, skip MBR installation or install on removable disk if needed */
     if (IsUnattendedSetup)
     {
-        if ((USetupData.MBRInstallType == 0) ||
-            (USetupData.MBRInstallType == 1))
+        if ((USetupData.BootLoaderLocation == 0) ||
+            (USetupData.BootLoaderLocation == 1))
         {
             goto Quit;
         }
@@ -3538,7 +3493,7 @@ BootLoaderSelectPage(PINPUT_RECORD Ir)
     if ((SystemPartition->DiskEntry->DiskStyle != PARTITION_STYLE_MBR) ||
         !IsRecognizedPartition(SystemPartition->PartitionType))
     {
-        USetupData.MBRInstallType = 1;
+        USetupData.BootLoaderLocation = 1;
         goto Quit;
     }
 #endif
@@ -3546,8 +3501,8 @@ BootLoaderSelectPage(PINPUT_RECORD Ir)
     /* Is it an unattended install on hdd? */
     if (IsUnattendedSetup)
     {
-        if ((USetupData.MBRInstallType == 2) ||
-            (USetupData.MBRInstallType == 3))
+        if ((USetupData.BootLoaderLocation == 2) ||
+            (USetupData.BootLoaderLocation == 3))
         {
             goto Quit;
         }
@@ -3619,25 +3574,25 @@ BootLoaderSelectPage(PINPUT_RECORD Ir)
             if (Line == 12)
             {
                 /* Install on both MBR and VBR */
-                USetupData.MBRInstallType = 2;
+                USetupData.BootLoaderLocation = 2;
                 break;
             }
             else if (Line == 13)
             {
                 /* Install on VBR only */
-                USetupData.MBRInstallType = 3;
+                USetupData.BootLoaderLocation = 3;
                 break;
             }
             else if (Line == 14)
             {
                 /* Install on removable disk */
-                USetupData.MBRInstallType = 1;
+                USetupData.BootLoaderLocation = 1;
                 break;
             }
             else if (Line == 15)
             {
                 /* Skip installation */
-                USetupData.MBRInstallType = 0;
+                USetupData.BootLoaderLocation = 0;
                 break;
             }
 
@@ -3706,7 +3661,7 @@ BootLoaderHardDiskPage(PINPUT_RECORD Ir)
     NTSTATUS Status;
     WCHAR DestinationDevicePathBuffer[MAX_PATH];
 
-    if (USetupData.MBRInstallType == 2)
+    if (USetupData.BootLoaderLocation == 2)
     {
         /* Step 1: Write the VBR */
         Status = InstallVBRToPartition(&USetupData.SystemRootPath,
@@ -3782,10 +3737,10 @@ BootLoaderInstallPage(PINPUT_RECORD Ir)
     RtlCreateUnicodeString(&USetupData.SystemRootPath, PathBuffer);
     DPRINT1("SystemRootPath: %wZ\n", &USetupData.SystemRootPath);
 
-    if (USetupData.MBRInstallType != 0)
+    if (USetupData.BootLoaderLocation != 0)
         MUIDisplayPage(BOOTLOADER_INSTALL_PAGE);
 
-    switch (USetupData.MBRInstallType)
+    switch (USetupData.BootLoaderLocation)
     {
         /* Skip installation */
         case 0:

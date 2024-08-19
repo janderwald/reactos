@@ -1,7 +1,5 @@
 /* Превод на Български/ Bulgarian translation */
 /* https://reactos.org/wiki/Bulgarian_translation */
-/* LOCATION: base/applications/regedit/lang */
-/* НЕДОВЪРШЕН/ INCOMPLETE */
 
 LANGUAGE LANG_BULGARIAN, SUBLANG_DEFAULT
 
@@ -70,18 +68,6 @@ Usage examples:\n\
 END
 
 /* Menus */
-
-IDC_REGEDIT MENU
-BEGIN
-    POPUP "&Файл"
-    BEGIN
-        MENUITEM "Из&ход", ID_REGISTRY_EXIT
-    END
-    POPUP "Помо&щ"
-    BEGIN
-        MENUITEM "&За", ID_HELP_ABOUT
-    END
-END
 
 IDR_REGEDIT_MENU MENU
 BEGIN
@@ -456,7 +442,7 @@ BEGIN
     ID_REGISTRY_CONNECTNETWORKREGISTRY "Свързва се с регистъра на далечен компютър"
     ID_REGISTRY_DISCONNECTNETWORKREGISTRY "Разкача се от регистъра на отдалечен компютър"
     ID_REGISTRY_PRINT "Разпечатва регистъра или част от него"
-/*    ID_HELP_HELPTOPICS "Отваря помощта за регистърен обработчик" */
+//    ID_HELP_HELPTOPICS "Отваря помощта за регистърен обработчик"
     ID_HELP_ABOUT "Показва сведения за приложението, версия и възпроизводствени права"
 END
 
@@ -731,12 +717,3 @@ BEGIN
     DEFPUSHBUTTON "Отказ", IDCANCEL, 93, 29, 45, 14
     LTEXT "Претърсване на регистъра...", IDC_STATIC, 33, 12, 105, 8
 END
-
-/* String Table */
-/*
- *STRINGTABLE
- *BEGIN
- *    ID_HELP_HELPTOPICS "Отваря помощта за Регистърния обработчик."
- *    ID_HELP_ABOUT "Показва сведения за приложението, версията и възпроизводственото право."
- *END
- */
