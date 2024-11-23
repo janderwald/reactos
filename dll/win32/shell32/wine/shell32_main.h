@@ -46,6 +46,7 @@ BOOL PidlToSicIndex (IShellFolder * sh, LPCITEMIDLIST pidl, BOOL bBigIcon, UINT 
 INT SIC_GetIconIndex (LPCWSTR sSourceFile, INT dwSourceIndex, DWORD dwFlags ) DECLSPEC_HIDDEN;
 
 /* Classes Root */
+HRESULT HCR_GetProgIdKeyOfExtension(PCWSTR szExtension, PHKEY phKey, BOOL AllowFallback);
 BOOL HCR_MapTypeToValueW(LPCWSTR szExtension, LPWSTR szFileType, LONG len, BOOL bPrependDot) DECLSPEC_HIDDEN;
 BOOL HCR_GetDefaultVerbW( HKEY hkeyClass, LPCWSTR szVerb, LPWSTR szDest, DWORD len ) DECLSPEC_HIDDEN;
 BOOL HCR_GetExecuteCommandW( HKEY hkeyClass, LPCWSTR szClass, LPCWSTR szVerb, LPWSTR szDest, DWORD len ) DECLSPEC_HIDDEN;
@@ -66,6 +67,12 @@ BOOL HCR_GetIconA(LPCSTR szClass, LPSTR szDest, LPCSTR sName, DWORD len, int* pi
 BOOL HCR_GetClassNameA(REFIID riid, LPSTR szDest, DWORD len) DECLSPEC_HIDDEN;
 
 BOOL HCR_GetFolderAttributes(LPCITEMIDLIST pidlFolder, LPDWORD dwAttributes) DECLSPEC_HIDDEN;
+
+/* File associations */
+#define SHELL32_AssocGetFolderDescription SHELL32_AssocGetFSDirectoryDescription
+HRESULT SHELL32_AssocGetFSDirectoryDescription(PWSTR Buf, UINT cchBuf);
+HRESULT SHELL32_AssocGetFileDescription(PCWSTR Name, PWSTR Buf, UINT cchBuf);
+
 
 DWORD WINAPI ParseFieldA(LPCSTR src, DWORD nField, LPSTR dst, DWORD len) DECLSPEC_HIDDEN;
 DWORD WINAPI ParseFieldW(LPCWSTR src, DWORD nField, LPWSTR dst, DWORD len) DECLSPEC_HIDDEN;
@@ -89,8 +96,6 @@ HRESULT WINAPI IShellLink_ConstructFromFile(IShellFolder * psf, LPCITEMIDLIST pi
 HRESULT WINAPI IFileSystemBindData_Constructor(const WIN32_FIND_DATAW *pfd, LPBC *ppV);
 HRESULT WINAPI CPanel_ExtractIconA(LPITEMIDLIST pidl, LPCSTR pszFile, UINT nIconIndex, HICON *phiconLarge, HICON *phiconSmall, UINT nIconSize) DECLSPEC_HIDDEN;
 HRESULT WINAPI CPanel_ExtractIconW(LPITEMIDLIST pidl, LPCWSTR pszFile, UINT nIconIndex, HICON *phiconLarge, HICON *phiconSmall, UINT nIconSize) DECLSPEC_HIDDEN;
-
-HRESULT CRegFolder_CreateInstance(const GUID *pGuid, LPCITEMIDLIST pidlRoot, LPCWSTR lpszPath, LPCWSTR lpszEnumKeyName, REFIID riid, void **ppv);
 
 /* initialisation for FORMATETC */
 #define InitFormatEtc(fe, cf, med) \

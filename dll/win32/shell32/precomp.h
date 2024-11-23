@@ -111,6 +111,7 @@
 #include "CUserNotification.h"
 #include "dialogs/folder_options.h"
 #include "shelldesktop/CChangeNotifyServer.h"
+#include "utils.h"
 
 #include <wine/debug.h>
 #include <wine/unicode.h>
@@ -218,6 +219,7 @@ SHBindToObjectEx(
 
 DWORD
 SHGetAttributes(_In_ IShellFolder *psf, _In_ LPCITEMIDLIST pidl, _In_ DWORD dwAttributes);
+HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
 HRESULT SHCoInitializeAnyApartment(VOID);
 
 HRESULT

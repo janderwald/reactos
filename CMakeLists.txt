@@ -233,6 +233,8 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
                     -D_WIN32_WINDOWS=0x502
                     -D_SETUPAPI_VER=0x502
                     -DMINGW_HAS_SECURE_API=1
+                    -DD3D_UMD_INTERFACE_VERSION=0x000C # Vista
+                    -DDXGKDDI_INTERFACE_VERSION=0x1052 # Vista
                     -DDLL_EXPORT_VERSION=${DLL_EXPORT_VERSION})
 
     # Arch Options
@@ -310,6 +312,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         sdk/include
         sdk/include/psdk
         sdk/include/dxsdk
+        sdk/include/winrt
         ${REACTOS_BINARY_DIR}/sdk/include
         ${REACTOS_BINARY_DIR}/sdk/include/psdk
         ${REACTOS_BINARY_DIR}/sdk/include/dxsdk
@@ -317,6 +320,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         ${REACTOS_BINARY_DIR}/sdk/include/reactos
         ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
         sdk/include/crt
+        sdk/include/vcruntime
         sdk/include/ddk
         sdk/include/ndk
         sdk/include/reactos

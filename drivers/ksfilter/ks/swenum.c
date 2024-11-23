@@ -373,7 +373,7 @@ KspCreateDeviceReference(
         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
 
         /* check if name matches */
-        if (!wcsicmp(DeviceEntry->DeviceName, DeviceName))
+        if (!_wcsicmp(DeviceEntry->DeviceName, DeviceName))
         {
             /* item already exists */
             ItemExists = TRUE;
@@ -1948,7 +1948,7 @@ KsServiceBusEnumCreateRequest(
         DeviceEntry = (PBUS_DEVICE_ENTRY)CONTAINING_RECORD(Entry, BUS_DEVICE_ENTRY, Entry);
 
         /* check if name matches */
-        if (!wcsicmp(DeviceEntry->DeviceName, IoStack->FileObject->FileName.Buffer + 1))
+        if (!_wcsicmp(DeviceEntry->DeviceName, IoStack->FileObject->FileName.Buffer + 1))
         {
             /* item already exists */
             ItemExists = TRUE;

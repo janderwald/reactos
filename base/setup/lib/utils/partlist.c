@@ -1,31 +1,31 @@
 /*
  * PROJECT:     ReactOS Setup Library
- * LICENSE:     GPL-2.0+ (https://spdx.org/licenses/GPL-2.0+)
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     Partition list functions
  * COPYRIGHT:   Copyright 2003-2019 Casper S. Hornstrup (chorns@users.sourceforge.net)
- *              Copyright 2018-2019 Hermes Belusca-Maito
+ *              Copyright 2018-2024 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
  */
 
 #include "precomp.h"
 #include <ntddscsi.h>
 
 #include "partlist.h"
-#include "fsrec.h"
+#include "volutil.h"
+#include "fsrec.h" // For FileSystemToMBRPartitionType()
+
 #include "registry.h"
 
 #define NDEBUG
 #include <debug.h>
 
-//#define DUMP_PARTITION_TABLE
+// #define DUMP_PARTITION_TABLE
 
 #include <pshpack1.h>
-
 typedef struct _REG_DISK_MOUNT_INFO
 {
     ULONG Signature;
-    LARGE_INTEGER StartingOffset;
+    ULONGLONG StartingOffset;
 } REG_DISK_MOUNT_INFO, *PREG_DISK_MOUNT_INFO;
-
 #include <poppack.h>
 
 
@@ -159,22 +159,17 @@ AssignDriveLetters(
         {
             PartEntry = CONTAINING_RECORD(Entry2, PARTENTRY, ListEntry);
 
-            PartEntry->DriveLetter = 0;
+            if (!PartEntry->Volume)
+                continue;
+            PartEntry->Volume->Info.DriveLetter = UNICODE_NULL;
 
             if (PartEntry->IsPartitioned &&
-                !IsContainerPartition(PartEntry->PartitionType))
+                !IsContainerPartition(PartEntry->PartitionType) &&
+                (IsRecognizedPartition(PartEntry->PartitionType) ||
+                 PartEntry->SectorCount.QuadPart != 0LL))
             {
-                ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
-
-                if (IsRecognizedPartition(PartEntry->PartitionType) ||
-                    PartEntry->SectorCount.QuadPart != 0LL)
-                {
-                    if (Letter <= L'Z')
-                    {
-                        PartEntry->DriveLetter = Letter;
-                        Letter++;
-                    }
-                }
+                if (Letter <= L'Z')
+                    PartEntry->Volume->Info.DriveLetter = Letter++;
             }
         }
     }
@@ -192,21 +187,16 @@ AssignDriveLetters(
         {
             PartEntry = CONTAINING_RECORD(Entry2, PARTENTRY, ListEntry);
 
-            PartEntry->DriveLetter = 0;
+            if (!PartEntry->Volume)
+                continue;
+            PartEntry->Volume->Info.DriveLetter = UNICODE_NULL;
 
-            if (PartEntry->IsPartitioned)
+            if (PartEntry->IsPartitioned &&
+                (IsRecognizedPartition(PartEntry->PartitionType) ||
+                 PartEntry->SectorCount.QuadPart != 0LL))
             {
-                ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
-
-                if (IsRecognizedPartition(PartEntry->PartitionType) ||
-                    PartEntry->SectorCount.QuadPart != 0LL)
-                {
-                    if (Letter <= L'Z')
-                    {
-                        PartEntry->DriveLetter = Letter;
-                        Letter++;
-                    }
-                }
+                if (Letter <= L'Z')
+                    PartEntry->Volume->Info.DriveLetter = Letter++;
             }
         }
     }
@@ -488,32 +478,28 @@ EnumerateBiosDiskEntries(
 
 
 /*
- * Detects whether a disk reports as a "super-floppy", i.e. an unpartitioned
- * disk with a valid VBR, following the criteria used by IoReadPartitionTable()
+ * Detects whether a disk is a "super-floppy", i.e. an unpartitioned
+ * disk with only a valid VBR, as reported by IoReadPartitionTable()
  * and IoWritePartitionTable():
- * only one single partition starting at the beginning of the disk; the reported
- * defaults are: partition number being zero and its type being FAT16 non-bootable.
- * Note also that accessing \Device\HarddiskN\Partition0 or Partition1 returns
- * the same data.
+ * only one single partition starting at offset zero and spanning the
+ * whole disk, without hidden sectors, whose type is FAT16 non-bootable.
+ *
+ * Accessing \Device\HarddiskN\Partition0 or Partition1 on such disks
+ * returns the same data.
  */
-// static
 BOOLEAN
-IsSuperFloppy(
-    IN PDISKENTRY DiskEntry)
+IsDiskSuperFloppy2(
+    _In_ const DISK_PARTITION_INFO* DiskInfo,
+    _In_opt_ const ULONGLONG* DiskSize,
+    _In_ const PARTITION_INFORMATION* PartitionInfo)
 {
-    PPARTITION_INFORMATION PartitionInfo;
-    ULONGLONG PartitionLengthEstimate;
-
-    /* No layout buffer: we cannot say anything yet */
-    if (DiskEntry->LayoutBuffer == NULL)
+    /* Structure size must be valid */
+    if (DiskInfo->SizeOfPartitionInfo < RTL_SIZEOF_THROUGH_FIELD(DISK_PARTITION_INFO, Mbr))
         return FALSE;
 
-    /* We must have only one partition */
-    if (DiskEntry->LayoutBuffer->PartitionCount != 1)
+    /* The layout must be MBR */
+    if (DiskInfo->PartitionStyle != PARTITION_STYLE_MBR)
         return FALSE;
-
-    /* Get the single partition entry */
-    PartitionInfo = DiskEntry->LayoutBuffer->PartitionEntry;
 
     /* The single partition must start at the beginning of the disk */
     if (!(PartitionInfo->StartingOffset.QuadPart == 0 &&
@@ -522,50 +508,116 @@ IsSuperFloppy(
         return FALSE;
     }
 
-    /* The disk signature is usually set to one; warn in case it's not */
-    if (DiskEntry->LayoutBuffer->Signature != 1)
+    /* The disk signature is usually set to 1; warn in case it's not */
+    if (DiskInfo->Mbr.Signature != 1)
     {
-        DPRINT1("Super-Floppy disk %lu signature %08x != 1!\n",
-                DiskEntry->DiskNumber, DiskEntry->LayoutBuffer->Signature);
+        DPRINT1("Super-Floppy signature %08x != 1\n", DiskInfo->Mbr.Signature);
     }
 
-    /*
-     * The partition number must be zero or one, be recognized,
-     * have FAT16 type and report as non-bootable.
-     */
-    if ((PartitionInfo->PartitionNumber != 0 &&
-         PartitionInfo->PartitionNumber != 1) ||
-        PartitionInfo->RecognizedPartition != TRUE ||
-        PartitionInfo->PartitionType != PARTITION_FAT_16 ||
-        PartitionInfo->BootIndicator != FALSE)
+    /* The partition must be recognized and report as FAT16 non-bootable */
+    if ((PartitionInfo->RecognizedPartition != TRUE) ||
+        (PartitionInfo->PartitionType != PARTITION_FAT_16) ||
+        (PartitionInfo->BootIndicator != FALSE))
     {
-        DPRINT1("Super-Floppy disk %lu does not return default settings!\n"
-                "    PartitionNumber = %lu, expected 0\n"
+        DPRINT1("Super-Floppy does not return default settings:\n"
                 "    RecognizedPartition = %s, expected TRUE\n"
                 "    PartitionType = 0x%02x, expected 0x04 (PARTITION_FAT_16)\n"
                 "    BootIndicator = %s, expected FALSE\n",
-                DiskEntry->DiskNumber,
-                PartitionInfo->PartitionNumber,
                 PartitionInfo->RecognizedPartition ? "TRUE" : "FALSE",
                 PartitionInfo->PartitionType,
                 PartitionInfo->BootIndicator ? "TRUE" : "FALSE");
     }
 
-    /* The partition lengths should agree */
-    PartitionLengthEstimate = GetDiskSizeInBytes(DiskEntry);
-    if (PartitionInfo->PartitionLength.QuadPart != PartitionLengthEstimate)
+    /* The partition and disk sizes should agree */
+    if (DiskSize && (PartitionInfo->PartitionLength.QuadPart != *DiskSize))
     {
-        DPRINT1("PartitionLength = %I64u is different from PartitionLengthEstimate = %I64u\n",
-                PartitionInfo->PartitionLength.QuadPart, PartitionLengthEstimate);
+        DPRINT1("PartitionLength = %I64u is different from DiskSize = %I64u\n",
+                PartitionInfo->PartitionLength.QuadPart, *DiskSize);
     }
 
     return TRUE;
 }
 
+BOOLEAN
+IsDiskSuperFloppy(
+    _In_ const DRIVE_LAYOUT_INFORMATION* Layout,
+    _In_opt_ const ULONGLONG* DiskSize)
+{
+    DISK_PARTITION_INFO DiskInfo;
+
+    /* The layout must contain only one partition */
+    if (Layout->PartitionCount != 1)
+        return FALSE;
+
+    /* Build the disk partition info */
+    DiskInfo.SizeOfPartitionInfo = RTL_SIZEOF_THROUGH_FIELD(DISK_PARTITION_INFO, Mbr);
+    DiskInfo.PartitionStyle = PARTITION_STYLE_MBR;
+    DiskInfo.Mbr.Signature = Layout->Signature;
+    DiskInfo.Mbr.CheckSum = 0; // Dummy value
+
+    /* Call the helper on the single partition entry */
+    return IsDiskSuperFloppy2(&DiskInfo, DiskSize, Layout->PartitionEntry);
+}
+
+BOOLEAN
+IsDiskSuperFloppyEx(
+    _In_ const DRIVE_LAYOUT_INFORMATION_EX* LayoutEx,
+    _In_opt_ const ULONGLONG* DiskSize)
+{
+    DISK_PARTITION_INFO DiskInfo;
+    const PARTITION_INFORMATION_EX* PartitionInfoEx;
+    PARTITION_INFORMATION PartitionInfo;
+
+    /* The layout must be MBR and contain only one partition */
+    if (LayoutEx->PartitionStyle != PARTITION_STYLE_MBR)
+        return FALSE;
+    if (LayoutEx->PartitionCount != 1)
+        return FALSE;
+
+    /* Build the disk partition info */
+    DiskInfo.SizeOfPartitionInfo = RTL_SIZEOF_THROUGH_FIELD(DISK_PARTITION_INFO, Mbr);
+    DiskInfo.PartitionStyle = PARTITION_STYLE_MBR; // LayoutEx->PartitionStyle;
+    DiskInfo.Mbr.Signature = LayoutEx->Mbr.Signature;
+    DiskInfo.Mbr.CheckSum = 0; // Dummy value
+
+    /* Convert the single partition entry */
+    PartitionInfoEx = LayoutEx->PartitionEntry;
+
+    PartitionInfo.StartingOffset = PartitionInfoEx->StartingOffset;
+    PartitionInfo.PartitionLength = PartitionInfoEx->PartitionLength;
+    PartitionInfo.HiddenSectors = PartitionInfoEx->Mbr.HiddenSectors;
+    PartitionInfo.PartitionNumber = PartitionInfoEx->PartitionNumber;
+    PartitionInfo.PartitionType = PartitionInfoEx->Mbr.PartitionType;
+    PartitionInfo.BootIndicator = PartitionInfoEx->Mbr.BootIndicator;
+    PartitionInfo.RecognizedPartition = PartitionInfoEx->Mbr.RecognizedPartition;
+    PartitionInfo.RewritePartition = PartitionInfoEx->RewritePartition;
+
+    /* Call the helper on the single partition entry */
+    return IsDiskSuperFloppy2(&DiskInfo, DiskSize, &PartitionInfo);
+}
+
+BOOLEAN
+IsSuperFloppy(
+    _In_ PDISKENTRY DiskEntry)
+{
+    ULONGLONG DiskSize;
+
+    /* No layout buffer: we cannot say anything yet */
+    if (!DiskEntry->LayoutBuffer)
+        return FALSE;
+
+    /* The disk must be MBR */
+    if (DiskEntry->DiskStyle != PARTITION_STYLE_MBR)
+        return FALSE;
+
+    DiskSize = GetDiskSizeInBytes(DiskEntry);
+    return IsDiskSuperFloppy(DiskEntry->LayoutBuffer, &DiskSize);
+}
+
 
 /*
- * Inserts the disk region represented by PartEntry into either the primary
- * or the logical partition list of the given disk.
+ * Inserts the disk region represented by PartEntry into either
+ * the primary or the logical partition list of the given disk.
  * The lists are kept sorted by increasing order of start sectors.
  * Of course no disk region should overlap at all with one another.
  */
@@ -649,7 +701,7 @@ CreateInsertBlankRegion(
     NewPartEntry = RtlAllocateHeap(ProcessHeap,
                                    HEAP_ZERO_MEMORY,
                                    sizeof(PARTENTRY));
-    if (NewPartEntry == NULL)
+    if (!NewPartEntry)
         return NULL;
 
     NewPartEntry->DiskEntry = DiskEntry;
@@ -660,8 +712,7 @@ CreateInsertBlankRegion(
     NewPartEntry->LogicalPartition = LogicalSpace;
     NewPartEntry->IsPartitioned = FALSE;
     NewPartEntry->PartitionType = PARTITION_ENTRY_UNUSED;
-    NewPartEntry->FormatState = Unformatted;
-    NewPartEntry->FileSystem[0] = L'\0';
+    NewPartEntry->Volume = NULL;
 
     DPRINT1("First Sector : %I64u\n", NewPartEntry->StartSector.QuadPart);
     DPRINT1("Last Sector  : %I64u\n", NewPartEntry->StartSector.QuadPart + NewPartEntry->SectorCount.QuadPart - 1);
@@ -671,6 +722,17 @@ CreateInsertBlankRegion(
     InsertTailList(ListHead, &NewPartEntry->ListEntry);
 
     return NewPartEntry;
+}
+
+static
+VOID
+DestroyRegion(
+    _Inout_ PPARTENTRY PartEntry)
+{
+    // RemoveEntryList(&PartEntry->Volume->ListEntry);
+    if (PartEntry->Volume)
+        RtlFreeHeap(ProcessHeap, 0, PartEntry->Volume);
+    RtlFreeHeap(ProcessHeap, 0, PartEntry);
 }
 
 static
@@ -719,6 +781,7 @@ InitializePartitionEntry(
     /* The entry must not be already partitioned and not be void */
     ASSERT(!PartEntry->IsPartitioned);
     ASSERT(PartEntry->SectorCount.QuadPart);
+    ASSERT(!PartEntry->Volume);
 
     /* Either we create a primary/logical partition, or we create an
      * extended partition but the entry must not be logical space */
@@ -780,7 +843,7 @@ InitializePartitionEntry(
         PartEntry->SectorCount.QuadPart = StartSector - PartEntry->StartSector.QuadPart;
     }
 
-    /* Convert the partition entry to 'New (Unformatted)' */
+    /* Convert to a new partition entry */
     PartEntry->New = TRUE;
     PartEntry->IsPartitioned = TRUE;
 
@@ -819,9 +882,6 @@ InitializePartitionEntry(
     }
     ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
 
-    PartEntry->FormatState = Unformatted;
-    PartEntry->FileSystem[0] = L'\0';
-
     if (isContainer)
     {
         DiskEntry->ExtendedPartition = PartEntry;
@@ -835,6 +895,90 @@ InitializePartitionEntry(
     return TRUE;
 }
 
+static
+VOID
+InitPartitionDeviceName(
+    _Inout_ PPARTENTRY PartEntry)
+{
+    NTSTATUS Status;
+
+    /* Ignore if this is a container partition */
+    if (IsContainerPartition(PartEntry->PartitionType))
+        return;
+    ASSERT(PartEntry->IsPartitioned && PartEntry->PartitionNumber != 0);
+
+    /* Make a device name for the partition */
+    Status = RtlStringCchPrintfW(PartEntry->DeviceName,
+                                 _countof(PartEntry->DeviceName),
+                                 L"\\Device\\Harddisk%lu\\Partition%lu",
+                                 PartEntry->DiskEntry->DiskNumber,
+                                 PartEntry->PartitionNumber);
+    ASSERT(NT_SUCCESS(Status));
+}
+
+static
+VOID
+InitVolumeDeviceName(
+    _Inout_ PVOLENTRY Volume)
+{
+    NTSTATUS Status;
+    PPARTENTRY PartEntry;
+
+    /* If we already have a volume device name, do nothing more */
+    if (*Volume->Info.DeviceName)
+        return;
+
+    /* Use the partition device name as a temporary volume device name */
+    // TODO: Ask instead the MOUNTMGR for the name.
+    PartEntry = Volume->PartEntry;
+    ASSERT(PartEntry);
+    ASSERT(PartEntry->IsPartitioned && PartEntry->PartitionNumber != 0);
+
+    /* Copy the volume device name */
+    Status = RtlStringCchCopyW(Volume->Info.DeviceName,
+                               _countof(Volume->Info.DeviceName),
+                               PartEntry->DeviceName);
+    ASSERT(NT_SUCCESS(Status));
+}
+
+static
+PVOLENTRY
+InitVolume(
+    _In_ PPARTLIST List,
+    _In_opt_ PPARTENTRY PartEntry)
+{
+    PVOLENTRY Volume;
+
+    Volume = RtlAllocateHeap(ProcessHeap,
+                             HEAP_ZERO_MEMORY,
+                             sizeof(VOLENTRY));
+    if (!Volume)
+        return NULL;
+
+    /* Reset some volume information */
+
+    /* No device name for now */
+    Volume->Info.DeviceName[0] = UNICODE_NULL;
+    // Volume->Info.VolumeName[0] = UNICODE_NULL;
+
+    /* Initialize the volume letter and label */
+    Volume->Info.DriveLetter = UNICODE_NULL;
+    Volume->Info.VolumeLabel[0] = UNICODE_NULL;
+
+    /* Specify the volume as initially unformatted */
+    Volume->Info.FileSystem[0] = UNICODE_NULL;
+    Volume->FormatState = Unformatted;
+    Volume->NeedsCheck = FALSE;
+    Volume->New = TRUE;
+
+    if (PartEntry)
+    {
+        ASSERT(PartEntry->DiskEntry->PartList == List);
+        Volume->PartEntry = PartEntry;
+    }
+    InsertTailList(&List->VolumesList, &Volume->ListEntry);
+    return Volume;
+}
 
 static
 VOID
@@ -844,29 +988,21 @@ AddPartitionToDisk(
     IN ULONG PartitionIndex,
     IN BOOLEAN LogicalPartition)
 {
-    NTSTATUS Status;
     PPARTITION_INFORMATION PartitionInfo;
     PPARTENTRY PartEntry;
-    HANDLE PartitionHandle;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    IO_STATUS_BLOCK IoStatusBlock;
-    WCHAR PathBuffer[MAX_PATH];
-    UNICODE_STRING Name;
-    UCHAR LabelBuffer[sizeof(FILE_FS_VOLUME_INFORMATION) + 256 * sizeof(WCHAR)];
-    PFILE_FS_VOLUME_INFORMATION LabelInfo = (PFILE_FS_VOLUME_INFORMATION)LabelBuffer;
 
     PartitionInfo = &DiskEntry->LayoutBuffer->PartitionEntry[PartitionIndex];
 
-    if (PartitionInfo->PartitionType == PARTITION_ENTRY_UNUSED ||
-        ((LogicalPartition != FALSE) && IsContainerPartition(PartitionInfo->PartitionType)))
-    {
+    /* Ignore empty partitions */
+    if (PartitionInfo->PartitionType == PARTITION_ENTRY_UNUSED)
         return;
-    }
+    /* Request must be consistent, though! */
+    ASSERT(!(LogicalPartition && IsContainerPartition(PartitionInfo->PartitionType)));
 
     PartEntry = RtlAllocateHeap(ProcessHeap,
                                 HEAP_ZERO_MEMORY,
                                 sizeof(PARTENTRY));
-    if (PartEntry == NULL)
+    if (!PartEntry)
         return;
 
     PartEntry->DiskEntry = DiskEntry;
@@ -882,146 +1018,73 @@ AddPartitionToDisk(
     PartEntry->OnDiskPartitionNumber = PartitionInfo->PartitionNumber;
     PartEntry->PartitionNumber = PartitionInfo->PartitionNumber;
     PartEntry->PartitionIndex = PartitionIndex;
+    InitPartitionDeviceName(PartEntry);
 
-    /* Specify the partition as initially unformatted */
-    PartEntry->FormatState = Unformatted;
-    PartEntry->FileSystem[0] = L'\0';
-
-    /* Initialize the partition volume label */
-    RtlZeroMemory(PartEntry->VolumeLabel, sizeof(PartEntry->VolumeLabel));
+    /* No volume initially */
+    PartEntry->Volume = NULL;
 
     if (IsContainerPartition(PartEntry->PartitionType))
     {
-        PartEntry->FormatState = Unformatted;
-
-        if (LogicalPartition == FALSE && DiskEntry->ExtendedPartition == NULL)
+        if (!LogicalPartition && DiskEntry->ExtendedPartition == NULL)
             DiskEntry->ExtendedPartition = PartEntry;
     }
-    else if (IsRecognizedPartition(PartEntry->PartitionType))
+    else if (IsRecognizedPartition(PartEntry->PartitionType) || // PartitionInfo->RecognizedPartition
+             IsOEMPartition(PartEntry->PartitionType))
     {
-        ASSERT(PartitionInfo->RecognizedPartition);
-        ASSERT(PartEntry->IsPartitioned && PartEntry->PartitionNumber != 0);
+        PVOLENTRY Volume;
+        NTSTATUS Status;
 
-        /* Try to open the volume so as to mount it */
-        RtlStringCchPrintfW(PathBuffer, ARRAYSIZE(PathBuffer),
-                            L"\\Device\\Harddisk%lu\\Partition%lu",
-                            DiskEntry->DiskNumber,
-                            PartEntry->PartitionNumber);
-        RtlInitUnicodeString(&Name, PathBuffer);
+        ASSERT(PartEntry->PartitionNumber != 0);
 
-        InitializeObjectAttributes(&ObjectAttributes,
-                                   &Name,
-                                   OBJ_CASE_INSENSITIVE,
-                                   NULL,
-                                   NULL);
+        /* The PARTMGR should have notified the MOUNTMGR that a volume
+         * associated with this partition had to be created */
+        Volume = InitVolume(DiskEntry->PartList, PartEntry);
+        if (!Volume)
+        {
+            DPRINT1("Couldn't allocate a volume for device '%S'\n",
+                    PartEntry->DeviceName);
+            goto SkipVolume;
+        }
+        PartEntry->Volume = Volume;
+        InitVolumeDeviceName(Volume);
+        Volume->New = FALSE;
 
-        PartitionHandle = NULL;
-        Status = NtOpenFile(&PartitionHandle,
-                            FILE_READ_DATA | SYNCHRONIZE,
-                            &ObjectAttributes,
-                            &IoStatusBlock,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE,
-                            FILE_SYNCHRONOUS_IO_NONALERT);
+        /* Attach and mount the volume */
+        Status = MountVolume(&Volume->Info, PartEntry->PartitionType);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("NtOpenFile() failed, Status 0x%08lx\n", Status);
+            DPRINT1("Failed to mount volume '%S', Status 0x%08lx\n",
+                    Volume->Info.DeviceName, Status);
         }
 
-        if (PartitionHandle)
-        {
-            ASSERT(NT_SUCCESS(Status));
-
-            /* We don't have a FS, try to guess one */
-            Status = InferFileSystem(NULL, PartitionHandle,
-                                     PartEntry->FileSystem,
-                                     sizeof(PartEntry->FileSystem));
-            if (!NT_SUCCESS(Status))
-                DPRINT1("InferFileSystem() failed, Status 0x%08lx\n", Status);
-        }
-        if (*PartEntry->FileSystem)
-        {
-            ASSERT(PartitionHandle);
-
-            /*
-             * Handle partition mounted with RawFS: it is
-             * either unformatted or has an unknown format.
-             */
-            if (wcsicmp(PartEntry->FileSystem, L"RAW") == 0)
-            {
-                /*
-                 * True unformatted partitions on NT are created with their
-                 * partition type set to either one of the following values,
-                 * and are mounted with RawFS. This is done this way since we
-                 * are assured to have FAT support, which is the only FS that
-                 * uses these partition types. Therefore, having a partition
-                 * mounted with RawFS and with these partition types means that
-                 * the FAT FS was unable to mount it beforehand and thus the
-                 * partition is unformatted.
-                 * However, any partition mounted by RawFS that does NOT have
-                 * any of these partition types must be considered as having
-                 * an unknown format.
-                 */
-                if (PartEntry->PartitionType == PARTITION_FAT_12 ||
-                    PartEntry->PartitionType == PARTITION_FAT_16 ||
-                    PartEntry->PartitionType == PARTITION_HUGE   ||
-                    PartEntry->PartitionType == PARTITION_XINT13 ||
-                    PartEntry->PartitionType == PARTITION_FAT32  ||
-                    PartEntry->PartitionType == PARTITION_FAT32_XINT13)
-                {
-                    PartEntry->FormatState = Unformatted;
-                }
-                else
-                {
-                    /* Close the partition before dismounting */
-                    NtClose(PartitionHandle);
-                    PartitionHandle = NULL;
-                    /*
-                     * Dismount the partition since RawFS owns it, and set its
-                     * format to unknown (may or may not be actually formatted).
-                     */
-                    DismountVolume(PartEntry);
-                    PartEntry->FormatState = UnknownFormat;
-                    PartEntry->FileSystem[0] = L'\0';
-                }
-            }
-            else
-            {
-                PartEntry->FormatState = Preformatted;
-            }
-        }
-        else
-        {
-            PartEntry->FormatState = UnknownFormat;
-        }
-
-        /* Retrieve the partition volume label */
-        if (PartitionHandle)
-        {
-            Status = NtQueryVolumeInformationFile(PartitionHandle,
-                                                  &IoStatusBlock,
-                                                  &LabelBuffer,
-                                                  sizeof(LabelBuffer),
-                                                  FileFsVolumeInformation);
-            if (NT_SUCCESS(Status))
-            {
-                /* Copy the (possibly truncated) volume label and NULL-terminate it */
-                RtlStringCbCopyNW(PartEntry->VolumeLabel, sizeof(PartEntry->VolumeLabel),
-                                  LabelInfo->VolumeLabel, LabelInfo->VolumeLabelLength);
-            }
-            else
-            {
-                DPRINT1("NtQueryVolumeInformationFile() failed, Status 0x%08lx\n", Status);
-            }
-        }
-
-        /* Close the partition */
-        if (PartitionHandle)
-            NtClose(PartitionHandle);
+        //
+        // FIXME: TEMP Backward-compatibility: Set the FormatState
+        // flag in accordance with the FileSystem volume value.
+        //
+        /*
+         * MountVolume() determines whether the given volume is actually
+         * unformatted, if it was mounted with RawFS and the partition
+         * type has specific values for FAT volumes. If so, the volume
+         * stays mounted with RawFS (the FileSystem is "RAW"). However,
+         * if the partition type has different values, the volume is
+         * considered as having an unknown format (it may or may not be
+         * formatted) and the FileSystem value has been emptied.
+         */
+        if (IsUnknown(&Volume->Info))
+            Volume->FormatState = UnknownFormat;
+        else if (IsUnformatted(&Volume->Info)) // FileSystem is "RAW"
+            Volume->FormatState = Unformatted;
+        else // !IsUnknown && !IsUnformatted == IsFormatted
+            Volume->FormatState = Formatted;
+SkipVolume:;
     }
     else
     {
-        /* Unknown partition, hence unknown format (may or may not be actually formatted) */
-        PartEntry->FormatState = UnknownFormat;
+        /* Unknown partition (may or may not be actually formatted):
+         * the partition is hidden, hence no volume */
+        DPRINT1("Disk %lu Partition %lu is not recognized (Type 0x%02x)\n",
+                DiskEntry->DiskNumber, PartEntry->PartitionNumber,
+                PartEntry->PartitionType);
     }
 
     InsertDiskRegion(DiskEntry, PartEntry, LogicalPartition);
@@ -1262,7 +1325,7 @@ SetDiskSignature(
         /* Check if the signature already exist */
         /* FIXME:
          *   Check also signatures from disks, which are
-         *   not visible (bootable) by the bios.
+         *   not visible (bootable) by the BIOS.
          */
         for (Entry2 = List->DiskListHead.Flink;
              Entry2 != &List->DiskListHead;
@@ -1569,7 +1632,7 @@ AddDiskToList(
     {
         BiosDiskEntry = CONTAINING_RECORD(ListEntry, BIOSDISKENTRY, ListEntry);
         /* FIXME:
-         *   Compare the size from bios and the reported size from driver.
+         *   Compare the size from BIOS and the reported size from driver.
          *   If we have more than one disk with a zero or with the same signature
          *   we must create new signatures and reboot. After the reboot,
          *   it is possible to identify the disks.
@@ -1898,12 +1961,13 @@ GetActiveDiskPartition(
             /* Yes, we've found it */
             ASSERT(DiskEntry == PartEntry->DiskEntry);
             ASSERT(PartEntry->IsPartitioned);
+            ASSERT(PartEntry->Volume);
 
             ActivePartition = PartEntry;
 
             DPRINT1("Found active system partition %lu in disk %lu, drive letter %C\n",
                     PartEntry->PartitionNumber, DiskEntry->DiskNumber,
-                    (PartEntry->DriveLetter == 0) ? L'-' : PartEntry->DriveLetter);
+                    !PartEntry->Volume->Info.DriveLetter ? L'-' : PartEntry->Volume->Info.DriveLetter);
             break;
         }
     }
@@ -1937,13 +2001,14 @@ CreatePartitionList(VOID)
     List = (PPARTLIST)RtlAllocateHeap(ProcessHeap,
                                       0,
                                       sizeof(PARTLIST));
-    if (List == NULL)
+    if (!List)
         return NULL;
 
     List->SystemPartition = NULL;
 
     InitializeListHead(&List->DiskListHead);
     InitializeListHead(&List->BiosDiskListHead);
+    InitializeListHead(&List->VolumesList);
 
     /*
      * Enumerate the disks seen by the BIOS; this will be used later
@@ -2026,8 +2091,7 @@ DestroyPartitionList(
         {
             Entry = RemoveHeadList(&DiskEntry->PrimaryPartListHead);
             PartEntry = CONTAINING_RECORD(Entry, PARTENTRY, ListEntry);
-
-            RtlFreeHeap(ProcessHeap, 0, PartEntry);
+            DestroyRegion(PartEntry);
         }
 
         /* Release logical partition list */
@@ -2035,8 +2099,7 @@ DestroyPartitionList(
         {
             Entry = RemoveHeadList(&DiskEntry->LogicalPartListHead);
             PartEntry = CONTAINING_RECORD(Entry, PARTENTRY, ListEntry);
-
-            RtlFreeHeap(ProcessHeap, 0, PartEntry);
+            DestroyRegion(PartEntry);
         }
 
         /* Release layout buffer */
@@ -2047,12 +2110,11 @@ DestroyPartitionList(
         RtlFreeHeap(ProcessHeap, 0, DiskEntry);
     }
 
-    /* Release the bios disk info */
+    /* Release the BIOS disk info */
     while (!IsListEmpty(&List->BiosDiskListHead))
     {
         Entry = RemoveHeadList(&List->BiosDiskListHead);
         BiosDiskEntry = CONTAINING_RECORD(Entry, BIOSDISKENTRY, ListEntry);
-
         RtlFreeHeap(ProcessHeap, 0, BiosDiskEntry);
     }
 
@@ -2540,7 +2602,7 @@ UpdateDiskLayout(
     }
 
     /* Resize the layout buffer if necessary */
-    if (ReAllocateLayoutBuffer(DiskEntry) == FALSE)
+    if (!ReAllocateLayoutBuffer(DiskEntry))
     {
         DPRINT("ReAllocateLayoutBuffer() failed.\n");
         return;
@@ -2561,7 +2623,7 @@ UpdateDiskLayout(
             PartitionInfo = &DiskEntry->LayoutBuffer->PartitionEntry[Index];
             PartEntry->PartitionIndex = Index;
 
-            /* Reset the current partition number only for newly-created (unmounted) partitions */
+            /* Reset the current partition number only for not-yet written partitions */
             if (PartEntry->New)
                 PartEntry->PartitionNumber = 0;
 
@@ -2606,7 +2668,7 @@ UpdateDiskLayout(
             PartitionInfo = &DiskEntry->LayoutBuffer->PartitionEntry[Index];
             PartEntry->PartitionIndex = Index;
 
-            /* Reset the current partition number only for newly-created (unmounted) partitions */
+            /* Reset the current partition number only for not-yet written partitions */
             if (PartEntry->New)
                 PartEntry->PartitionNumber = 0;
 
@@ -2720,7 +2782,6 @@ UpdateDiskLayout(
  *
  * @return  The adjacent unpartitioned region, if it exists, or NULL.
  **/
-static
 PPARTENTRY
 GetAdjUnpartitionedEntry(
     _In_ PPARTENTRY PartEntry,
@@ -2849,6 +2910,7 @@ CreatePartition(
 {
     ERROR_NUMBER Error;
     BOOLEAN isContainer = IsContainerPartition((UCHAR)PartitionInfo);
+    PDISKENTRY DiskEntry;
     PCSTR mainType = "Primary";
 
     if (isContainer)
@@ -2878,39 +2940,42 @@ CreatePartition(
     if (!InitializePartitionEntry(PartEntry, SizeBytes, PartitionInfo))
         return FALSE;
 
-    if (isContainer)
+    DiskEntry = PartEntry->DiskEntry;
+    UpdateDiskLayout(DiskEntry);
+
+    ASSERT(!PartEntry->Volume);
+    if (!isContainer)
     {
-        // FIXME? Possibly to make GetNextUnformattedPartition work (i.e. skip the extended partition container)
-        PartEntry->New = FALSE;
-        PartEntry->FormatState = Formatted;
+        /* We create a primary/logical partition: initialize a new basic
+         * volume entry. When the partition will actually be written onto
+         * the disk, the PARTMGR will notify the MOUNTMGR that a volume
+         * associated with this partition has to be created. */
+        PartEntry->Volume = InitVolume(DiskEntry->PartList, PartEntry);
+        ASSERT(PartEntry->Volume);
     }
 
-    UpdateDiskLayout(PartEntry->DiskEntry);
     AssignDriveLetters(List);
 
     return TRUE;
 }
 
-NTSTATUS
-DismountVolume(
-    IN PPARTENTRY PartEntry)
+static NTSTATUS
+DismountPartition(
+    _In_ PPARTLIST List,
+    _In_ PPARTENTRY PartEntry)
 {
     NTSTATUS Status;
-    NTSTATUS LockStatus;
-    UNICODE_STRING Name;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    IO_STATUS_BLOCK IoStatusBlock;
-    HANDLE PartitionHandle;
-    WCHAR Buffer[MAX_PATH];
+    PVOLENTRY Volume = PartEntry->Volume;
+
+    ASSERT(PartEntry->DiskEntry->PartList == List);
 
     /* Check whether the partition is valid and was mounted by the system */
     if (!PartEntry->IsPartitioned ||
         IsContainerPartition(PartEntry->PartitionType)   ||
         !IsRecognizedPartition(PartEntry->PartitionType) ||
-        PartEntry->FormatState == UnknownFormat ||
+        !Volume || Volume->FormatState == UnknownFormat  ||
         // NOTE: If FormatState == Unformatted but *FileSystem != 0 this means
         // it has been usually mounted with RawFS and thus needs to be dismounted.
-        !*PartEntry->FileSystem ||
         PartEntry->PartitionNumber == 0)
     {
         /* The partition is not mounted, so just return success */
@@ -2918,83 +2983,14 @@ DismountVolume(
     }
 
     ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
+    ASSERT(Volume->PartEntry == PartEntry);
 
-    /* Open the volume */
-    RtlStringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
-                        L"\\Device\\Harddisk%lu\\Partition%lu",
-                        PartEntry->DiskEntry->DiskNumber,
-                        PartEntry->PartitionNumber);
-    RtlInitUnicodeString(&Name, Buffer);
-
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &Name,
-                               OBJ_CASE_INSENSITIVE,
-                               NULL,
-                               NULL);
-
-    Status = NtOpenFile(&PartitionHandle,
-                        GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
-                        &ObjectAttributes,
-                        &IoStatusBlock,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        FILE_SYNCHRONOUS_IO_NONALERT);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("ERROR: Cannot open volume %wZ for dismounting! (Status 0x%lx)\n", &Name, Status);
-        return Status;
-    }
-
-    /* Lock the volume */
-    LockStatus = NtFsControlFile(PartitionHandle,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 &IoStatusBlock,
-                                 FSCTL_LOCK_VOLUME,
-                                 NULL,
-                                 0,
-                                 NULL,
-                                 0);
-    if (!NT_SUCCESS(LockStatus))
-    {
-        DPRINT1("WARNING: Failed to lock volume! Operations may fail! (Status 0x%lx)\n", LockStatus);
-    }
-
-    /* Dismount the volume */
-    Status = NtFsControlFile(PartitionHandle,
-                             NULL,
-                             NULL,
-                             NULL,
-                             &IoStatusBlock,
-                             FSCTL_DISMOUNT_VOLUME,
-                             NULL,
-                             0,
-                             NULL,
-                             0);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Failed to unmount volume (Status 0x%lx)\n", Status);
-    }
-
-    /* Unlock the volume */
-    LockStatus = NtFsControlFile(PartitionHandle,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 &IoStatusBlock,
-                                 FSCTL_UNLOCK_VOLUME,
-                                 NULL,
-                                 0,
-                                 NULL,
-                                 0);
-    if (!NT_SUCCESS(LockStatus))
-    {
-        DPRINT1("Failed to unlock volume (Status 0x%lx)\n", LockStatus);
-    }
-
-    /* Close the volume */
-    NtClose(PartitionHandle);
-
+    /* Unlink the basic volume from the volumes list and dismount it */
+    PartEntry->Volume = NULL;
+    Volume->PartEntry = NULL;
+    RemoveEntryList(&Volume->ListEntry);
+    Status = DismountVolume(&Volume->Info, TRUE);
+    RtlFreeHeap(ProcessHeap, 0, Volume);
     return Status;
 }
 
@@ -3016,6 +3012,7 @@ DeletePartition(
         return FALSE;
     }
 
+    ASSERT(PartEntry->DiskEntry->PartList == List);
     ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
 
     /* Clear the system partition if it is being deleted */
@@ -3036,19 +3033,17 @@ DeletePartition(
             Entry = RemoveHeadList(&DiskEntry->LogicalPartListHead);
             LogicalPartEntry = CONTAINING_RECORD(Entry, PARTENTRY, ListEntry);
 
-            /* Dismount the logical partition */
-            DismountVolume(LogicalPartEntry);
-
-            /* Delete it */
-            RtlFreeHeap(ProcessHeap, 0, LogicalPartEntry);
+            /* Dismount the logical partition and delete it */
+            DismountPartition(List, LogicalPartEntry);
+            DestroyRegion(LogicalPartEntry);
         }
 
         DiskEntry->ExtendedPartition = NULL;
     }
     else
     {
-        /* A primary partition is being deleted: dismount it */
-        DismountVolume(PartEntry);
+        /* A primary/logical partition is being deleted: dismount it */
+        DismountPartition(List, PartEntry);
     }
 
     /* Adjust the unpartitioned disk space entries */
@@ -3066,9 +3061,9 @@ DeletePartition(
 
         /* Remove the current and next entries */
         RemoveEntryList(&PartEntry->ListEntry);
-        RtlFreeHeap(ProcessHeap, 0, PartEntry);
+        DestroyRegion(PartEntry);
         RemoveEntryList(&NextPartEntry->ListEntry);
-        RtlFreeHeap(ProcessHeap, 0, NextPartEntry);
+        DestroyRegion(NextPartEntry);
 
         /* Optionally return the freed region */
         if (FreeRegion)
@@ -3083,7 +3078,7 @@ DeletePartition(
 
         /* Remove the current entry */
         RemoveEntryList(&PartEntry->ListEntry);
-        RtlFreeHeap(ProcessHeap, 0, PartEntry);
+        DestroyRegion(PartEntry);
 
         /* Optionally return the freed region */
         if (FreeRegion)
@@ -3099,7 +3094,7 @@ DeletePartition(
 
         /* Remove the current entry */
         RemoveEntryList(&PartEntry->ListEntry);
-        RtlFreeHeap(ProcessHeap, 0, PartEntry);
+        DestroyRegion(PartEntry);
 
         /* Optionally return the freed region */
         if (FreeRegion)
@@ -3108,16 +3103,21 @@ DeletePartition(
     else
     {
         /* Nothing to merge but change the current entry */
+        PartEntry->New = FALSE;
         PartEntry->IsPartitioned = FALSE;
+        PartEntry->PartitionType = PARTITION_ENTRY_UNUSED;
         PartEntry->OnDiskPartitionNumber = 0;
         PartEntry->PartitionNumber = 0;
         // PartEntry->PartitionIndex = 0;
         PartEntry->BootIndicator = FALSE;
-        PartEntry->PartitionType = PARTITION_ENTRY_UNUSED;
-        PartEntry->FormatState = Unformatted;
-        PartEntry->FileSystem[0] = L'\0';
-        PartEntry->DriveLetter = 0;
-        RtlZeroMemory(PartEntry->VolumeLabel, sizeof(PartEntry->VolumeLabel));
+        PartEntry->DeviceName[0] = UNICODE_NULL;
+
+        if (PartEntry->Volume)
+        {
+            RemoveEntryList(&PartEntry->Volume->ListEntry);
+            RtlFreeHeap(ProcessHeap, 0, PartEntry->Volume);
+        }
+        PartEntry->Volume = NULL;
 
         /* Optionally return the freed region */
         if (FreeRegion)
@@ -3135,6 +3135,8 @@ BOOLEAN
 IsSupportedActivePartition(
     IN PPARTENTRY PartEntry)
 {
+    PVOLENTRY Volume;
+
     /* Check the type and the file system of this partition */
 
     /*
@@ -3145,6 +3147,13 @@ IsSupportedActivePartition(
     {
         DPRINT1("System partition %lu in disk %lu is an extended partition container?!\n",
                 PartEntry->PartitionNumber, PartEntry->DiskEntry->DiskNumber);
+        return FALSE;
+    }
+
+    Volume = PartEntry->Volume;
+    if (!Volume)
+    {
+        /* Still no recognizable volume mounted: partition not supported */
         return FALSE;
     }
 
@@ -3164,21 +3173,20 @@ IsSupportedActivePartition(
      * NOTE also that for those architectures looking for a
      * partition boot indicator is insufficient.
      */
-    if (PartEntry->FormatState == Unformatted)
+    if (Volume->FormatState == Unformatted)
     {
         /* If this partition is mounted, it would use RawFS ("RAW") */
         return TRUE;
     }
-    else if ((PartEntry->FormatState == Preformatted) ||
-             (PartEntry->FormatState == Formatted))
+    else if (Volume->FormatState == Formatted)
     {
-        ASSERT(*PartEntry->FileSystem);
+        ASSERT(*Volume->Info.FileSystem);
 
         /* NOTE: Please keep in sync with the RegisteredFileSystems list! */
-        if (wcsicmp(PartEntry->FileSystem, L"FAT")   == 0 ||
-            wcsicmp(PartEntry->FileSystem, L"FAT32") == 0 ||
-         // wcsicmp(PartEntry->FileSystem, L"NTFS")  == 0 ||
-            wcsicmp(PartEntry->FileSystem, L"BTRFS") == 0)
+        if (_wcsicmp(Volume->Info.FileSystem, L"FAT")   == 0 ||
+            _wcsicmp(Volume->Info.FileSystem, L"FAT32") == 0 ||
+         // _wcsicmp(Volume->Info.FileSystem, L"NTFS")  == 0 ||
+            _wcsicmp(Volume->Info.FileSystem, L"BTRFS") == 0)
         {
             return TRUE;
         }
@@ -3186,13 +3194,13 @@ IsSupportedActivePartition(
         {
             // WARNING: We cannot write on this FS yet!
             DPRINT1("Recognized file system '%S' that doesn't have write support yet!\n",
-                    PartEntry->FileSystem);
+                    Volume->Info.FileSystem);
             return FALSE;
         }
     }
-    else // if (PartEntry->FormatState == UnknownFormat)
+    else // if (Volume->FormatState == UnknownFormat)
     {
-        ASSERT(!*PartEntry->FileSystem);
+        ASSERT(!*Volume->Info.FileSystem);
 
         DPRINT1("System partition %lu in disk %lu with no or unknown FS?!\n",
                 PartEntry->PartitionNumber, PartEntry->DiskEntry->DiskNumber);
@@ -3204,7 +3212,7 @@ IsSupportedActivePartition(
     if (PartEntry->PartitionType == PARTITION_IFS)
     {
         DPRINT1("Recognized file system '%S' that doesn't have write support yet!\n",
-                PartEntry->FileSystem);
+                Volume->Info.FileSystem);
         return FALSE;
     }
 
@@ -3278,7 +3286,7 @@ FindSupportedSystemPartition(
         DPRINT1("Use the current system partition %lu in disk %lu, drive letter %C\n",
                 CandidatePartition->PartitionNumber,
                 CandidatePartition->DiskEntry->DiskNumber,
-                (CandidatePartition->DriveLetter == 0) ? L'-' : CandidatePartition->DriveLetter);
+                !CandidatePartition->Volume->Info.DriveLetter ? L'-' : CandidatePartition->Volume->Info.DriveLetter);
 
         /* Return the candidate system partition */
         return CandidatePartition;
@@ -3427,7 +3435,7 @@ UseAlternativeDisk:
             DPRINT1("Use new first active system partition %lu in disk %lu, drive letter %C\n",
                     CandidatePartition->PartitionNumber,
                     CandidatePartition->DiskEntry->DiskNumber,
-                    (CandidatePartition->DriveLetter == 0) ? L'-' : CandidatePartition->DriveLetter);
+                    !CandidatePartition->Volume->Info.DriveLetter ? L'-' : CandidatePartition->Volume->Info.DriveLetter);
 
             /* Return the candidate system partition */
             return CandidatePartition;
@@ -3467,7 +3475,7 @@ UseAlternativeDisk:
         DPRINT1("Use first active system partition %lu in disk %lu, drive letter %C\n",
                 CandidatePartition->PartitionNumber,
                 CandidatePartition->DiskEntry->DiskNumber,
-                (CandidatePartition->DriveLetter == 0) ? L'-' : CandidatePartition->DriveLetter);
+                !CandidatePartition->Volume->Info.DriveLetter ? L'-' : CandidatePartition->Volume->Info.DriveLetter);
 
         /* Return the candidate system partition */
         return CandidatePartition;
@@ -3505,7 +3513,7 @@ UseAlternativePartition:
     DPRINT1("Use alternative active system partition %lu in disk %lu, drive letter %C\n",
             CandidatePartition->PartitionNumber,
             CandidatePartition->DiskEntry->DiskNumber,
-            (CandidatePartition->DriveLetter == 0) ? L'-' : CandidatePartition->DriveLetter);
+            !CandidatePartition->Volume->Info.DriveLetter ? L'-' : CandidatePartition->Volume->Info.DriveLetter);
 
     /* Return the candidate system partition */
     return CandidatePartition;
@@ -3543,7 +3551,7 @@ SetActivePartition(
 
     /*
      * If the user provided an old active partition hint, verify that it is
-     * indeeed active and belongs to the same disk where the new partition
+     * indeed active and belongs to the same disk where the new partition
      * belongs. Otherwise determine the current active partition on the disk
      * where the new partition belongs.
      */
@@ -3633,7 +3641,9 @@ WritePartitions(
     /* Save the original partition count to be restored later (see comment below) */
     PartitionCount = DiskEntry->LayoutBuffer->PartitionCount;
 
-    /* Set the new disk layout and retrieve its updated version with possibly modified partition numbers */
+    /* Set the new disk layout and retrieve its updated version with
+     * new partition numbers for the new partitions. The PARTMGR will
+     * automatically notify the MOUNTMGR of new or deleted volumes. */
     BufferSize = sizeof(DRIVE_LAYOUT_INFORMATION) +
                  ((PartitionCount - 1) * sizeof(PARTITION_INFORMATION));
     Status = NtDeviceIoControlFile(FileHandle,
@@ -3668,7 +3678,7 @@ WritePartitions(
     DumpPartitionTable(DiskEntry);
 #endif
 
-    /* Update the partition numbers */
+    /* Update the partition numbers and device names */
 
     /* Update the primary partition table */
     for (ListEntry = DiskEntry->PrimaryPartListHead.Flink;
@@ -3676,13 +3686,25 @@ WritePartitions(
          ListEntry = ListEntry->Flink)
     {
         PartEntry = CONTAINING_RECORD(ListEntry, PARTENTRY, ListEntry);
+        if (!PartEntry->IsPartitioned)
+            continue;
+        ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
 
-        if (PartEntry->IsPartitioned)
+        /*
+         * Initialize the partition's number and its device name only
+         * if the partition was new. Note that the partition number
+         * should not change if this partition has not been deleted
+         * during repartitioning.
+         */
+        // FIXME: Our PartMgr currently returns modified numbers
+        // in the layout, this needs to be investigated and fixed.
+        if (PartEntry->New)
         {
-            ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
             PartitionInfo = &DiskEntry->LayoutBuffer->PartitionEntry[PartEntry->PartitionIndex];
             PartEntry->PartitionNumber = PartitionInfo->PartitionNumber;
+            InitPartitionDeviceName(PartEntry);
         }
+        PartEntry->New = FALSE;
     }
 
     /* Update the logical partition table */
@@ -3691,13 +3713,18 @@ WritePartitions(
          ListEntry = ListEntry->Flink)
     {
         PartEntry = CONTAINING_RECORD(ListEntry, PARTENTRY, ListEntry);
+        if (!PartEntry->IsPartitioned)
+            continue;
+        ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
 
-        if (PartEntry->IsPartitioned)
+        /* See comment above */
+        if (PartEntry->New)
         {
-            ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
             PartitionInfo = &DiskEntry->LayoutBuffer->PartitionEntry[PartEntry->PartitionIndex];
             PartEntry->PartitionNumber = PartitionInfo->PartitionNumber;
+            InitPartitionDeviceName(PartEntry);
         }
+        PartEntry->New = FALSE;
     }
 
     //
@@ -3726,10 +3753,12 @@ WritePartitionsToDisk(
     NTSTATUS Status;
     PLIST_ENTRY Entry;
     PDISKENTRY DiskEntry;
+    PVOLENTRY Volume;
 
-    if (List == NULL)
+    if (!List)
         return TRUE;
 
+    /* Write all the partitions to all the disks */
     for (Entry = List->DiskListHead.Flink;
          Entry != &List->DiskListHead;
          Entry = Entry->Flink)
@@ -3753,26 +3782,48 @@ WritePartitionsToDisk(
         }
     }
 
+    /* The PARTMGR should have notified the MOUNTMGR that new volumes
+     * associated with the new partitions had to be created */
+
+    /* Assign valid device names to new volumes */
+    for (Entry = List->VolumesList.Flink;
+         Entry != &List->VolumesList;
+         Entry = Entry->Flink)
+    {
+        Volume = CONTAINING_RECORD(Entry, VOLENTRY, ListEntry);
+        InitVolumeDeviceName(Volume);
+    }
+
     return TRUE;
 }
 
-BOOLEAN
+
+/**
+ * @brief
+ * Assign a "\DosDevices\#:" mount point drive letter to a disk partition or
+ * volume, specified by a given disk signature and starting partition offset.
+ **/
+static BOOLEAN
 SetMountedDeviceValue(
-    IN WCHAR Letter,
-    IN ULONG Signature,
-    IN LARGE_INTEGER StartingOffset)
+    _In_ PVOLENTRY Volume)
 {
+    PPARTENTRY PartEntry = Volume->PartEntry;
+    WCHAR Letter = Volume->Info.DriveLetter;
     NTSTATUS Status;
     OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"SYSTEM\\MountedDevices");
     UNICODE_STRING ValueName;
-    WCHAR ValueNameBuffer[16];
+    WCHAR Buffer[16];
     HANDLE KeyHandle;
     REG_DISK_MOUNT_INFO MountInfo;
 
-    RtlStringCchPrintfW(ValueNameBuffer, ARRAYSIZE(ValueNameBuffer),
+    /* Ignore no letter */
+    if (!Letter)
+        return TRUE;
+
+    RtlStringCchPrintfW(Buffer, _countof(Buffer),
                         L"\\DosDevices\\%c:", Letter);
-    RtlInitUnicodeString(&ValueName, ValueNameBuffer);
+    RtlInitUnicodeString(&ValueName, Buffer);
 
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyName,
@@ -3799,8 +3850,8 @@ SetMountedDeviceValue(
         return FALSE;
     }
 
-    MountInfo.Signature = Signature;
-    MountInfo.StartingOffset = StartingOffset;
+    MountInfo.Signature = PartEntry->DiskEntry->LayoutBuffer->Signature;
+    MountInfo.StartingOffset = GetPartEntryOffsetInBytes(PartEntry);
     Status = NtSetValueKey(KeyHandle,
                            &ValueName,
                            0,
@@ -3819,75 +3870,23 @@ SetMountedDeviceValue(
 
 BOOLEAN
 SetMountedDeviceValues(
-    IN PPARTLIST List)
+    _In_ PPARTLIST List)
 {
-    PLIST_ENTRY Entry1, Entry2;
-    PDISKENTRY DiskEntry;
-    PPARTENTRY PartEntry;
-    LARGE_INTEGER StartingOffset;
+    PLIST_ENTRY Entry;
+    PVOLENTRY Volume;
 
-    if (List == NULL)
+    if (!List)
         return FALSE;
 
-    for (Entry1 = List->DiskListHead.Flink;
-         Entry1 != &List->DiskListHead;
-         Entry1 = Entry1->Flink)
+    for (Entry = List->VolumesList.Flink;
+         Entry != &List->VolumesList;
+         Entry = Entry->Flink)
     {
-        DiskEntry = CONTAINING_RECORD(Entry1,
-                                      DISKENTRY,
-                                      ListEntry);
+        Volume = CONTAINING_RECORD(Entry, VOLENTRY, ListEntry);
 
-        if (DiskEntry->DiskStyle == PARTITION_STYLE_GPT)
-        {
-            DPRINT("GPT-partitioned disk detected, not currently supported by SETUP!\n");
-            continue;
-        }
-
-        for (Entry2 = DiskEntry->PrimaryPartListHead.Flink;
-             Entry2 != &DiskEntry->PrimaryPartListHead;
-             Entry2 = Entry2->Flink)
-        {
-            PartEntry = CONTAINING_RECORD(Entry2, PARTENTRY, ListEntry);
-            if (PartEntry->IsPartitioned) // && !IsContainerPartition(PartEntry->PartitionType)
-            {
-                ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
-
-                /* Assign a "\DosDevices\#:" mount point to this partition */
-                if (PartEntry->DriveLetter)
-                {
-                    StartingOffset.QuadPart = GetPartEntryOffsetInBytes(PartEntry);
-                    if (!SetMountedDeviceValue(PartEntry->DriveLetter,
-                                               DiskEntry->LayoutBuffer->Signature,
-                                               StartingOffset))
-                    {
-                        return FALSE;
-                    }
-                }
-            }
-        }
-
-        for (Entry2 = DiskEntry->LogicalPartListHead.Flink;
-             Entry2 != &DiskEntry->LogicalPartListHead;
-             Entry2 = Entry2->Flink)
-        {
-            PartEntry = CONTAINING_RECORD(Entry2, PARTENTRY, ListEntry);
-            if (PartEntry->IsPartitioned) // && !IsContainerPartition(PartEntry->PartitionType)
-            {
-                ASSERT(PartEntry->PartitionType != PARTITION_ENTRY_UNUSED);
-
-                /* Assign a "\DosDevices\#:" mount point to this partition */
-                if (PartEntry->DriveLetter)
-                {
-                    StartingOffset.QuadPart = GetPartEntryOffsetInBytes(PartEntry);
-                    if (!SetMountedDeviceValue(PartEntry->DriveLetter,
-                                               DiskEntry->LayoutBuffer->Signature,
-                                               StartingOffset))
-                    {
-                        return FALSE;
-                    }
-                }
-            }
-        }
+        /* Assign a "\DosDevices\#:" mount point to this volume */
+        if (!SetMountedDeviceValue(Volume))
+            return FALSE;
     }
 
     return TRUE;
@@ -3901,6 +3900,12 @@ SetMBRPartitionType(
     PDISKENTRY DiskEntry = PartEntry->DiskEntry;
 
     ASSERT(DiskEntry->DiskStyle == PARTITION_STYLE_MBR);
+
+    /* Nothing to do if we assign the same type */
+    if (PartitionType == PartEntry->PartitionType)
+        return;
+
+    // TODO: We might need to remount the associated basic volume...
 
     PartEntry->PartitionType = PartitionType;
 

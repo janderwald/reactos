@@ -2047,11 +2047,11 @@ co_WinPosSetWindowPos(
        * class need to be completely repainted on (horizontal/vertical) size
        * change.
        */
-      if ( ( VisBefore != NULL &&
-             VisAfter != NULL &&
-            !(WinPos.flags & SWP_NOCOPYBITS) &&
-            ((WinPos.flags & SWP_NOSIZE) || !(WvrFlags & WVR_REDRAW)) &&
-            !(Window->ExStyle & WS_EX_TRANSPARENT) ) )
+      if (VisBefore != NULL &&
+          VisAfter != NULL &&
+          !(WvrFlags & WVR_REDRAW) &&
+          !(WinPos.flags & SWP_NOCOPYBITS) &&
+          !(Window->ExStyle & WS_EX_TRANSPARENT))
       {
 
          /*
@@ -2069,11 +2069,6 @@ co_WinPosSetWindowPos(
          else if (VisBeforeJustClient != NULL)
          {
             RgnType = IntGdiCombineRgn(CopyRgn, VisAfter, VisBeforeJustClient, RGN_AND);
-         }
-
-         if (VisBeforeJustClient != NULL)
-         {
-             REGION_Delete(VisBeforeJustClient);
          }
 
          /* Now use in copying bits which are in the update region. */
@@ -2223,11 +2218,6 @@ co_WinPosSetWindowPos(
          }
       }
 
-      if (CopyRgn != NULL)
-      {
-         REGION_Delete(CopyRgn);
-      }
-
       /* Expose what was covered before but not covered anymore */
       if (VisBefore != NULL)
       {
@@ -2248,12 +2238,6 @@ co_WinPosSetWindowPos(
              }
              REGION_Delete(ExposedRgn);
          }
-         REGION_Delete(VisBefore);
-      }
-
-      if (VisAfter != NULL)
-      {
-         REGION_Delete(VisAfter);
       }
    }
 
@@ -2299,6 +2283,27 @@ co_WinPosSetWindowPos(
    {
       TRACE("No drawing, set no Z order and no redraw!\n");
       WinPos.flags |= SWP_NOZORDER|SWP_NOREDRAW;
+   }
+
+   if (VisBefore != NULL)
+   {
+      REGION_Delete(VisBefore);
+      VisBefore = NULL;
+   }
+   if (VisBeforeJustClient != NULL)
+   {
+      REGION_Delete(VisBeforeJustClient);
+      VisBeforeJustClient = NULL;
+   }
+   if (VisAfter != NULL)
+   {
+      REGION_Delete(VisAfter);
+      VisAfter = NULL;
+   }
+   if (CopyRgn != NULL)
+   {
+      REGION_Delete(CopyRgn);
+      CopyRgn = NULL;
    }
 
    if(!(flags & SWP_DEFERERASE))

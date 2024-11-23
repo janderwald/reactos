@@ -746,6 +746,22 @@ HRESULT STDMETHODCALLTYPE CShellLink::Load(IStream *stm)
     if (FAILED(hr)) // FIXME: Should we fail?
         return hr;
 
+    LPEXP_SPECIAL_FOLDER pSpecial = (LPEXP_SPECIAL_FOLDER)SHFindDataBlock(m_pDBList, EXP_SPECIAL_FOLDER_SIG);
+    if (pSpecial && pSpecial->cbSize == sizeof(*pSpecial) && ILGetSize(m_pPidl) > pSpecial->cbOffset)
+    {
+        if (LPITEMIDLIST folder = SHCloneSpecialIDList(NULL, pSpecial->idSpecialFolder, FALSE))
+        {
+            LPITEMIDLIST pidl = ILCombine(folder, (LPITEMIDLIST)((char*)m_pPidl + pSpecial->cbOffset));
+            if (pidl)
+            {
+                ILFree(m_pPidl);
+                m_pPidl = pidl;
+                TRACE("Replaced pidl base with CSIDL %u up to %ub.\n", pSpecial->idSpecialFolder, pSpecial->cbOffset);
+            }
+            ILFree(folder);
+        }
+    }
+
     if (TRACE_ON(shell))
     {
 #if (NTDDI_VERSION < NTDDI_LONGHORN)
@@ -881,6 +897,21 @@ HRESULT STDMETHODCALLTYPE CShellLink::Save(IStream *stm, BOOL fClearDirty)
 
     m_Header.dwSize = sizeof(m_Header);
     m_Header.clsid = CLSID_ShellLink;
+
+    /* Store target attributes */
+    WIN32_FIND_DATAW wfd = {};
+    WCHAR FsTarget[MAX_PATH];
+    if (GetPath(FsTarget, _countof(FsTarget), NULL, 0) == S_OK && PathFileExistsW(FsTarget))
+    {
+        HANDLE hFind = FindFirstFileW(FsTarget, &wfd);
+        if (hFind != INVALID_HANDLE_VALUE)
+            FindClose(hFind);
+    }
+    m_Header.dwFileAttributes = wfd.dwFileAttributes;
+    m_Header.ftCreationTime = wfd.ftCreationTime;
+    m_Header.ftLastAccessTime = wfd.ftLastAccessTime;
+    m_Header.ftLastWriteTime = wfd.ftLastWriteTime;
+    m_Header.nFileSizeLow = wfd.nFileSizeLow;
 
     /*
      * Reset the flags: keep only the flags related to data blocks as they were
@@ -1077,7 +1108,7 @@ HRESULT STDMETHODCALLTYPE CShellLink::GetPath(LPSTR pszFile, INT cchMaxPath, WIN
           this, pszFile, cchMaxPath, pfd, fFlags, debugstr_w(m_sPath));
 
     /* Allocate a temporary UNICODE buffer */
-    pszFileW = (LPWSTR)HeapAlloc(GetProcessHeap(), 0, cchMaxPath * sizeof(WCHAR));
+    pszFileW = (LPWSTR)HeapAlloc(GetProcessHeap(), 0, max(cchMaxPath, MAX_PATH) * sizeof(WCHAR));
     if (!pszFileW)
         return E_OUTOFMEMORY;
 
@@ -2592,6 +2623,7 @@ HRESULT STDMETHODCALLTYPE CShellLink::InvokeCommand(LPCMINVOKECOMMANDINFO lpici)
 
 HRESULT CShellLink::DoOpen(LPCMINVOKECOMMANDINFO lpici)
 {
+    LPCMINVOKECOMMANDINFOEX iciex = (LPCMINVOKECOMMANDINFOEX)lpici;
     const BOOL unicode = IsUnicode(*lpici);
 
     CStringW args;
@@ -2600,7 +2632,6 @@ HRESULT CShellLink::DoOpen(LPCMINVOKECOMMANDINFO lpici)
 
     if (unicode)
     {
-        LPCMINVOKECOMMANDINFOEX iciex = (LPCMINVOKECOMMANDINFOEX)lpici;
         if (!StrIsNullOrEmpty(iciex->lpParametersW))
         {
             args += L' ';
@@ -2617,9 +2648,11 @@ HRESULT CShellLink::DoOpen(LPCMINVOKECOMMANDINFO lpici)
         }
     }
 
+    WCHAR dir[MAX_PATH];
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
-    sei.fMask = SEE_MASK_HASLINKNAME | SEE_MASK_UNICODE |
+    sei.fMask = SEE_MASK_HASLINKNAME | SEE_MASK_UNICODE | SEE_MASK_DOENVSUBST |
                (lpici->fMask & (SEE_MASK_NOASYNC | SEE_MASK_ASYNCOK | SEE_MASK_FLAG_NO_UI));
+    sei.lpDirectory = m_sWorkDir;
     if (m_pPidl)
     {
         sei.lpIDList = m_pPidl;
@@ -2628,14 +2661,28 @@ HRESULT CShellLink::DoOpen(LPCMINVOKECOMMANDINFO lpici)
     else
     {
         sei.lpFile = m_sPath;
+        if (!(m_Header.dwFlags & SLDF_HAS_EXP_SZ))
+        {
+            sei.fMask &= ~SEE_MASK_DOENVSUBST; // The link does not want to expand lpFile
+            if (m_sWorkDir && ExpandEnvironmentStringsW(m_sWorkDir, dir, _countof(dir)) <= _countof(dir))
+                sei.lpDirectory = dir;
+        }
     }
     sei.lpParameters = args;
     sei.lpClass = m_sLinkPath;
     sei.nShow = m_Header.nShowCommand;
     if (lpici->nShow != SW_SHOWNORMAL && lpici->nShow != SW_SHOW)
         sei.nShow = lpici->nShow; // Allow invoker to override .lnk show mode
-    sei.lpDirectory = m_sWorkDir;
 
+    // Use the invoker specified working directory if the link did not specify one
+    if (StrIsNullOrEmpty(sei.lpDirectory) || !PathIsDirectoryW(sei.lpDirectory))
+    {
+        LPCSTR pszDirA = lpici->lpDirectory;
+        if (unicode && !StrIsNullOrEmpty(iciex->lpDirectoryW))
+            sei.lpDirectory = iciex->lpDirectoryW;
+        else if (pszDirA && SHAnsiToUnicode(pszDirA, dir, _countof(dir)))
+            sei.lpDirectory = dir;
+    }
     return (ShellExecuteExW(&sei) ? S_OK : E_FAIL);
 }
 
@@ -2683,44 +2730,31 @@ INT_PTR CALLBACK ExtendedShortcutProc(HWND hwndDlg, UINT uMsg,
     return FALSE;
 }
 
-/**************************************************************************
-* SH_GetTargetTypeByPath
-*
-* Function to get target type by passing full path to it
-*/
-LPWSTR SH_GetTargetTypeByPath(LPCWSTR lpcwFullPath)
+static void GetTypeDescriptionByPath(PCWSTR pszFullPath, DWORD fAttributes, PWSTR szBuf, UINT cchBuf)
 {
-    LPCWSTR pwszExt;
-    static WCHAR wszBuf[MAX_PATH];
+    if (fAttributes == INVALID_FILE_ATTRIBUTES && !PathFileExistsAndAttributesW(pszFullPath, &fAttributes))
+        fAttributes = 0;
 
-    /* Get file information */
     SHFILEINFOW fi;
-    if (!SHGetFileInfoW(lpcwFullPath, 0, &fi, sizeof(fi), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES))
+    if (!SHGetFileInfoW(pszFullPath, fAttributes, &fi, sizeof(fi), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES))
     {
-        ERR("SHGetFileInfoW failed for %ls (%lu)\n", lpcwFullPath, GetLastError());
-        fi.szTypeName[0] = L'\0';
-        fi.hIcon = NULL;
+        ERR("SHGetFileInfoW failed for %ls (%lu)\n", pszFullPath, GetLastError());
+        fi.szTypeName[0] = UNICODE_NULL;
     }
 
-    pwszExt = PathFindExtensionW(lpcwFullPath);
+    BOOL fFolder = (fAttributes & FILE_ATTRIBUTE_DIRECTORY);
+    LPCWSTR pwszExt = fFolder ? L"" : PathFindExtensionW(pszFullPath);
     if (pwszExt[0])
     {
         if (!fi.szTypeName[0])
-        {
-            /* The file type is unknown, so default to string "FileExtension File" */
-            size_t cchRemaining = 0;
-            LPWSTR pwszEnd = NULL;
-
-            StringCchPrintfExW(wszBuf, _countof(wszBuf), &pwszEnd, &cchRemaining, 0, L"%s ", pwszExt + 1);
-        }
+            StringCchPrintfW(szBuf, cchBuf, L"%s", pwszExt + 1);
         else
-        {
-            /* Update file type */
-            StringCbPrintfW(wszBuf, sizeof(wszBuf), L"%s (%s)", fi.szTypeName, pwszExt);
-        }
+            StringCchPrintfW(szBuf, cchBuf, L"%s (%s)", fi.szTypeName, pwszExt);
     }
-
-    return wszBuf;
+    else
+    {
+        StringCchPrintfW(szBuf, cchBuf, L"%s", fi.szTypeName);
+    }
 }
 
 BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
@@ -2733,6 +2767,7 @@ BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
           m_sIcoPath, m_sPath, m_sPathRel, sProduct, m_sWorkDir);
 
     m_bInInit = TRUE;
+    UINT darwin = m_Header.dwFlags & (SLDF_HAS_DARWINID);
 
     /* Get file information */
     // FIXME! FIXME! Shouldn't we use m_sIcoPath, m_Header.nIconIndex instead???
@@ -2754,9 +2789,17 @@ BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
     else
         ERR("ExtractIconW failed %ls %u\n", m_sIcoPath, m_Header.nIconIndex);
 
+    if (!SHGetFileInfoW(m_sLinkPath, 0, &fi, sizeof(fi), SHGFI_DISPLAYNAME))
+        fi.szDisplayName[0] = UNICODE_NULL;
+    SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TEXT, fi.szDisplayName);
+
     /* Target type */
     if (m_sPath)
-        SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TYPE_EDIT, SH_GetTargetTypeByPath(m_sPath));
+    {
+        WCHAR buf[MAX_PATH];
+        GetTypeDescriptionByPath(m_sPath, m_Header.dwFileAttributes, buf, _countof(buf));
+        SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TYPE_EDIT, buf);
+    }
 
     /* Target location */
     if (m_sPath)
@@ -2770,7 +2813,8 @@ BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
     /* Target path */
     if (m_sPath)
     {
-        WCHAR newpath[2*MAX_PATH] = L"\0";
+        WCHAR newpath[MAX_PATH * 2];
+        newpath[0] = UNICODE_NULL;
         if (wcschr(m_sPath, ' '))
             StringCchPrintfExW(newpath, _countof(newpath), NULL, NULL, 0, L"\"%ls\"", m_sPath);
         else
@@ -2813,6 +2857,54 @@ BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
             SendMessageW(hRunCombo, CB_SETCURSEL, index, 0);
     }
 
+    BOOL disablecontrols = FALSE;
+    if (darwin)
+    {
+        disablecontrols = TRUE;
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SHORTCUT_FIND), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SHORTCUT_CHANGE_ICON), FALSE);
+    }
+    else
+    {
+        WCHAR path[MAX_PATH * 2];
+        path[0] = UNICODE_NULL;
+        HRESULT hr = GetPath(path, _countof(path), NULL, SLGP_RAWPATH);
+        if (FAILED(hr))
+            hr = GetPath(path, _countof(path), NULL, 0);
+#if DBG
+        if (GetKeyState(VK_CONTROL) < 0) // Allow inspection of PIDL parsing path
+        {
+            hr = S_OK;
+            path[0] = UNICODE_NULL;
+        }
+#endif
+        if (hr != S_OK)
+        {
+            disablecontrols = TRUE;
+            LPITEMIDLIST pidl;
+            if (GetIDList(&pidl) == S_OK)
+            {
+                path[0] = UNICODE_NULL;
+                SHGetNameAndFlagsW(pidl, SHGDN_FORADDRESSBAR | SHGDN_FORPARSING, path, _countof(path), NULL);
+                SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TYPE_EDIT, path);
+                SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_TARGET_TEXT, path);
+                ILRemoveLastID(pidl);
+                path[0] = UNICODE_NULL;
+                SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_START_IN_EDIT, path);
+                SHGetNameAndFlagsW(pidl, SHGDN_NORMAL, path, _countof(path), NULL);
+                SetDlgItemTextW(hwndDlg, IDC_SHORTCUT_LOCATION_EDIT, path);
+                ILFree(pidl);
+            }
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SHORTCUT_ADVANCED), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SHORTCUT_START_IN_EDIT), FALSE);
+        }
+        else
+        {
+            ASSERT(FAILED(hr) || !(path[0] == ':' && path[1] == ':' && path[2] == '{'));
+        }
+    }
+    EnableWindow(GetDlgItem(hwndDlg, IDC_SHORTCUT_TARGET_TEXT), !disablecontrols);
+
     /* auto-completion */
     SHAutoComplete(GetDlgItem(hwndDlg, IDC_SHORTCUT_TARGET_TEXT), SHACF_DEFAULT);
     SHAutoComplete(GetDlgItem(hwndDlg, IDC_SHORTCUT_START_IN_EDIT), SHACF_DEFAULT);
@@ -2828,10 +2920,6 @@ void CShellLink::OnCommand(HWND hwndDlg, int id, HWND hwndCtl, UINT codeNotify)
     {
         case IDC_SHORTCUT_FIND:
             SHOpenFolderAndSelectItems(m_pPidl, 0, NULL, 0);
-            ///
-            /// FIXME
-            /// open target directory
-            ///
             return;
 
         case IDC_SHORTCUT_CHANGE_ICON:
@@ -2910,7 +2998,7 @@ LRESULT CShellLink::OnNotify(HWND hwndDlg, int idFrom, LPNMHDR pnmhdr)
             PathUnquoteSpacesW(unquoted);
 
         WCHAR *pwszExt = PathFindExtensionW(unquoted);
-        if (!wcsicmp(pwszExt, L".lnk"))
+        if (!_wcsicmp(pwszExt, L".lnk"))
         {
             // FIXME load localized error msg
             MessageBoxW(hwndDlg, L"You cannot create a link to a shortcut", L"Error", MB_ICONERROR);

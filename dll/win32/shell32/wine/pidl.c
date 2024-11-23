@@ -485,6 +485,37 @@ LPITEMIDLIST WINAPI ILGlobalClone(LPCITEMIDLIST pidl)
     return newpidl;
 }
 
+#ifdef __REACTOS__
+static inline LPITEMIDLIST _ILUnsafeNext(LPCITEMIDLIST pidl)
+{
+    return (LPITEMIDLIST)(((BYTE*)pidl) + pidl->mkid.cb);
+}
+
+UINT _ILGetDepth(LPCITEMIDLIST pidl)
+{
+    for (UINT i = 0;; ++i)
+    {
+        if (!pidl || !pidl->mkid.cb)
+            return i;
+        pidl = _ILUnsafeNext(pidl);
+    }
+}
+
+static BOOL _ILMemCmpEqualIDList(LPCITEMIDLIST p1, LPCITEMIDLIST p2)
+{
+    for (;; p1 = _ILUnsafeNext(p1), p2 = _ILUnsafeNext(p2))
+    {
+        DWORD cb1 = p1 ? p1->mkid.cb : 0x80000000; /* Empty != NULL */
+        DWORD cb2 = p2 ? p2->mkid.cb : 0x80000000;
+        if (cb1 != cb2)
+            return FALSE;
+        if (LOWORD(cb1) == 0)
+            return cb1 == cb2;
+        if (memcmp(p1, p2, cb1))
+            return FALSE;
+    }
+}
+#else /* __REACTOS__ */
 BOOL _ILHACKCompareSimpleIds(LPCITEMIDLIST pidltemp1, LPCITEMIDLIST pidltemp2)
 {
     LPPIDLDATA pdata1 = _ILGetDataPointer(pidltemp1);
@@ -540,6 +571,7 @@ BOOL _ILHACKCompareSimpleIds(LPCITEMIDLIST pidltemp1, LPCITEMIDLIST pidltemp2)
 
     return TRUE;
 }
+#endif /* __REACTOS__ */
 
 /*************************************************************************
  * ILIsEqual [SHELL32.21]
@@ -552,6 +584,21 @@ BOOL WINAPI ILIsEqual(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
 
     TRACE("pidl1=%p pidl2=%p\n",pidl1, pidl2);
 
+#ifdef __REACTOS__
+    IShellFolder *psfDesktop;
+    UINT depth1;
+
+    if (pidl1 == pidl2 || _ILMemCmpEqualIDList(pidltemp1, pidltemp2))
+        return TRUE;
+
+    depth1 = _ILGetDepth(pidl1);
+    if (depth1 && depth1 == _ILGetDepth(pidl2) && SUCCEEDED(SHGetDesktopFolder(&psfDesktop)))
+    {
+        HRESULT hr = IShellFolder_CompareIDs(psfDesktop, SHCIDS_CANONICALONLY, pidl1, pidl2);
+        IShellFolder_Release(psfDesktop);
+        return hr == 0;
+    }
+#else /* __REACTOS__ */
     /*
      * Explorer reads from registry directly (StreamMRU),
      * so we can only check here
@@ -582,8 +629,45 @@ BOOL WINAPI ILIsEqual(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
 
     if (!pidltemp1->mkid.cb && !pidltemp2->mkid.cb)
         return TRUE;
-
+#endif /* __REACTOS__ */
     return FALSE;
+}
+
+LPCITEMIDLIST _ILIsParentEx(LPCITEMIDLIST pidlParent, LPCITEMIDLIST pidlChild, BOOL bImmediate)
+{
+    LPCITEMIDLIST pParentRoot = pidlParent, pChildRoot = pidlChild, pResult = NULL;
+    LPITEMIDLIST pidl;
+    SIZE_T cb = 0;
+
+    if (!pidlParent || !pidlChild)
+        return pResult;
+
+    while (pidlParent->mkid.cb)
+    {
+        cb += pidlChild->mkid.cb;
+        if (!pidlChild->mkid.cb)
+        {
+            if (pidlParent->mkid.cb)
+                return pResult; /* The child is shorter than the parent */
+            else
+                break;
+        }
+        pidlChild = _ILUnsafeNext(pidlChild);
+        pidlParent = _ILUnsafeNext(pidlParent);
+    }
+
+    if (bImmediate && (!pidlChild->mkid.cb || _ILUnsafeNext(pidlChild)->mkid.cb))
+        return pResult; /* Same as parent or a deeper grandchild */
+
+    if ((pidl = SHAlloc(cb + sizeof(WORD))) != NULL)
+    {
+        CopyMemory(pidl, pChildRoot, cb);
+        ZeroMemory((BYTE*)pidl + cb, sizeof(WORD));
+        if (ILIsEqual(pParentRoot, pidl))
+            pResult = pidlChild;
+        ILFree(pidl);
+    }
+    return pResult;
 }
 
 /*************************************************************************
@@ -615,6 +699,9 @@ BOOL WINAPI ILIsParent(LPCITEMIDLIST pidlParent, LPCITEMIDLIST pidlChild, BOOL b
 
     TRACE("%p %p %x\n", pidlParent, pidlChild, bImmediate);
 
+#ifdef __REACTOS__
+    return _ILIsParentEx(pParent, pChild, bImmediate) != NULL;
+#else /* __REACTOS__ */
     if (!pParent || !pChild)
         return FALSE;
 
@@ -636,6 +723,7 @@ BOOL WINAPI ILIsParent(LPCITEMIDLIST pidlParent, LPCITEMIDLIST pidlChild, BOOL b
         return FALSE;
 
     return TRUE;
+#endif /* __REACTOS__ */
 }
 
 /*************************************************************************
@@ -659,6 +747,13 @@ BOOL WINAPI ILIsParent(LPCITEMIDLIST pidlParent, LPCITEMIDLIST pidlChild, BOOL b
  */
 PUIDLIST_RELATIVE WINAPI ILFindChild(PIDLIST_ABSOLUTE pidl1, PCIDLIST_ABSOLUTE pidl2)
 {
+#ifdef __REACTOS__
+    TRACE("pidl1=%p pidl2=%p\n", pidl1, pidl2);
+
+    if (_ILIsDesktop(pidl1))
+        return (PUIDLIST_RELATIVE)pidl2;
+    return (PUIDLIST_RELATIVE)_ILIsParentEx(pidl1, pidl2, FALSE);
+#else /* __REACTOS__ */
     LPCITEMIDLIST pidltemp1 = pidl1;
     LPCITEMIDLIST pidltemp2 = pidl2;
     LPCITEMIDLIST ret=NULL;
@@ -694,6 +789,7 @@ PUIDLIST_RELATIVE WINAPI ILFindChild(PIDLIST_ABSOLUTE pidl1, PCIDLIST_ABSOLUTE p
     }
     TRACE_(shell)("--- %p\n", ret);
     return (PUIDLIST_RELATIVE)ret; /* pidl 1 is shorter */
+#endif /* __REACTOS__ */
 }
 
 /*************************************************************************
@@ -1085,6 +1181,14 @@ static HRESULT _ILParsePathW(LPCWSTR path, LPWIN32_FIND_DATAW lpFindFile,
     TRACE("%s %p 0x%x\n", debugstr_w(path), ppidl ? *ppidl : NULL, prgfInOut ? *prgfInOut : 0);
 
     return ret;
+}
+
+LPITEMIDLIST SHELL32_CreateSimpleIDListFromPath(LPCWSTR pszPath, DWORD dwAttributes)
+{
+    WIN32_FIND_DATAW data = { dwAttributes };
+    LPITEMIDLIST pidl = NULL;
+    _ILParsePathW(pszPath, &data, TRUE, &pidl, NULL);
+    return pidl;
 }
 
 /*************************************************************************
@@ -1767,7 +1871,6 @@ LPITEMIDLIST _ILCreateGuidFromStrA(LPCSTR szGUID)
     }
     return _ILCreateGuid(PT_GUID, &iid);
 }
-#endif
 
 LPITEMIDLIST _ILCreateGuidFromStrW(LPCWSTR szGUID)
 {
@@ -1784,6 +1887,7 @@ LPITEMIDLIST _ILCreateGuidFromStrW(LPCWSTR szGUID)
     }
     return _ILCreateGuid(PT_GUID, &iid);
 }
+#endif /* __REACTOS__ */
 
 LPITEMIDLIST _ILCreateFromFindDataW( const WIN32_FIND_DATAW *wfd )
 {
@@ -2485,59 +2589,6 @@ BOOL _ILGetExtension(LPCITEMIDLIST pidl, LPWSTR pOut, UINT uOutSize)
     TRACE("%s\n", debugstr_w(pOut));
 
     return TRUE;
-}
-
-/*************************************************************************
- * _ILGetFileType
- *
- * Given the ItemIdList, get the file type description
- *
- * PARAMS
- *      pidl        [I] The ItemIDList (simple)
- *      pOut        [I] The buffer to save the result
- *      uOutsize    [I] The size of the buffer
- *
- * RETURNS
- *    nothing
- *
- * NOTES
- *    This function copies as much as possible into the buffer.
- */
-void _ILGetFileType(LPCITEMIDLIST pidl, LPWSTR pOut, UINT uOutSize)
-{
-    WCHAR sType[64], sTemp[64];
-
-    if(_ILIsValue(pidl))
-    {
-        if(uOutSize > 0)
-            pOut[0] = 0;
-        if (_ILGetExtension(pidl, sType, _countof(sType)))
-        {
-            if (HCR_MapTypeToValueW(sType, sTemp, _countof(sTemp), TRUE))
-            {
-                /* retrieve description */
-                if (HCR_MapTypeToValueW(sTemp, pOut, uOutSize, FALSE))
-                    return;
-            }
-
-            /* display Ext-file as description */
-            CharUpperW(sType);
-            /* load localized file string */
-            sTemp[0] = UNICODE_NULL;
-            if (LoadStringW(shell32_hInstance, IDS_ANY_FILE, sTemp, _countof(sTemp)))
-            {
-                sTemp[_countof(sTemp) - 1] = UNICODE_NULL;
-                StringCchPrintfW(pOut, uOutSize, sTemp, sType);
-            }
-        }
-    }
-    else
-    {
-        pOut[0] = UNICODE_NULL;
-        LoadStringW(shell32_hInstance, IDS_DIRECTORY, pOut, uOutSize);
-        /* make sure its null terminated */
-        pOut[uOutSize - 1] = UNICODE_NULL;
-    }
 }
 
 /*************************************************************************

@@ -134,7 +134,7 @@ CompBattAddNewBattery(IN PUNICODE_STRING BatteryName,
         {
             /* Initialize the data and write the battery name */
             RtlZeroMemory(BatteryData, sizeof(COMPBATT_BATTERY_DATA));
-            BatteryData->Tag = 0;
+            BatteryData->Tag = BATTERY_TAG_INVALID;
             BatteryData->BatteryName.MaximumLength = BatteryName->Length;
             BatteryData->BatteryName.Buffer = (PWCHAR)(BatteryData + 1);
             RtlCopyUnicodeString(&BatteryData->BatteryName, BatteryName);
@@ -199,8 +199,11 @@ CompBattAddNewBattery(IN PUNICODE_STRING BatteryName,
                          Status);
             }
 
-            /* Free the battery data */
-            ExFreePool(BatteryData);
+            if (!NT_SUCCESS(Status))
+            {
+                /* Free the battery data */
+                ExFreePool(BatteryData);
+            }
         }
         else
         {
@@ -467,7 +470,6 @@ CompBattPnpDispatch(IN PDEVICE_OBJECT DeviceObject,
         default:
 
             /* Not supported */
-            Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
     }
 

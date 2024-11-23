@@ -5,12 +5,14 @@ if(_WINKD_)
 endif()
 
 include_directories(spapisup utils)
+include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/pseh/include)
 
 list(APPEND SOURCE
     spapisup/fileqsup.c
     spapisup/infsupp.c
     utils/arcname.c
     utils/bldrsup.c
+    utils/devutils.c
     utils/filesup.c
     utils/fsrec.c
     utils/genlist.c
@@ -20,6 +22,7 @@ list(APPEND SOURCE
     utils/partinfo.c
     utils/partlist.c
     utils/regutil.c
+    utils/volutil.c
     bootcode.c
     bootsup.c
     fsutil.c
