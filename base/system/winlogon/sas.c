@@ -285,6 +285,22 @@ PlaySoundRoutine(
     return Ret;
 }
 
+static
+BOOL
+IsFirstLogon(VOID)
+{
+    /* FIXME: All of this is a HACK, designed specifically for PlayLogonSoundThread.
+     * Don't call IsFirstLogon multiple times inside the same function. And please
+     * note that this function is not thread-safe. */
+    static BOOL bFirstLogon = TRUE;
+    if (bFirstLogon)
+    {
+        bFirstLogon = FALSE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 DWORD
 WINAPI
 PlayLogonSoundThread(
@@ -347,7 +363,9 @@ PlayLogonSoundThread(
     }
     else
     {
-        PlaySoundRoutine(L"WindowsLogon", TRUE, SND_ALIAS | SND_NODEFAULT);
+        PlaySoundRoutine(IsFirstLogon() ? L"SystemStart" : L"WindowsLogon",
+                         TRUE,
+                         SND_ALIAS | SND_NODEFAULT);
         RevertToSelf();
     }
     return 0;
@@ -367,13 +385,17 @@ PlayLogonSound(
 
 static
 VOID
-PlayLogoffSound(
-    _In_ PWLSESSION Session)
+PlayLogoffShutdownSound(
+    _In_ PWLSESSION Session,
+    _In_ BOOL bShutdown)
 {
     if (!ImpersonateLoggedOnUser(Session->UserToken))
         return;
 
-    PlaySoundRoutine(L"WindowsLogoff", FALSE, SND_ALIAS | SND_NODEFAULT);
+    /* NOTE: Logoff and shutdown sounds play synchronously */
+    PlaySoundRoutine(bShutdown ? L"SystemExit" : L"WindowsLogoff",
+                     FALSE,
+                     SND_ALIAS | SND_NODEFAULT);
 
     RevertToSelf();
 }
@@ -786,8 +808,8 @@ DestroyLogoffSecurityAttributes(
 static
 NTSTATUS
 HandleLogoff(
-    IN OUT PWLSESSION Session,
-    IN UINT Flags)
+    _Inout_ PWLSESSION Session,
+    _In_ DWORD wlxAction)
 {
     PLOGOFF_SHUTDOWN_DATA LSData;
     PSECURITY_ATTRIBUTES psa;
@@ -802,7 +824,13 @@ HandleLogoff(
         ERR("Failed to allocate mem for thread data\n");
         return STATUS_NO_MEMORY;
     }
-    LSData->Flags = Flags;
+
+    LSData->Flags = EWX_LOGOFF;
+    if (wlxAction == WLX_SAS_ACTION_FORCE_LOGOFF)
+    {
+        LSData->Flags |= EWX_FORCE;
+    }
+
     LSData->Session = Session;
 
     Status = CreateLogoffSecurityAttributes(&psa);
@@ -842,7 +870,7 @@ HandleLogoff(
 
     SwitchDesktop(Session->WinlogonDesktop);
 
-    PlayLogoffSound(Session);
+    PlayLogoffShutdownSound(Session, WLX_SHUTTINGDOWN(wlxAction));
 
     SetWindowStationUser(Session->InteractiveWindowStation,
                          &LuidNone, NULL, 0);
@@ -1065,12 +1093,9 @@ DoGenericAction(
         case WLX_SAS_ACTION_SHUTDOWN_REBOOT: /* 0x0b */
             if (Session->LogonState != STATE_LOGGED_OFF)
             {
-                UINT LogOffFlags = EWX_LOGOFF;
-                if (wlxAction == WLX_SAS_ACTION_FORCE_LOGOFF)
-                    LogOffFlags |= EWX_FORCE;
                 if (!Session->Gina.Functions.WlxIsLogoffOk(Session->Gina.Context))
                     break;
-                if (!NT_SUCCESS(HandleLogoff(Session, LogOffFlags)))
+                if (!NT_SUCCESS(HandleLogoff(Session, wlxAction)))
                 {
                     RemoveStatusMessage(Session);
                     break;

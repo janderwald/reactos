@@ -1984,6 +1984,7 @@ GetActiveDiskPartition(
 }
 
 PPARTLIST
+NTAPI
 CreatePartitionList(VOID)
 {
     PPARTLIST List;
@@ -2069,6 +2070,7 @@ CreatePartitionList(VOID)
 }
 
 VOID
+NTAPI
 DestroyPartitionList(
     IN PPARTLIST List)
 {
@@ -2288,6 +2290,7 @@ SelectPartition(
 }
 
 PPARTENTRY
+NTAPI
 GetNextPartition(
     IN PPARTLIST List,
     IN PPARTENTRY CurrentPart OPTIONAL)
@@ -2380,6 +2383,7 @@ GetNextPartition(
 }
 
 PPARTENTRY
+NTAPI
 GetPrevPartition(
     IN PPARTLIST List,
     IN PPARTENTRY CurrentPart OPTIONAL)
@@ -2783,6 +2787,7 @@ UpdateDiskLayout(
  * @return  The adjacent unpartitioned region, if it exists, or NULL.
  **/
 PPARTENTRY
+NTAPI
 GetAdjUnpartitionedEntry(
     _In_ PPARTENTRY PartEntry,
     _In_ BOOLEAN Direction)
@@ -2818,41 +2823,49 @@ GetAdjUnpartitionedEntry(
     return NULL;
 }
 
-ERROR_NUMBER
-PartitionCreationChecks(
-    _In_ PPARTENTRY PartEntry)
+static ERROR_NUMBER
+MBRPartitionCreateChecks(
+    _In_ PPARTENTRY PartEntry,
+    _In_opt_ ULONGLONG SizeBytes,
+    _In_opt_ ULONG_PTR PartitionInfo)
 {
     PDISKENTRY DiskEntry = PartEntry->DiskEntry;
+    BOOLEAN isContainer = IsContainerPartition((UCHAR)PartitionInfo);
 
-    if (DiskEntry->DiskStyle == PARTITION_STYLE_GPT)
+    // TODO: Re-enable once we initialize unpartitioned disks before using them.
+    // ASSERT(DiskEntry->DiskStyle == PARTITION_STYLE_MBR);
+    ASSERT(!PartEntry->IsPartitioned);
+
+    if (isContainer)
     {
-        DPRINT1("GPT-partitioned disk detected, not currently supported by SETUP!\n");
-        return ERROR_WARN_PARTITION;
+        /* Cannot create an extended partition within logical partition space */
+        if (PartEntry->LogicalPartition)
+            return ERROR_ONLY_ONE_EXTENDED;
+
+        /* Fail if there is another extended partition in the list */
+        if (DiskEntry->ExtendedPartition)
+            return ERROR_ONLY_ONE_EXTENDED;
     }
 
-    /* Fail if the partition is already in use */
-    if (PartEntry->IsPartitioned)
-        return ERROR_NEW_PARTITION;
-
     /*
-     * For primary partitions
+     * Primary or Extended partitions
      */
-    if (!PartEntry->LogicalPartition)
+    if (!PartEntry->LogicalPartition || isContainer)
     {
         /* Only one primary partition is allowed on super-floppy */
         if (IsSuperFloppy(DiskEntry))
             return ERROR_PARTITION_TABLE_FULL;
 
-        /* Fail if there are already 4 primary partitions in the list */
+        /* Fail if there are too many primary partitions */
         if (GetPrimaryPartitionCount(DiskEntry) >= 4)
             return ERROR_PARTITION_TABLE_FULL;
     }
     /*
-     * For logical partitions
+     * Logical partitions
      */
     else
     {
-        // TODO: Check that we are inside an extended partition!!
+        // TODO: Check that we are inside an extended partition!
         // Then the following check will be useless.
 
         /* Only one (primary) partition is allowed on super-floppy */
@@ -2864,44 +2877,36 @@ PartitionCreationChecks(
 }
 
 ERROR_NUMBER
-ExtendedPartitionCreationChecks(
-    _In_ PPARTENTRY PartEntry)
+NTAPI
+PartitionCreateChecks(
+    _In_ PPARTENTRY PartEntry,
+    _In_opt_ ULONGLONG SizeBytes,
+    _In_opt_ ULONG_PTR PartitionInfo)
 {
-    PDISKENTRY DiskEntry = PartEntry->DiskEntry;
-
-    if (DiskEntry->DiskStyle == PARTITION_STYLE_GPT)
-    {
-        DPRINT1("GPT-partitioned disk detected, not currently supported by SETUP!\n");
-        return ERROR_WARN_PARTITION;
-    }
+    // PDISKENTRY DiskEntry = PartEntry->DiskEntry;
 
     /* Fail if the partition is already in use */
     if (PartEntry->IsPartitioned)
         return ERROR_NEW_PARTITION;
 
-    /* Cannot create an extended partition within logical partition space */
-    if (PartEntry->LogicalPartition)
-        return ERROR_ONLY_ONE_EXTENDED;
-
-    /* Only one primary partition is allowed on super-floppy */
-    if (IsSuperFloppy(DiskEntry))
-        return ERROR_PARTITION_TABLE_FULL;
-
-    /* Fail if there are already 4 primary partitions in the list */
-    if (GetPrimaryPartitionCount(DiskEntry) >= 4)
-        return ERROR_PARTITION_TABLE_FULL;
-
-    /* Fail if there is another extended partition in the list */
-    if (DiskEntry->ExtendedPartition)
-        return ERROR_ONLY_ONE_EXTENDED;
-
-    return ERROR_SUCCESS;
+    // TODO: Re-enable once we initialize unpartitioned disks before
+    // using them; because such disks would be mistook as GPT otherwise.
+    // if (DiskEntry->DiskStyle == PARTITION_STYLE_MBR)
+    return MBRPartitionCreateChecks(PartEntry, SizeBytes, PartitionInfo);
+#if 0
+    else // if (DiskEntry->DiskStyle == PARTITION_STYLE_GPT)
+    {
+        DPRINT1("GPT-partitioned disk detected, not currently supported by SETUP!\n");
+        return ERROR_WARN_PARTITION;
+    }
+#endif
 }
 
 // TODO: Improve upon the PartitionInfo parameter later
 // (see VDS::CREATE_PARTITION_PARAMETERS and PPARTITION_INFORMATION_MBR/GPT for example)
 // So far we only use it as the optional type of the partition to create.
 BOOLEAN
+NTAPI
 CreatePartition(
     _In_ PPARTLIST List,
     _Inout_ PPARTENTRY PartEntry,
@@ -2926,13 +2931,10 @@ CreatePartition(
         return FALSE;
     }
 
-    if (isContainer)
-        Error = ExtendedPartitionCreationChecks(PartEntry);
-    else
-        Error = PartitionCreationChecks(PartEntry);
+    Error = PartitionCreateChecks(PartEntry, SizeBytes, PartitionInfo);
     if (Error != NOT_AN_ERROR)
     {
-        DPRINT1("PartitionCreationChecks(%s) failed with error %lu\n", mainType, Error);
+        DPRINT1("PartitionCreateChecks(%s) failed with error %lu\n", mainType, Error);
         return FALSE;
     }
 
@@ -2995,6 +2997,7 @@ DismountPartition(
 }
 
 BOOLEAN
+NTAPI
 DeletePartition(
     _In_ PPARTLIST List,
     _In_ PPARTENTRY PartEntry,
