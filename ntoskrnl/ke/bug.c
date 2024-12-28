@@ -1092,17 +1092,7 @@ KeBugCheckWithTf(IN ULONG BugCheckCode,
         KeBugCheckOwner = Prcb->Number;
 
         /* Freeze the other CPUs */
-        for (ULONG i = 0; i < KeNumberProcessors; i++)
-        {
-            if (i != Prcb->Number)
-            {
-                /* Send the IPI */
-                KiIpiSend(AFFINITY_MASK(i), IPI_FREEZE);
-            }
-        }
-
-        /* Give the other CPUs one second to catch up */
-        KeStallExecutionProcessor(1000000);
+        KxFreezeExecution();
 #endif
 
         /* Display the BSOD */
@@ -1134,6 +1124,8 @@ KeBugCheckWithTf(IN ULONG BugCheckCode,
         /* FIXME: Support Triage Dump */
 
         /* FIXME: Write the crash dump */
+        // TODO: The crash-dump helper must set the Reboot variable.
+        Reboot = !!IopAutoReboot;
     }
     else
     {

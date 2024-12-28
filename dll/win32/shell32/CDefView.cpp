@@ -1318,6 +1318,7 @@ int CDefView::LV_FindItemByPidl(PCUITEMID_CHILD pidl)
         {
             for (i = 0; i < cItems; i++)
             {
+                //FIXME: ILIsEqual needs absolute pidls!
                 currentpidl = _PidlByItem(i);
                 if (ILIsEqual(pidl, currentpidl))
                     return i;
@@ -1592,13 +1593,18 @@ LRESULT CDefView::OnDestroy(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHand
     if (!m_Destroyed)
     {
         m_Destroyed = TRUE;
+        RevokeDragDrop(m_hWnd);
+        SHChangeNotifyDeregister(m_hNotify);
+        if (m_pFileMenu)
+        {
+            IUnknown_SetSite(m_pFileMenu, NULL);
+            m_pFileMenu = NULL;
+        }
         if (m_hMenu)
         {
             DestroyMenu(m_hMenu);
             m_hMenu = NULL;
         }
-        RevokeDragDrop(m_hWnd);
-        SHChangeNotifyDeregister(m_hNotify);
         m_hNotify = NULL;
         SHFree(m_pidlParent);
         m_pidlParent = NULL;
@@ -2848,29 +2854,35 @@ LRESULT CDefView::OnChangeNotify(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &
     TRACE("(%p)(%p,%p,%p)\n", this, Pidls[0], Pidls[1], lParam);
 
     if (_DoFolderViewCB(SFVM_FSNOTIFY, (WPARAM)Pidls, lEvent) == S_FALSE)
+    {
+        SHChangeNotification_Unlock(hLock);
         return FALSE;
+    }
 
     // Translate child IDLs.
     // SHSimpleIDListFromPathW creates fake PIDLs (lacking some attributes)
+    lEvent &= ~SHCNE_INTERRUPT;
     HRESULT hr;
     PITEMID_CHILD child0 = NULL, child1 = NULL;
     CComHeapPtr<ITEMIDLIST_RELATIVE> pidl0Temp, pidl1Temp;
-    if (_ILIsSpecialFolder(Pidls[0]) || ILIsParentOrSpecialParent(m_pidlParent, Pidls[0]))
+    if (lEvent != SHCNE_UPDATEIMAGE && lEvent < SHCNE_EXTENDED_EVENT)
     {
-        child0 = ILFindLastID(Pidls[0]);
-        hr = SHGetRealIDL(m_pSFParent, child0, &pidl0Temp);
-        if (SUCCEEDED(hr))
-            child0 = pidl0Temp;
-    }
-    if (_ILIsSpecialFolder(Pidls[1]) || ILIsParentOrSpecialParent(m_pidlParent, Pidls[1]))
-    {
-        child1 = ILFindLastID(Pidls[1]);
-        hr = SHGetRealIDL(m_pSFParent, child1, &pidl1Temp);
-        if (SUCCEEDED(hr))
-            child1 = pidl1Temp;
+        if (_ILIsSpecialFolder(Pidls[0]) || ILIsParentOrSpecialParent(m_pidlParent, Pidls[0]))
+        {
+            child0 = ILFindLastID(Pidls[0]);
+            hr = SHGetRealIDL(m_pSFParent, child0, &pidl0Temp);
+            if (SUCCEEDED(hr))
+                child0 = pidl0Temp;
+        }
+        if (_ILIsSpecialFolder(Pidls[1]) || ILIsParentOrSpecialParent(m_pidlParent, Pidls[1]))
+        {
+            child1 = ILFindLastID(Pidls[1]);
+            hr = SHGetRealIDL(m_pSFParent, child1, &pidl1Temp);
+            if (SUCCEEDED(hr))
+                child1 = pidl1Temp;
+        }
     }
 
-    lEvent &= ~SHCNE_INTERRUPT;
     switch (lEvent)
     {
         case SHCNE_MKDIR:
@@ -3048,7 +3060,7 @@ HRESULT WINAPI CDefView::TranslateAccelerator(LPMSG lpmsg)
         TRACE("-- key=0x%04lx\n", lpmsg->wParam);
     }
 
-    return m_pShellBrowser->TranslateAcceleratorSB(lpmsg, 0);
+    return m_pShellBrowser ? m_pShellBrowser->TranslateAcceleratorSB(lpmsg, 0) : S_FALSE;
 }
 
 HRESULT WINAPI CDefView::EnableModeless(BOOL fEnable)
@@ -3283,7 +3295,7 @@ HRESULT CDefView::SaveViewState(IStream *pStream)
     lvc.mask = LVCF_WIDTH | LVCF_SUBITEM;
     for (UINT i = 0, j = 0; i < PERSISTCOLUMNS::MAXCOUNT && ListView_GetColumn(m_ListView, j, &lvc); ++j)
     {
-        HRESULT hr = MapListColumnToFolderColumn(lvc.iSubItem);
+        HRESULT hr = MapListColumnToFolderColumn(j);
         if (SUCCEEDED(hr))
         {
             cols.Columns[i] = MAKELONG(hr, lvc.cx);
