@@ -13,10 +13,25 @@ void hdac_stream_start(PHDAC_STREAM stream) {
 			stripe_ctl);
 	}
 
-    //hda_write32(stream->FdoContext, SSYNC, 0x1);
+    hda_write32(stream->FdoContext, SSYNC, 0x1);
 
 	/* set DMA start and interrupt mask */
 	stream_update8(stream, SD_CTL, 0, SD_CTL_DMA_START | SD_INT_MASK);
+
+    // wait for DMA start flag to be cleared
+    ULONG Retries = 40;
+    while ((stream_read8(stream, SD_CTL) & SD_CTL_DMA_START) == 0)
+    {
+        if (!Retries)
+        {
+            DPRINT1("Request timed out\n");
+            break;
+        }
+
+        KeStallExecutionProcessor(1);
+        Retries--;
+    }
+
 	stream->running = TRUE;
 }
 
@@ -43,7 +58,7 @@ void hdac_stream_reset(PHDAC_STREAM stream) {
 	dma_run_state = stream_read8(stream, SD_CTL) & SD_CTL_DMA_START;
 
 	stream_update8(stream, SD_CTL, 0, SD_CTL_STREAM_RESET);
-	KeStallExecutionProcessor(30);
+    KeStallExecutionProcessor(30);
 	int timeout = 300;
 
 	UCHAR val;

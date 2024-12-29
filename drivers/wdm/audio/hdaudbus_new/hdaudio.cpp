@@ -243,6 +243,10 @@ HDA_AllocateRenderDmaEngine(
 	_Out_ PHDAUDIO_CONVERTER_FORMAT ConverterFormat
 ) {
     DPRINT1("HDA_AllocateRenderDmaEngine %p Irql %u\n", _context, KeGetCurrentIrql());
+    DPRINT1(
+        "HDA_AllocateRenderDmaEngine SampleRate %u ValidBitsPerSample %u ContainerSize %u NumberOfChannels %u\n",
+        StreamFormat->SampleRate, StreamFormat->ValidBitsPerSample, StreamFormat->ContainerSize,
+        StreamFormat->NumberOfChannels);
 
 	if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
         ASSERT(FALSE);
@@ -397,26 +401,55 @@ HDA_SetDmaEngineState(
 		 KIRQL OldLevel = KeAcquireInterruptSpinLock(devData->FdoContext->Interrupt);
 
         DPRINT1("OldState: %u\n", stream->StreamState);
-		if (StreamState == RunState) {
-            hdac_stream_start(stream);
-			stream->running = TRUE;
-            stream->StreamState = RunState;
-		}
-		else if ((StreamState == PauseState || StreamState == StopState)) {
-			hdac_stream_stop(stream);
-			stream->running = FALSE;
-            stream->StreamState = PauseState;
-		}
-		else if (StreamState == ResetState) {
-            hdac_stream_setup(stream);
-            hdac_stream_reset(stream);
-            stream->StreamState = ResetState;
+        if (stream->StreamState < StreamState)
+        {
+            if (stream->StreamState == ResetState)
+            {
+                DPRINT1("Stopping stream...\n");
+                hdac_stream_reset(stream);
+                hdac_stream_setup(stream);
+
+                hdac_stream_stop(stream);
+                stream->running = FALSE;
+                stream->StreamState = PauseState;
+            }
+
+            if (stream->StreamState == PauseState && StreamState == RunState)
+            {
+                DPRINT1("Starting stream...\n");
+                hdac_stream_start(stream);
+                stream->running = TRUE;
+                stream->StreamState = RunState;
+            }
         }
         else
         {
-            ASSERT(FALSE);
+            if (StreamState == RunState)
+            {
+                DPRINT1("Starting stream...\n");
+                hdac_stream_start(stream);
+                stream->running = TRUE;
+                stream->StreamState = RunState;
+            }
+            else if ((StreamState == PauseState || StreamState == StopState))
+            {
+                DPRINT1("Stopping stream...\n");
+                hdac_stream_stop(stream);
+                stream->running = FALSE;
+                stream->StreamState = PauseState;
+            }
+            else if (StreamState == ResetState)
+            {
+                DPRINT1("Resetting stream...\n");
+                hdac_stream_reset(stream);
+                hdac_stream_setup(stream);
+                stream->StreamState = ResetState;
+            }
+            else
+            {
+                ASSERT(FALSE);
+            }
         }
-
 		KeReleaseInterruptSpinLock(devData->FdoContext->Interrupt, OldLevel);
 	}
 
@@ -605,7 +638,9 @@ HDA_AllocateDmaBufferWithNotification(
 	_Out_ PUCHAR StreamId,
 	_Out_ PULONG FifoSize
 ) {
-    DPRINT1("HDA_AllocateDmaBufferWithNotification %p\n", _context);
+    DPRINT1("HDA_AllocateDmaBufferWithNotification %p handle %p\n", _context, Handle);
+    DPRINT1("HDA_AllocateDmaBufferWithNotification NotificationCount %u RequestedBufferSize %u\n", NotificationCount,
+        RequestedBufferSize);
 
 	if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
         ASSERT(FALSE);
@@ -739,6 +774,7 @@ HDA_AllocateDmaBufferWithNotification(
     KeReleaseInterruptSpinLock(devData->FdoContext->Interrupt, OldLevel);
 
 	*FifoSize = stream->fifoSize;
+    DPRINT1("HDA_AllocateDmaBufferWithNotification SUCCESS");
 	return STATUS_SUCCESS;
 }
 

@@ -293,7 +293,7 @@ NTSTATUS RunSingleHDACmd(PFDO_CONTEXT fdoCtx, ULONG val, ULONG* res) {
 static void HDAProcessUnsolEvents(PFDO_CONTEXT fdoCtx) {
 	UINT rp = 0;
 
-    DPRINT1("HDAProcessUnsolEvents entered\n");
+    DPRINT1("HDAProcessUnsolEvents entered unsol_rp %u unsol_wp %u\n", fdoCtx->unsol_rp, fdoCtx->unsol_wp);
 
     while (fdoCtx->unsol_rp != fdoCtx->unsol_wp)
     {
@@ -325,7 +325,7 @@ static void HDAProcessUnsolEvents(PFDO_CONTEXT fdoCtx) {
 		UINT Tag = response.Unsolicited.Tag;
 		CODEC_UNSOLIT_CALLBACK callback = codec->unsolitCallbacks[Tag];
 		if (callback.inUse && callback.Routine) {
-            DPRINT("Performing callback\n");
+            DPRINT1("Performing callback\n");
 			callback.Routine(response, callback.Context);
 		}
         else
@@ -366,12 +366,12 @@ static void HDAFlushRIRB(PFDO_CONTEXT fdoCtx) {
 				rirb.response, rirb.response_ex);
 		}
 		else if (rirb.response_ex & HDA_RIRB_EX_UNSOL_EV) {
-			UINT unsol_wp = (fdoCtx->unsol_wp + 1) % HDA_UNSOL_QUEUE_SIZE;
-			fdoCtx->unsol_wp = unsol_wp;
-
-			fdoCtx->unsol_queue[unsol_wp] = rirb;
+            UINT old_unsol_wp = fdoCtx->unsol_wp;
+            RtlCopyMemory(&fdoCtx->unsol_queue[fdoCtx->unsol_wp], &rirb, sizeof(rirb));
+            UINT unsol_wp = (fdoCtx->unsol_wp + 1) % HDA_UNSOL_QUEUE_SIZE;
+            fdoCtx->unsol_wp = unsol_wp;
 			fdoCtx->processUnsol = TRUE;
-            DPRINT1("Unsolicited response\n");
+            DPRINT1("Unsolicited response old_unsol_wp %u unsol_wp %u\n", old_unsol_wp, unsol_wp);
 		}
 		else if (fdoCtx->rirb.cmds[addr]) {
 			PHDAC_CODEC_XFER codecXfer = &fdoCtx->rirb.xfer[addr];
