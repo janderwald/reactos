@@ -450,9 +450,9 @@ hda_interrupt(
         KeInsertQueueDpc(&fdoCtx->StreamDpc, DeviceObject, NULL);
 	}
 
-	status = hda_read16(fdoCtx, RIRBSTS);
+	status = hda_read8(fdoCtx, RIRBSTS);
 	if (status & RIRB_INT_MASK) {
-		hda_write16(fdoCtx, RIRBSTS, RIRB_INT_MASK);
+		hda_write8(fdoCtx, RIRBSTS, RIRB_INT_MASK);
 		if (status & RIRB_INT_RESPONSE) {
             KeInsertQueueDpc(&fdoCtx->QueueDpc, DeviceObject, NULL);
         }
@@ -520,6 +520,7 @@ hda_dpc_queue(
 
 	if (fdoCtx->processUnsol)
     {
-        KeInsertQueueDpc(&fdoCtx->UnsolicitedDpc, (PDEVICE_OBJECT)DeferredContext, NULL);
+        HDAProcessUnsolEvents(fdoCtx);
+        fdoCtx->processUnsol = FALSE;
     }
 }

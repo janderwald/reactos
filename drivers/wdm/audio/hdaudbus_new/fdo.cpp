@@ -602,6 +602,7 @@ Fdo_EvtDeviceD0Entry(
 
     status = StartHDAController(fdoCtx);
 
+    #if 0
     if (fdoCtx->venId == VEN_INTEL) {
         UINT32 val;
         pci_read_cfg_dword(&fdoCtx->BusInterface, INTEL_HDA_CGCTL, &val);
@@ -610,6 +611,7 @@ Fdo_EvtDeviceD0Entry(
 
         hda_update32(fdoCtx, VS_EM2, HDA_VS_EM2_DUM, HDA_VS_EM2_DUM);
     }
+    #endif
 
     if (!NT_SUCCESS(status)) {
         return status;
@@ -632,7 +634,6 @@ Fdo_EvtDeviceD0EntryPostInterrupts(
     status = STATUS_SUCCESS;
     fdoCtx = Fdo_GetContext(Device);
 
-#if ENABLE_HDA
     for (UINT8 addr = 0; addr < HDA_MAX_CODECS; addr++) {
 
         KeInitializeEvent(&fdoCtx->rirb.xferEvent[addr], NotificationEvent, FALSE);
@@ -650,7 +651,6 @@ Fdo_EvtDeviceD0EntryPostInterrupts(
             DPRINT1("RunSingleHDACmd Status %x addr %x cmdTmpl %x\n", status, addr, cmdTmpl);
         }
     }
-#endif
     DPRINT1("Fdo_EvtDeviceD0EntryPostInterrupts done %x\n", status);
     return status;
 }
