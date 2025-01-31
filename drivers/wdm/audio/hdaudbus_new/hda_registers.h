@@ -23,6 +23,7 @@
 #define HDA_REG_INTCTL			0x20
 #define HDA_REG_INTSTS			0x24
 #define HDA_REG_WALLCLK			0x30	/* 24Mhz source */
+#define HDA_REG_WALLCLKA		0x2030	/* 24Mhz source */
 #define HDA_REG_OLD_SSYNC		0x34	/* SSYNC for old ICH */
 #define HDA_REG_SSYNC			0x38
 #define HDA_REG_CORBLBASE		0x40
@@ -77,6 +78,7 @@ enum { SDI0, SDI1, SDI2, SDI3, SDO0, SDO1, SDO2, SDO3 };
 #define HDA_REG_SD_FIFOL		0x14
 #define HDA_REG_SD_BDLPL		0x18
 #define HDA_REG_SD_BDLPU		0x1c
+#define HDA_REG_SD_LPIBA		0x2004
 
 /* GTS registers */
 #define HDA_REG_LLCH			0x14
@@ -300,3 +302,20 @@ enum { SDI0, SDI1, SDI2, SDI3, SDO0, SDO1, SDO2, SDO3 };
 #define INTEL_SCH_HDA_DEVC_NOSNOOP       (0x1<<11)
 
 #define HDA_VS_EM2_DUM			(1 << 23)
+
+/* Defines for ATI HD Audio support in SB450 south bridge */
+#define ATI_SB450_HDAUDIO_MISC_CNTR2_ADDR   0x42
+#define ATI_SB450_HDAUDIO_ENABLE_SNOOP      0x02
+
+/* Defines for Nvidia HDA support */
+#define NVIDIA_HDA_TRANSREG_ADDR      0x4e
+#define NVIDIA_HDA_ENABLE_COHBITS     0x0f
+#define NVIDIA_HDA_ISTRM_COH          0x4d
+#define NVIDIA_HDA_OSTRM_COH          0x4c
+#define NVIDIA_HDA_ENABLE_COHBIT      0x01
+
+/* Defines for Intel SCH HDA snoop control */
+#define INTEL_HDA_CGCTL	 0x48
+#define INTEL_HDA_CGCTL_MISCBDCGE        (0x1 << 6)
+#define INTEL_SCH_HDA_DEVC      0x78
+#define INTEL_SCH_HDA_DEVC_NOSNOOP       (0x1<<11)

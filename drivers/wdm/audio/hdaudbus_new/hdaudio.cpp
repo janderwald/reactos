@@ -401,55 +401,28 @@ HDA_SetDmaEngineState(
 		 KIRQL OldLevel = KeAcquireInterruptSpinLock(devData->FdoContext->Interrupt);
 
         DPRINT1("OldState: %u\n", stream->StreamState);
-        if (stream->StreamState < StreamState)
-        {
-            if (stream->StreamState == ResetState)
+         if (StreamState == RunState && !stream->running)
+         {
+            hdac_stream_start(stream);
+            stream->running = TRUE;
+         }
+         else if ((StreamState == PauseState || StreamState == StopState) && stream->running)
+         {
+            hdac_stream_stop(stream);
+            stream->running = FALSE;
+         }
+         else if (StreamState == ResetState)
+         {
+            if (!stream->running)
             {
-                DPRINT1("Stopping stream...\n");
                 hdac_stream_reset(stream);
-                hdac_stream_setup(stream);
-
-                hdac_stream_stop(stream);
-                stream->running = FALSE;
-                stream->StreamState = PauseState;
-            }
-
-            if (stream->StreamState == PauseState && StreamState == RunState)
-            {
-                DPRINT1("Starting stream...\n");
-                hdac_stream_start(stream);
-                stream->running = TRUE;
-                stream->StreamState = RunState;
-            }
-        }
-        else
-        {
-            if (StreamState == RunState)
-            {
-                DPRINT1("Starting stream...\n");
-                hdac_stream_start(stream);
-                stream->running = TRUE;
-                stream->StreamState = RunState;
-            }
-            else if ((StreamState == PauseState || StreamState == StopState))
-            {
-                DPRINT1("Stopping stream...\n");
-                hdac_stream_stop(stream);
-                stream->running = FALSE;
-                stream->StreamState = PauseState;
-            }
-            else if (StreamState == ResetState)
-            {
-                DPRINT1("Resetting stream...\n");
-                hdac_stream_reset(stream);
-                hdac_stream_setup(stream);
-                stream->StreamState = ResetState;
             }
             else
             {
-                ASSERT(FALSE);
+                DPRINT1("NO OP");
+                //return STATUS_INVALID_PARAMETER;
             }
-        }
+         }
 		KeReleaseInterruptSpinLock(devData->FdoContext->Interrupt, OldLevel);
 	}
 
@@ -469,7 +442,8 @@ HDA_GetWallClockRegister(
 		*Wallclock = NULL;
 		return;
 	}
-	*Wallclock = (ULONG *)((devData->FdoContext)->m_BAR0.Base.baseptr + HDA_REG_WALLCLK);
+	//*Wallclock = (ULONG *)((devData->FdoContext)->m_BAR0.Base.baseptr + HDA_REG_WALLCLK);
+    *Wallclock = (ULONG *)((devData->FdoContext)->m_BAR0.Base.baseptr + HDA_REG_WALLCLKA);
 }
 
 NTSTATUS
@@ -491,7 +465,11 @@ HDA_GetLinkPositionRegister(
 		return STATUS_INVALID_HANDLE;
 	}
 
-	*Position = (ULONG *)stream->posbuf;
+    if (devData->CodecIds.CtlrVenId != VEN_INTEL) // Experimental Non-Intel support
+        *Position = (ULONG *)(stream->sdAddr + HDA_REG_SD_LPIBA);
+    else
+        *Position = (ULONG *)stream->posbuf; // Use Posbuf for all Intel
+    //*Position = (ULONG *)stream->posbuf;
 
 	return STATUS_SUCCESS;
 }
@@ -672,7 +650,7 @@ HDA_AllocateDmaBufferWithNotification(
 	PHYSICAL_ADDRESS zeroAddr;
 	zeroAddr.QuadPart = 0;
 	PHYSICAL_ADDRESS maxAddr;
-	maxAddr.QuadPart = MAXUINT64;
+    maxAddr.QuadPart = devData->FdoContext->is64BitOK ? MAXULONG64 : MAXULONG32;
 
 	UINT32 allocSize = (UINT32)RequestedBufferSize;
 	UINT32 allocOffset = 0;

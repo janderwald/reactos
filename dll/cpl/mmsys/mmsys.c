@@ -547,7 +547,7 @@ MMSYS_InstallDevice(HDEVINFO hDevInfo, PSP_DEVINFO_DATA pspDevInfoData)
                     /* Make sure the buffer is zero terminated */
                     Buffer[MAX_PATH-1] = L'\0';
 
-                    if (!wcsicmp(Buffer, szBuffer))
+                    if (!_wcsicmp(Buffer, szBuffer))
                     {
                         /* An entry already exists */
                         break;

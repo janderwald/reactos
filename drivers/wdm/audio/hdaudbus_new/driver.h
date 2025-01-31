@@ -52,6 +52,7 @@ typedef struct _CODEC_IDS {
 
 #define MAXUINT64 ((UINT64)~ ((UINT64)0)) // FIXME
 #define MAXULONG64 ((ULONG64)~ ((ULONG64)0)) // FIXME
+#define MAXULONG32 ((ULONG32) ~((ULONG32)0)) // FIXME
 
 
 VOID HDA_BusInterface(PVOID Context, PHDAUDIO_BUS_INTERFACE Interface);

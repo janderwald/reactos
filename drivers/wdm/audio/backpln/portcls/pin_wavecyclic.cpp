@@ -907,7 +907,7 @@ CPortPinWaveCyclic::DeviceIoControl(
 
         /* handle property with subdevice descriptor */
         Status = PcHandlePropertyWithTable(Irp,  m_Descriptor->FilterPropertySetCount, m_Descriptor->FilterPropertySet, m_Descriptor);
-        DPRINT1("Status %x\n", Status);
+        DPRINT("Status %x\n", Status);
     }
     else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_ENABLE_EVENT)
     {
