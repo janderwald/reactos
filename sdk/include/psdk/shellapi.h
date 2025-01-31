@@ -638,6 +638,12 @@ DoEnvironmentSubstW(
     _Inout_updates_(cchSrc) LPWSTR pszSrc,
     UINT cchSrc);
 
+HRESULT WINAPI
+SHSetUnreadMailCountW(
+    _In_ PCWSTR pszMailAddress,
+    _In_ DWORD dwCount,
+    _In_ PCWSTR pszShellExecuteCommand);
+
 #if (_WIN32_IE >= 0x0601)
 BOOL
 WINAPI
@@ -645,6 +651,22 @@ SHTestTokenMembership(
     _In_opt_ HANDLE hToken,
     _In_ ULONG ulRID);
 #endif
+
+HRESULT WINAPI
+SHEnumerateUnreadMailAccountsW(
+    _In_opt_ HKEY hKeyUser,
+    _In_ DWORD dwIndex,
+    _Out_writes_(cchMailAddress) PWSTR pszMailAddress,
+    _In_ INT cchMailAddress);
+
+HRESULT WINAPI
+SHGetUnreadMailCountW(
+    _In_opt_ HKEY hKeyUser,
+    _In_opt_ PCWSTR pszMailAddress,
+    _Out_opt_ PDWORD pdwCount,
+    _Inout_opt_ PFILETIME pFileTime,
+    _Out_writes_opt_(cchShellExecuteCommand) PWSTR pszShellExecuteCommand,
+    _In_ INT cchShellExecuteCommand);
 
 #ifdef UNICODE
 #define NOTIFYICONDATA_V1_SIZE NOTIFYICONDATAW_V1_SIZE

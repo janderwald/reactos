@@ -17,6 +17,9 @@
 /* Dialogs */
 #define IDD_STARTPAGE        2000
 #define IDC_STARTTITLE       2001
+#define IDC_WARNTEXT1        2002   // TEMPTEMP: TODO: Remove once we reach 0.5/Beta :)
+#define IDC_WARNTEXT2        2003   // TEMPTEMP: TODO: Remove once we reach 0.5/Beta :)
+#define IDC_WARNTEXT3        2004   // TEMPTEMP: TODO: Remove once we reach 0.5/Beta :)
 
 #define IDD_TYPEPAGE         2010
 #define IDC_INSTALL          2011
@@ -83,16 +86,18 @@
 #define IDS_CAPTION          5000
 #define IDS_TYPETITLE        5001
 #define IDS_TYPESUBTITLE     5002
-#define IDS_DEVICETITLE      5003
-#define IDS_DEVICESUBTITLE   5004
-#define IDS_DRIVETITLE       5005
-#define IDS_DRIVESUBTITLE    5006
-#define IDS_SUMMARYTITLE     5007
-#define IDS_SUMMARYSUBTITLE  5008
-#define IDS_PROCESSTITLE     5009
-#define IDS_PROCESSSUBTITLE  5010
-#define IDS_RESTARTTITLE     5011
-#define IDS_RESTARTSUBTITLE  5012
+#define IDS_UPDATETITLE      5003
+#define IDS_UPDATESUBTITLE   5004
+#define IDS_DEVICETITLE      5005
+#define IDS_DEVICESUBTITLE   5006
+#define IDS_DRIVETITLE       5007
+#define IDS_DRIVESUBTITLE    5008
+#define IDS_SUMMARYTITLE     5009
+#define IDS_SUMMARYSUBTITLE  5010
+#define IDS_PROCESSTITLE     5011
+#define IDS_PROCESSSUBTITLE  5012
+#define IDS_RESTARTTITLE     5013
+#define IDS_RESTARTSUBTITLE  5014
 #define IDS_ABORTSETUP       5020
 #define IDS_ABORTSETUP2      5021
 #define IDS_NO_TXTSETUP_SIF  5022

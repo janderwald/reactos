@@ -31,9 +31,15 @@ list(APPEND SOURCE
     SHCreateDataObject.cpp
     SHCreateFileDataObject.cpp
     SHCreateFileExtractIconW.cpp
+    SHGetComputerDisplayNameW.cpp
+    SHGetUnreadMailCountW.cpp
+    SHIsBadInterfacePtr.cpp
     SHParseDisplayName.cpp
     SHRestricted.cpp
+    SHShouldShowWizards.cpp
+    SHEnumerateUnreadMailAccountsW.cpp
     She.cpp
+    ShellExec_RunDLL.cpp
     ShellExecCmdLine.cpp
     ShellExecuteEx.cpp
     ShellExecuteW.cpp
@@ -41,7 +47,10 @@ list(APPEND SOURCE
     ShellInfo.cpp
     ShellState.cpp
     SHGetAttributesFromDataObject.cpp
+    SHGetUserDisplayName.cpp
     SHLimitInputEdit.cpp
+    SHSetUnreadMailCountW.cpp
+    StrRStr.cpp
     menu.cpp
     shelltest.cpp)
 

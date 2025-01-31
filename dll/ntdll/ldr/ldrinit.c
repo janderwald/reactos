@@ -517,6 +517,9 @@ LdrpInitializeThread(IN PCONTEXT Context)
             NtCurrentTeb()->RealClientId.UniqueProcess,
             NtCurrentTeb()->RealClientId.UniqueThread);
 
+    /* Acquire the loader Lock */
+    RtlEnterCriticalSection(&LdrpLoaderLock);
+
     /* Allocate an Activation Context Stack */
     DPRINT("ActivationContextStack %p\n", NtCurrentTeb()->ActivationContextStackPointer);
     Status = RtlAllocateActivationContextStack(&NtCurrentTeb()->ActivationContextStackPointer);
@@ -526,7 +529,7 @@ LdrpInitializeThread(IN PCONTEXT Context)
     }
 
     /* Make sure we are not shutting down */
-    if (LdrpShutdownInProgress) return;
+    if (LdrpShutdownInProgress) goto Exit;
 
     /* Allocate TLS */
     LdrpAllocateTls();
@@ -632,6 +635,11 @@ LdrpInitializeThread(IN PCONTEXT Context)
         /* Deactivate the ActCtx */
         RtlDeactivateActivationContextUnsafeFast(&ActCtx);
     }
+
+Exit:
+
+    /* Release the loader lock */
+    RtlLeaveCriticalSection(&LdrpLoaderLock);
 
     DPRINT("LdrpInitializeThread() done\n");
 }
@@ -1538,7 +1546,9 @@ VOID
 NTAPI
 LdrpValidateImageForMp(IN PLDR_DATA_TABLE_ENTRY LdrDataTableEntry)
 {
-    UNIMPLEMENTED;
+    DPRINT("LdrpValidateImageForMp is unimplemented\n");
+    // TODO:
+    // Scan the LockPrefixTable in the load config directory
 }
 
 BOOLEAN
@@ -2405,10 +2415,10 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     /* Check whether all static imports were properly loaded and return here */
     if (!NT_SUCCESS(ImportStatus)) return ImportStatus;
 
-#if (DLL_EXPORT_VERSION >= _WIN32_WINNT_VISTA)
+    /* Following two calls are for Vista+ support, required for winesync */
     /* Initialize the keyed event for condition variables */
     RtlpInitializeKeyedEvent();
-#endif
+    RtlpInitializeThreadPooling();
 
     /* Initialize TLS */
     Status = LdrpInitializeTls();

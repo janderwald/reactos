@@ -15,8 +15,18 @@ CAPTION "Instalación de ReactOS"
 FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Bienvenido al Asistente de Instalación de ReactOS", IDC_STARTTITLE, 115, 8, 195, 24
-    LTEXT "¡Aún no puede instalar ReactOS directamente desde el CD! Por favor, reinicie su equipo desde el CD para instalar ReactOS.", IDC_STATIC, 115, 40, 200, 100
-    LTEXT "Pulse Finalizar para salir del instalador.", IDC_STATIC, 115, 169, 195, 17
+    LTEXT "This wizard will install or upgrade ReactOS on your computer, \
+and prepare the second part of the setup.", IDC_STATIC, 115, 40, 195, 27
+////
+    GROUPBOX " IMPORTANT INFORMATION ", IDC_WARNTEXT1, 115, 70, 195, 90, BS_CENTER
+    LTEXT "ReactOS is in Alpha stage: it is not feature- complete and is \
+under heavy development. It is recommended to use it only for \
+evaluation and testing and not as your daily-usage OS.\n\
+It may corrupt your data or damage your hardware.", IDC_WARNTEXT2, 120, 80, 185, 50, SS_CENTER
+    LTEXT "Backup your data or test on a secondary computer \
+if you attempt to run ReactOS on real hardware.", IDC_WARNTEXT3, 120, 130, 185, 27, SS_CENTER
+////
+    LTEXT "Sakatu Aurrera instalazioa jarraitzeko.", IDC_STATIC, 115, 169, 195, 17
 END
 
 IDD_TYPEPAGE DIALOGEX 0, 0, 317, 143
@@ -24,11 +34,10 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYS
 CAPTION "Instalación de ReactOS"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    AUTORADIOBUTTON "Instalar ReactOS", IDC_INSTALL, 7, 7, 277, 10, WS_GROUP | WS_TABSTOP
-    LTEXT "Instala una nueva copia de ReactOS. Esta opción no protege sus archivos, programas y ajustes. Puede realizar cambios a su disco duro y particiones.", IDC_INSTALLTEXT, 18, 18, 269, 25, NOT WS_GROUP
-    AUTORADIOBUTTON "Actualizar o reparar una instalación existente de ReactOS", IDC_UPDATE, 7, 50, 277, 10
-    LTEXT "Actualiza o repara una instalación existente de ReactOS. Esta opción protege sus archivos, programas y ajustes. Esta opción sólo está disponible si ha instalado ReactOS previamente en este equipo.", IDC_UPDATETEXT, 18, 61, 269, 30, NOT WS_GROUP
-    LTEXT "Presione Siguiente para instalar los dispositivos.", IDC_STATIC, 7, 128, 297, 8
+    AUTORADIOBUTTON "&Instalar ReactOS", IDC_INSTALL, 7, 20, 277, 10, WS_GROUP | WS_TABSTOP
+    LTEXT "Instala una nueva copia de ReactOS. Esta opción no protege sus archivos, programas y ajustes. Puede realizar cambios a su disco duro y particiones.", IDC_INSTALLTEXT, 19, 36, 279, 27, NOT WS_GROUP
+    AUTORADIOBUTTON "&Actualizar o reparar ReactOS", IDC_UPDATE, 7, 80, 277, 10
+    LTEXT "Actualiza o repara una instalación existente de ReactOS. Esta opción protege sus archivos, programas y ajustes. Esta opción sólo está disponible si ha instalado ReactOS previamente en este equipo.", IDC_UPDATETEXT, 19, 96, 279, 27, NOT WS_GROUP
 END
 
 IDD_UPDATEREPAIRPAGE DIALOGEX 0, 0, 317, 143
@@ -168,8 +177,10 @@ END
 STRINGTABLE
 BEGIN
     IDS_CAPTION "Instalación de ReactOS"
-    IDS_TYPETITLE "Bienvenido a la instalación de ReactOS"
-    IDS_TYPESUBTITLE "Seleccione el tipo de instalación."
+    IDS_TYPETITLE "Installation Type"
+    IDS_TYPESUBTITLE "You can setup a new ReactOS installation, or update/repair an existing installation."
+    IDS_UPDATETITLE "Update or Repair ReactOS"
+    IDS_UPDATESUBTITLE "Choose which existing ReactOS installation you want to update or repair."
     IDS_DEVICETITLE "Instalación de los dispositivos básicos"
     IDS_DEVICESUBTITLE "Seleccione los ajustes de la pantalla y el teclado."
     IDS_DRIVETITLE "Crear la partición para la instalación y la carpeta del sistema"

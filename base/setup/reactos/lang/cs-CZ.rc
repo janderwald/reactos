@@ -14,8 +14,18 @@ CAPTION "Instalace systému ReactOS"
 FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT "Vítejte v průvodci instalace systému ReactOS", IDC_STARTTITLE, 115, 8, 195, 24
-    LTEXT "Systém ReactOS zatím nelze nainstalovat přímo z tohoto CD! Pro instalaci restartuje počítač z tohoto CD.", IDC_STATIC, 115, 40, 195, 100
-    LTEXT "Klepnutím na Dokončit ukončíte instalaci.", IDC_STATIC, 115, 169, 195, 17
+    LTEXT "This wizard will install or upgrade ReactOS on your computer, \
+and prepare the second part of the setup.", IDC_STATIC, 115, 40, 195, 27
+////
+    GROUPBOX " IMPORTANT INFORMATION ", IDC_WARNTEXT1, 115, 70, 195, 90, BS_CENTER
+    LTEXT "ReactOS is in Alpha stage: it is not feature- complete and is \
+under heavy development. It is recommended to use it only for \
+evaluation and testing and not as your daily-usage OS.\n\
+It may corrupt your data or damage your hardware.", IDC_WARNTEXT2, 120, 80, 185, 50, SS_CENTER
+    LTEXT "Backup your data or test on a secondary computer \
+if you attempt to run ReactOS on real hardware.", IDC_WARNTEXT3, 120, 130, 185, 27, SS_CENTER
+////
+    LTEXT "Kliknutím na Další pokračujte v instalaci.", IDC_STATIC, 115, 169, 195, 17
 END
 
 IDD_TYPEPAGE DIALOGEX 0, 0, 317, 143
@@ -23,11 +33,10 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYS
 CAPTION "Instalace systému ReactOS"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    AUTORADIOBUTTON "Nainstalovat systém ReactOS", IDC_INSTALL, 7, 7, 277, 10, WS_GROUP | WS_TABSTOP
-    LTEXT "Instalovat novou kopii systému ReactOS. Tato možnost odstraní Vaše soubory, nastavení a programy. Můžete provést úpravu disků a oddílů.", IDC_INSTALLTEXT, 18, 18, 269, 25, NOT WS_GROUP
-    AUTORADIOBUTTON "Opravit nebo aktualizovat již nainstalovaný systém ReactOS", IDC_UPDATE, 7, 50, 277, 10
-    LTEXT "Aktualizovat nebo opravit kopii systémy ReactOS. Tato možnost zachová Vaše soubory, nastavení a programy. Tato možnost je dostupná pouze pokud je již na Vašem počítači systém ReactOS nainstalován.", IDC_UPDATETEXT, 18, 61, 269, 30, NOT WS_GROUP
-    LTEXT "Po klepnutí na Další bude možné nastavit zařízení.", IDC_STATIC, 7, 128, 297, 8
+    AUTORADIOBUTTON "&Nainstalovat systém ReactOS", IDC_INSTALL, 7, 20, 277, 10, WS_GROUP | WS_TABSTOP
+    LTEXT "Instalovat novou kopii systému ReactOS. Tato možnost odstraní Vaše soubory, nastavení a programy. Můžete provést úpravu disků a oddílů.", IDC_INSTALLTEXT, 19, 36, 279, 27, NOT WS_GROUP
+    AUTORADIOBUTTON "&Opravit nebo aktualizovat ReactOS", IDC_UPDATE, 7, 80, 277, 10
+    LTEXT "Aktualizovat nebo opravit kopii systémy ReactOS. Tato možnost zachová Vaše soubory, nastavení a programy. Tato možnost je dostupná pouze pokud je již na Vašem počítači systém ReactOS nainstalován.", IDC_UPDATETEXT, 19, 96, 279, 27, NOT WS_GROUP
 END
 
 IDD_UPDATEREPAIRPAGE DIALOGEX 0, 0, 317, 143
@@ -167,8 +176,10 @@ END
 STRINGTABLE
 BEGIN
     IDS_CAPTION "Instalace systému ReactOS"
-    IDS_TYPETITLE "Vítejte v průvodci instalace systému ReactOS"
-    IDS_TYPESUBTITLE "Volba typu instalace."
+    IDS_TYPETITLE "Installation Type"
+    IDS_TYPESUBTITLE "You can setup a new ReactOS installation, or update/repair an existing installation."
+    IDS_UPDATETITLE "Update or Repair ReactOS"
+    IDS_UPDATESUBTITLE "Choose which existing ReactOS installation you want to update or repair."
     IDS_DEVICETITLE "Nastavení základních zařízení"
     IDS_DEVICESUBTITLE "Volba nastavení obrazovky a klávesnice."
     IDS_DRIVETITLE "Nastavení instalačního oddílu a systémové složky"

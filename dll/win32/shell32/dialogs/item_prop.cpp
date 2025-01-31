@@ -47,6 +47,7 @@ struct ShellPropSheetDialog
         CLSID ClsidDefault;
         const CLSID *pClsidDefault;
         IStream *pObjStream;
+        HANDLE hEvent;
     };
 
     static void FreeData(DATA *pData)
@@ -74,6 +75,7 @@ struct ShellPropSheetDialog
             pData->ClsidDefault = *pClsidDefault;
             pData->pClsidDefault = &pData->ClsidDefault;
         }
+        HANDLE hEvent = pData->hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 
         HRESULT hr = S_OK;
         if (pDO)
@@ -86,17 +88,35 @@ struct ShellPropSheetDialog
                 pData->pObjStream->Release();
             hr = E_FAIL;
         }
-        if (FAILED(hr))
+
+        if (SUCCEEDED(hr))
+        {
+            if (hEvent)
+            {
+                DWORD index;
+                // Pump COM messages until the thread can create its own IDataObject (for CORE-19933).
+                // SHOpenPropSheetW is modal and we cannot wait for it to complete.
+                CoWaitForMultipleHandles(COWAIT_DEFAULT, INFINITE, 1, &hEvent, &index);
+                CloseHandle(hEvent);
+            }
+        }
+        else
+        {
             FreeData(pData);
+        }
         return hr;
     }
 
     static DWORD CALLBACK ShowPropertiesThread(LPVOID Param)
     {
         DATA *pData = (DATA*)Param;
-        CComPtr<IDataObject> pDO;
+        CComPtr<IDataObject> pDO, pLocalDO;
         if (pData->pObjStream)
             CoGetInterfaceAndReleaseStream(pData->pObjStream, IID_PPV_ARG(IDataObject, &pDO));
+        if (pDO && SUCCEEDED(SHELL_CloneDataObject(pDO, &pLocalDO)))
+            pDO = pLocalDO;
+        if (pData->hEvent)
+            SetEvent(pData->hEvent);
         Show(pData->pClsidDefault, pDO, pData->InitFunc, pData->InitString);
         FreeData(pData);
         return 0;

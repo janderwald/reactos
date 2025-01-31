@@ -42,8 +42,8 @@
 #include <shlguid_undoc.h>
 #include <shlobj_undoc.h>
 
-#define SHLWAPI_ISHELLFOLDER_HELPERS
 #include <shlwapi_undoc.h>
+#include <ishellfolder_helpers.h>
 
 #include <shellapi.h>
 #undef ShellExecute
@@ -297,6 +297,7 @@ HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
 
 PIDLIST_ABSOLUTE SHELL_CIDA_ILCloneFull(_In_ const CIDA *pCIDA, _In_ UINT Index);
 PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UINT Index);
+HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO);
 
 EXTERN_C HRESULT
 IUnknown_InitializeCommand(

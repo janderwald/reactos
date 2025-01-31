@@ -304,6 +304,7 @@ CMainWindow::CheckAvailable()
 {
     if (m_Db->GetAvailableCount() == 0)
     {
+        CUpdateDatabaseMutex lock;
         m_Db->RemoveCached();
         m_Db->UpdateAvailable();
     }
@@ -591,9 +592,12 @@ CMainWindow::OnCommand(WPARAM wParam, LPARAM lParam)
                 break;
 
             case ID_RESETDB:
+            {
+                CUpdateDatabaseMutex lock;
                 m_Db->RemoveCached();
                 UpdateApplicationsList(SelectedEnumType, bReload);
                 break;
+            }
 
             case ID_HELP:
                 MessageBoxW(L"Help not implemented yet", NULL, MB_OK);
@@ -812,7 +816,7 @@ CMainWindow::InstallApplication(CAppInfo *Info)
     {
         if (DownloadApplication(Info))
         {
-            UpdateApplicationsList(SelectedEnumType);
+            //FIXME: Delay UpdateApplicationsList(SelectedEnumType); until install completes
             return TRUE;
         }
     }
