@@ -579,7 +579,7 @@ HDA_GetDeviceInformation(
 		DeviceInformation->CodecsDetected = devData->FdoContext->numCodecs;
 		DeviceInformation->DeviceVersion = devData->FdoContext->hwVersion;
 		DeviceInformation->DriverVersion = 0x100;
-		DeviceInformation->IsStripingSupported = TRUE;
+		DeviceInformation->IsStripingSupported = FALSE;
 	}
 	if (DeviceInformation->Size >= sizeof(HDAUDIO_DEVICE_INFORMATION_V2)) {
 		PHDAUDIO_DEVICE_INFORMATION_V2 DeviceInformationV2 = (PHDAUDIO_DEVICE_INFORMATION_V2)DeviceInformation;
