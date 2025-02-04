@@ -79,8 +79,8 @@ CPortFilterTopology::DeviceIoControl(
 
     if (IoStack->Parameters.DeviceIoControl.IoControlCode != IOCTL_KS_PROPERTY)
     {
-        DPRINT("Unhandled function %lx Length %x\n", IoStack->Parameters.DeviceIoControl.IoControlCode, IoStack->Parameters.DeviceIoControl.InputBufferLength);
-
+        DPRINT1("Unhandled function %lx Length %x\n", IoStack->Parameters.DeviceIoControl.IoControlCode, IoStack->Parameters.DeviceIoControl.InputBufferLength);
+        ASSERT(FALSE);
         Irp->IoStatus.Status = STATUS_SUCCESS;
 
         IoCompleteRequest(Irp, IO_NO_INCREMENT);

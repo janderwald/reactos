@@ -582,14 +582,14 @@ Fdo_EvtDeviceD0Entry(
         "%s\n", __func__);
 
     status = STATUS_SUCCESS;
-
+ #if 0
     if (fdoCtx->venId == VEN_INTEL) {
         UINT32 val;
         pci_read_cfg_dword(&fdoCtx->BusInterface, INTEL_HDA_CGCTL, &val);
         val = val & ~INTEL_HDA_CGCTL_MISCBDCGE;
         pci_write_cfg_dword(&fdoCtx->BusInterface, INTEL_HDA_CGCTL, val);
     }
-
+ #endif
     //Reset unsolicited queue
     RtlZeroMemory(&fdoCtx->unsol_queue, sizeof(fdoCtx->unsol_queue));
     fdoCtx->unsol_rp = 0;

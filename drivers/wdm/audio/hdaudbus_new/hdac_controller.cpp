@@ -18,7 +18,10 @@ NTSTATUS ResetHDAController(PFDO_CONTEXT fdoCtx, BOOLEAN wakeup) {
 
 	//Reset DMA position buffer
 	hda_write32(fdoCtx, DPLBASE, 0);
-	hda_write32(fdoCtx, DPUBASE, 0);
+    if (fdoCtx->is64BitOK)
+    {
+        hda_write32(fdoCtx, DPUBASE, 0);
+    }
 
 	//Reset the controller for at least 100 us
 	gctl = hda_read32(fdoCtx, GCTL);
@@ -182,8 +185,11 @@ NTSTATUS StartHDAController(PFDO_CONTEXT fdoCtx) {
 
 	//Program position buffer
 	PHYSICAL_ADDRESS posbufAddr = MmGetPhysicalAddress(fdoCtx->posbuf);
-	hda_write32(fdoCtx, DPLBASE, posbufAddr.LowPart);
-	hda_write32(fdoCtx, DPUBASE, posbufAddr.HighPart);
+    hda_write32(fdoCtx, DPLBASE, posbufAddr.LowPart | HDA_DPLBASE_ENABLE);
+    if (fdoCtx->is64BitOK)
+    {
+        hda_write32(fdoCtx, DPUBASE, posbufAddr.HighPart);
+    }
 
 	udelay(1000);
 
@@ -407,9 +413,10 @@ hda_stream_interrupt(PFDO_CONTEXT fdoCtx, unsigned int status) {
 			sd_status = stream_read8(stream, SD_STS);
 			stream_write8(stream, SD_STS, SD_INT_MASK);
 			handled |= 1 << stream->idx;
-
 			if (sd_status & SD_INT_COMPLETE)
-				stream->irqReceived = TRUE;
+            {
+                stream->irqReceived = TRUE;
+            }
 		}
 	}
 	return handled;

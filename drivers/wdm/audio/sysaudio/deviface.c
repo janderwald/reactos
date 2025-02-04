@@ -160,7 +160,7 @@ DeviceInterfaceChangeCallback(
     }
     else
     {
-        DPRINT("Remove interface to audio device!\n");
+        DPRINT1("Remove interface to audio device! %wZ\n", Event->SymbolicLinkName);
         UNIMPLEMENTED;
         return STATUS_SUCCESS;
     }

@@ -3,8 +3,16 @@
 void hdac_stream_start(PHDAC_STREAM stream) {
     hda_read32(stream->FdoContext, WALLCLK);
 
+    DPRINT1("hdac_stream_start entered\n");
+
+    ULONG IntCtlReg = hda_read32(stream->FdoContext, INTCTL);
+    DPRINT1("IntCtlReg %x\n", IntCtlReg);
+
 	/* enable SIE */
 	hda_update32(stream->FdoContext, INTCTL, 0, 1 << stream->idx);
+
+    IntCtlReg = hda_read32(stream->FdoContext, INTCTL);
+    DPRINT1("IntCtlReg %x Stripe %x\n", IntCtlReg, stream->stripe);
 
 	/* set stripe control */
 	if (stream->stripe) {
@@ -12,8 +20,6 @@ void hdac_stream_start(PHDAC_STREAM stream) {
 		stream_update8(stream, SD_CTL_3B, SD_CTL_STRIPE_MASK,
 			stripe_ctl);
 	}
-
-    hda_write32(stream->FdoContext, SSYNC, 0x1);
 
 	/* set DMA start and interrupt mask */
 	stream_update8(stream, SD_CTL, 0, SD_CTL_DMA_START | SD_INT_MASK);
@@ -36,7 +42,9 @@ void hdac_stream_start(PHDAC_STREAM stream) {
 }
 
 void hdac_stream_clear(PHDAC_STREAM stream) {
-	stream_update8(stream, SD_CTL, SD_CTL_DMA_START | SD_INT_MASK, 0);
+    DPRINT1("hdac_stream_clear entered\n");
+
+    stream_update8(stream, SD_CTL, SD_CTL_DMA_START | SD_INT_MASK, 0);
 	stream_write8(stream, SD_STS, SD_INT_MASK); /* to be sure */
 	if (stream->stripe)
 		stream_update8(stream, SD_CTL_3B, SD_CTL_STRIPE_MASK, 0);
@@ -45,14 +53,18 @@ void hdac_stream_clear(PHDAC_STREAM stream) {
 }
 
 void hdac_stream_stop(PHDAC_STREAM stream) {
-	hdac_stream_clear(stream);
+    DPRINT1("hdac_stream_stop entered\n");
+
+    hdac_stream_clear(stream);
 
 	/* disable SIE */
 	hda_update32(stream->FdoContext, INTCTL, 1 << stream->idx, 0);
 }
 
 void hdac_stream_reset(PHDAC_STREAM stream) {
-	hdac_stream_clear(stream);
+    DPRINT1("hdac_stream_reset entered\n");
+
+    hdac_stream_clear(stream);
 
 	UINT8 dma_run_state;
 	dma_run_state = stream_read8(stream, SD_CTL) & SD_CTL_DMA_START;
@@ -80,8 +92,8 @@ void hdac_stream_reset(PHDAC_STREAM stream) {
 			break;
 	} while (--timeout);
 
-	if (stream->posbuf)
-		*stream->posbuf = 0;
+	//if (stream->posbuf)
+	//	*stream->posbuf = 0;
 }
 
 UINT16 hdac_format(PHDAC_STREAM stream) {
@@ -157,7 +169,9 @@ UINT16 hdac_format(PHDAC_STREAM stream) {
 }
 
 void hdac_stream_setup(PHDAC_STREAM stream) {
-	/* make sure the run bit is zero for SD */
+    DPRINT1("hdac_stream_setup entered\n");
+
+    /* make sure the run bit is zero for SD */
 	hdac_stream_clear(stream);
 
 	UINT val;
@@ -183,13 +197,19 @@ void hdac_stream_setup(PHDAC_STREAM stream) {
 	PHYSICAL_ADDRESS bdlAddr = MmGetPhysicalAddress(stream->bdl);
 	stream_write32(stream, SD_BDLPL, bdlAddr.LowPart);
 	/* upper BDL address */
-	stream_write32(stream, SD_BDLPU, bdlAddr.HighPart);
+    if (stream->FdoContext->is64BitOK)
+    {
+        stream_write32(stream, SD_BDLPU, bdlAddr.HighPart);
+    }
 
 	//Enable position buffer
 	if (!(hda_read32(stream->FdoContext, DPLBASE) & HDA_DPLBASE_ENABLE)){
 		PHYSICAL_ADDRESS posbufAddr = MmGetPhysicalAddress(stream->FdoContext->posbuf);
 		hda_write32(stream->FdoContext, DPLBASE, posbufAddr.LowPart | HDA_DPLBASE_ENABLE);
-        hda_write32(stream->FdoContext, DPUBASE, posbufAddr.HighPart);
+        if (stream->FdoContext->is64BitOK)
+        {
+            hda_write32(stream->FdoContext, DPUBASE, posbufAddr.HighPart);
+        }
 	}
 
 	/* set the interrupt enable bits in the descriptor control register */

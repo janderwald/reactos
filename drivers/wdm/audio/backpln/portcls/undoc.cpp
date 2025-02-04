@@ -144,6 +144,7 @@ PropertyItemDispatch(
     ULONG InstanceSize, ValueSize, Index;
     PVOID Instance;
     NTSTATUS Status;
+    PKSNODEPROPERTY_AUDIO_CHANNEL AudioChannel = NULL;
 
     // allocate a property request
     PropertyRequest = (PPCPROPERTY_REQUEST)AllocateItem(NonPagedPool, sizeof(PCPROPERTY_REQUEST), TAG_PORTCLASS);
@@ -187,8 +188,9 @@ PropertyItemDispatch(
         // filter / pin property request dont use node field
         PropertyRequest->Node = MAXULONG;
     }
-    else if (InstanceSize >= sizeof(KSNODEPROPERTY))
+    else
     {
+        ASSERT(InstanceSize >= sizeof(KSNODEPROPERTY));
         // request is for a node
         InstanceSize -= sizeof(KSNODEPROPERTY);
         Instance = (PVOID)((ULONG_PTR)Instance + sizeof(KSNODEPROPERTY));
@@ -196,16 +198,12 @@ PropertyItemDispatch(
         // cast node property request
         NodeProperty = (PKSNODEPROPERTY)Request;
 
+        AudioChannel = (PKSNODEPROPERTY_AUDIO_CHANNEL)Request;
+
         // store node id
         PropertyRequest->Node = NodeProperty->NodeId;
     }
-    else
-    {
-        // invalid buffer size
-        FreeItem(PropertyRequest, TAG_PORTCLASS);
-        return STATUS_INVALID_BUFFER_SIZE;
-    }
-
+    
     // store instance size
     PropertyRequest->InstanceSize = InstanceSize;
     PropertyRequest->Instance = (InstanceSize != 0 ? Instance : NULL);
@@ -292,6 +290,7 @@ PropertyItemDispatch(
         {
             /* Fail the IRP */
             Status = _SEH2_GetExceptionCode();
+            ASSERT(FALSE);
         }
         _SEH2_END;
 
@@ -460,13 +459,6 @@ PcAddToPropertyTable(
             FilterPropertyItem->SetPropertyHandler = PropertyItemDispatch;
         }
 
-        // are set operation supported
-        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_GET)
-        {
-            // setup handler
-            FilterPropertyItem->GetPropertyHandler = PropertyItemDispatch;
-        }
-
         // are get operations supported
         if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_GET)
         {
@@ -503,13 +495,6 @@ PcAddToPropertyTable(
         {
             // setup handler
             FilterPropertyItem->SetPropertyHandler = PropertyItemDispatch;
-        }
-
-        // are set operation supported
-        if (PropertyItem->Flags & PCPROPERTY_ITEM_FLAG_GET)
-        {
-            // setup handler
-            FilterPropertyItem->GetPropertyHandler = PropertyItemDispatch;
         }
 
         // are get operations supported
@@ -803,7 +788,7 @@ PcCreateSubdeviceDescriptor(
 
     Descriptor->InterfaceCount = InterfaceCount + FilterDescription->CategoryCount;
 
-    //DumpFilterDescriptor(FilterDescription);
+    DumpFilterDescriptor(FilterDescription);
 
     // are any property sets supported by the portcls
     if (FilterPropertiesCount)

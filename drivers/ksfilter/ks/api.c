@@ -763,7 +763,7 @@ KspAddObjectCreateItemToList(
         /* get create entry */
         CreateEntry = (PCREATE_ITEM_ENTRY)CONTAINING_RECORD(Entry, CREATE_ITEM_ENTRY, Entry);
         /* if the create item has no create routine, then it is free to use */
-        if (CreateEntry->CreateItem->Create == NULL)
+        if (CreateEntry->CreateItem->Create == NULL && CreateEntry->ReferenceCount == 0)
         {
             /* sanity check */
             ASSERT(IsListEmpty(&CreateEntry->ObjectItemList));
@@ -776,16 +776,18 @@ KspAddObjectCreateItemToList(
 
             return STATUS_SUCCESS;
         }
-
-        if (!_wcsicmp(ObjectClass, CreateEntry->CreateItem->ObjectClass.Buffer))
+        if (CreateEntry->CreateItem->ObjectClass.Buffer)
         {
-            /* the same object class already exists */
-            return STATUS_OBJECT_NAME_COLLISION;
+            if (!_wcsicmp(ObjectClass, CreateEntry->CreateItem->ObjectClass.Buffer))
+            {
+                /* the same object class already exists */
+                return STATUS_OBJECT_NAME_COLLISION;
+            }
         }
-
         /* iterate to next entry */
         Entry = Entry->Flink;
     }
+    ASSERT(FALSE);
     return STATUS_ALLOTTED_SPACE_EXCEEDED;
 }
 

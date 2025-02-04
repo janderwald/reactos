@@ -403,25 +403,32 @@ HDA_SetDmaEngineState(
         DPRINT1("OldState: %u\n", stream->StreamState);
          if (StreamState == RunState && !stream->running)
          {
+            hdac_stream_setup(stream);
+            DPRINT1("starting stream\n");
             hdac_stream_start(stream);
             stream->running = TRUE;
+            stream->StreamState = RunState;
          }
          else if ((StreamState == PauseState || StreamState == StopState) && stream->running)
          {
+            DPRINT1("stopping stream\n");
             hdac_stream_stop(stream);
             stream->running = FALSE;
+            stream->StreamState = PauseState;
          }
          else if (StreamState == ResetState)
          {
             if (!stream->running)
             {
                 hdac_stream_reset(stream);
+                hdac_stream_setup(stream);
             }
             else
             {
-                DPRINT1("NO OP");
+                DPRINT1("NO OP\n");
                 //return STATUS_INVALID_PARAMETER;
             }
+            stream->StreamState = ResetState;
          }
 		KeReleaseInterruptSpinLock(devData->FdoContext->Interrupt, OldLevel);
 	}
@@ -740,6 +747,7 @@ HDA_AllocateDmaBufferWithNotification(
 			size -= chunk;
 			//Program interrupt for when buffer ends
 			bdl->ioc = (size > 0) ? 0 : 1;
+            DPRINT1("bdl %x ioc %u\n", bdl, bdl->ioc);
 			bdl++;
 			numBlocks++;
 			offset += chunk;
@@ -801,7 +809,10 @@ HDA_FreeDmaBufferWithNotification(
     KIRQL OldLevel = KeAcquireInterruptSpinLock(devData->FdoContext->Interrupt);
 
 	stream_write32(stream, SD_BDLPL, 0);
-	stream_write32(stream, SD_BDLPU, 0);
+    if (stream->FdoContext->is64BitOK)
+    {
+        stream_write32(stream, SD_BDLPU, 0);
+    }
 	stream_write32(stream, SD_CTL, 0);
 
 	PMDL mdl = stream->mdlBuf;

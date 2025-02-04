@@ -31,7 +31,8 @@ typedef struct _HDAC_BDLENTRY {
     UINT32 lowAddr;
     UINT32 highAddr;
     UINT32 len;
-    UINT32 ioc;
+    UINT32 ioc:1;
+    UINT32 reserved : 31;
 } HDAC_BDLENTRY, *PHDAC_BDLENTRY;
 
 typedef struct _HDAC_STREAM {

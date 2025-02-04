@@ -155,7 +155,8 @@ CPortWaveRT::QueryInterface(
 
     if (RtlStringFromGUID(refiid, &GuidString) == STATUS_SUCCESS)
     {
-        DPRINT("IPortWaveRT_fnQueryInterface no interface!!! iface %S\n", GuidString.Buffer);
+        DPRINT1("IPortWaveRT_fnQueryInterface no interface!!! iface %S\n", GuidString.Buffer);
+        ASSERT(FALSE);
         RtlFreeUnicodeString(&GuidString);
     }
 

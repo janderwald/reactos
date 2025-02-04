@@ -54,6 +54,10 @@ protected:
     MEMORY_CACHING_TYPE m_CacheType;
     PMDL m_Mdl;
 
+    PSUBDEVICE_DESCRIPTOR m_Descriptor;
+    KSPIN_LOCK m_EventListLock;
+    LIST_ENTRY m_EventList;
+
     KSRESET m_ResetState;
 
     NTSTATUS NTAPI HandleKsProperty(IN PIRP Irp);
@@ -79,6 +83,8 @@ CPortPinWaveRT::QueryInterface(
     IN  REFIID refiid,
     OUT PVOID* Output)
 {
+    UNICODE_STRING GuidString;
+
     DPRINT("IServiceSink_fnQueryInterface entered\n");
 
     if (IsEqualGUIDAligned(refiid, IID_IIrpTarget) ||
@@ -87,6 +93,12 @@ CPortPinWaveRT::QueryInterface(
         *Output = PVOID(PUNKNOWN((IIrpTarget*)this));
         PUNKNOWN(*Output)->AddRef();
         return STATUS_SUCCESS;
+    }
+    if (RtlStringFromGUID(refiid, &GuidString) == STATUS_SUCCESS)
+    {
+        DPRINT1("IPinWaveRT_fnQueryInterface no interface!!! iface %S\n", GuidString.Buffer);
+        ASSERT(FALSE);
+        RtlFreeUnicodeString(&GuidString);
     }
     return STATUS_UNSUCCESSFUL;
 }
@@ -115,7 +127,7 @@ CPortPinWaveRT::HandleKsProperty(
 {
     PKSPROPERTY Property;
     NTSTATUS Status;
-    UNICODE_STRING GuidString;
+    //UNICODE_STRING GuidString;
     PIO_STACK_LOCATION IoStack;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -155,7 +167,7 @@ CPortPinWaveRT::HandleKsProperty(
                 {
                     Status = m_Stream->SetState(*State);
 
-                    DPRINT("Setting state %u %x\n", *State, Status);
+                    DPRINT1("Setting state %u %x\n", *State, Status);
                     if (NT_SUCCESS(Status))
                     {
                         if (*State == KSSTATE_RUN && m_State == KSSTATE_PAUSE )
@@ -267,14 +279,21 @@ CPortPinWaveRT::HandleKsProperty(
         }
 
     }
-    RtlStringFromGUID(Property->Set, &GuidString);
-    DPRINT("Unhandled property Set |%S| Id %u Flags %x\n", GuidString.Buffer, Property->Id, Property->Flags);
-    RtlFreeUnicodeString(&GuidString);
+    /* handle property with subdevice descriptor */
+    Status = PcHandlePropertyWithTable(
+        Irp, m_Descriptor->FilterPropertySetCount, m_Descriptor->FilterPropertySet,
+        m_Descriptor);
+    DPRINT("Status %x\n", Status);
+    return Status;
 
-    Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
-    Irp->IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-    return STATUS_NOT_IMPLEMENTED;
+    //RtlStringFromGUID(Property->Set, &GuidString);
+    //DPRINT("Unhanded property Set |%S| Id %u Flags %x\n", GuidString.Buffer, Property->Id, Property->Flags);
+    //RtlFreeUnicodeString(&GuidString);
+
+    //Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
+    //Irp->IoStatus.Information = 0;
+    //IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    //return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS
@@ -297,9 +316,11 @@ CPortPinWaveRT::HandleKsStream(
         /* check for success */
         if (NT_SUCCESS(Status))
         {
+            //DPRINT("New Packet Total %u State %x MinData %u PacketSize %u\n", m_TotalPackets, m_State, m_IrpQueue->NumData(), Data);
             m_Position.WriteOffset += Data;
             Status = STATUS_PENDING;
         }
+        //KeSetEvent(&m_NotificationEvent, 0, FALSE);
     }
     else
     {
@@ -410,21 +431,23 @@ WorkerStreamRoutine(
     WaitObjects[0] = (PVOID)&This->m_StopEvent;
     WaitObjects[1] = (PVOID)&This->m_NotificationEvent;
 
-    DPRINT("WorkerStreamRoutine entered Irql %u\n", KeGetCurrentIrql());
+    DPRINT1("WorkerStreamRoutine entered Irql %u\n", KeGetCurrentIrql());
     while (TRUE)
     {
         Status = KeWaitForMultipleObjects(2, WaitObjects, WaitAny, Executive, KernelMode, FALSE, NULL, NULL);
         if (Status == STATUS_WAIT_0)
         {
-            DPRINT("WorkerStreamRoutine StopEvent\n");
+            DPRINT1("WorkerStreamRoutine StopEvent\n");
             break;
         }
 
         TotalBytesAvailable = This->m_CommonBufferSize;
         TotalBytesWritten = 0;
+
         while (NT_SUCCESS(This->m_IrpQueue->GetMapping(&Buffer, &Length)))
         {
             BytesWritten = min(TotalBytesAvailable, Length);
+            //DPRINT("Copying bytes Offset %u BytesWritten %u Length %u\n", TotalBytesWritten, BytesWritten, Length);
             RtlCopyMemory(&This->m_CommonBuffer[TotalBytesWritten], Buffer, BytesWritten);
             TotalBytesAvailable -= BytesWritten;
             TotalBytesWritten += BytesWritten;
@@ -737,12 +760,46 @@ CPortPinWaveRT::Init(
         KeBugCheck(0);
         while(TRUE);
     }
-
     Status = m_Miniport->NewStream(&m_Stream, m_PortStream, ConnectDetails->PinId, Capture, m_Format);
     DPRINT("CPortPinWaveRT::Init Status %x\n", Status);
+    if (!NT_SUCCESS(Status))
+        goto cleanup;
+
+    ISubdevice *Subdevice = NULL;
+    // get subdevice interface
+    Status = Port->QueryInterface(IID_ISubdevice, (PVOID *)&Subdevice);
 
     if (!NT_SUCCESS(Status))
         goto cleanup;
+
+    PSUBDEVICE_DESCRIPTOR SubDeviceDescriptor = NULL;
+    Status = Subdevice->GetDescriptor(&SubDeviceDescriptor);
+    if (!NT_SUCCESS(Status))
+    {
+        // failed to get descriptor
+        Subdevice->Release();
+        goto cleanup;
+    }
+
+    /* initialize event management */
+    InitializeListHead(&m_EventList);
+    KeInitializeSpinLock(&m_EventListLock);
+
+    Status = PcCreateSubdeviceDescriptor(
+        &m_Descriptor, SubDeviceDescriptor->InterfaceCount, SubDeviceDescriptor->Interfaces,
+        0, /* FIXME KSINTERFACE_STANDARD with KSINTERFACE_STANDARD_STREAMING / KSINTERFACE_STANDARD_LOOPED_STREAMING */
+        NULL, 0, 0, 0, 0, 0, NULL,
+        0, NULL,
+        SubDeviceDescriptor->DeviceDescriptor);
+
+    m_Descriptor->UnknownStream = (PUNKNOWN)m_Stream;
+    m_Descriptor->UnknownMiniport = SubDeviceDescriptor->UnknownMiniport;
+    m_Descriptor->PortPin = (PVOID)this;
+    m_Descriptor->EventList = &m_EventList;
+    m_Descriptor->EventListLock = &m_EventListLock;
+
+    // release subdevice descriptor
+    Subdevice->Release();
 
     m_Stream->GetHWLatency(&Latency);
     DPRINT("Latency FifoSize %u ChipsetDelay %u CodecDelay %u\n", Latency.FifoSize, Latency.ChipsetDelay, Latency.CodecDelay);
@@ -755,7 +812,7 @@ CPortPinWaveRT::Init(
     }
 
     Status = m_StreamNotification->AllocateBufferWithNotification(
-        1, 8192, &m_Mdl, &m_CommonBufferSize, &m_CommonBufferOffset, &m_CacheType);
+        1, PAGE_SIZE*2, &m_Mdl, &m_CommonBufferSize, &m_CommonBufferOffset, &m_CacheType);
     if (!NT_SUCCESS(Status))
     {
         DPRINT("AllocateAudioBuffer failed with %x\n", Status);
@@ -799,8 +856,7 @@ CPortPinWaveRT::Init(
         DPRINT1("Initializingwork queue item\n");
         ExInitializeWorkItem(m_WorkItem, WorkerStreamRoutine, (PVOID)this);
     }
-
-    m_State = KSSTATE_PAUSE;
+    m_State = KSSTATE_STOP;
 
     // initialize reset state
     m_ResetState = KSRESET_END;
