@@ -448,6 +448,14 @@ WorkerStreamRoutine(
         {
             BytesWritten = min(TotalBytesAvailable, Length);
             //DPRINT("Copying bytes Offset %u BytesWritten %u Length %u\n", TotalBytesWritten, BytesWritten, Length);
+            if (This->m_Capture)
+            {
+                RtlCopyMemory(Buffer, &This->m_CommonBuffer[TotalBytesWritten], BytesWritten);
+            }
+            else
+            {
+                RtlCopyMemory(&This->m_CommonBuffer[TotalBytesWritten], Buffer, BytesWritten);
+            }
             RtlCopyMemory(&This->m_CommonBuffer[TotalBytesWritten], Buffer, BytesWritten);
             TotalBytesAvailable -= BytesWritten;
             TotalBytesWritten += BytesWritten;
@@ -706,7 +714,6 @@ CPortPinWaveRT::Init(
 {
     NTSTATUS Status;
     PKSDATAFORMAT DataFormat;
-    BOOLEAN Capture;
     KSRTAUDIO_HWLATENCY Latency;
 
     Port->AddRef();
@@ -748,11 +755,11 @@ CPortPinWaveRT::Init(
 
     if (KsPinDescriptor->Communication == KSPIN_COMMUNICATION_SINK && KsPinDescriptor->DataFlow == KSPIN_DATAFLOW_IN)
     {
-        Capture = FALSE;
+        m_Capture = FALSE;
     }
     else if (KsPinDescriptor->Communication == KSPIN_COMMUNICATION_SINK && KsPinDescriptor->DataFlow == KSPIN_DATAFLOW_OUT)
     {
-        Capture = TRUE;
+        m_Capture = TRUE;
     }
     else
     {
@@ -760,7 +767,7 @@ CPortPinWaveRT::Init(
         KeBugCheck(0);
         while(TRUE);
     }
-    Status = m_Miniport->NewStream(&m_Stream, m_PortStream, ConnectDetails->PinId, Capture, m_Format);
+    Status = m_Miniport->NewStream(&m_Stream, m_PortStream, ConnectDetails->PinId, m_Capture, m_Format);
     DPRINT("CPortPinWaveRT::Init Status %x\n", Status);
     if (!NT_SUCCESS(Status))
         goto cleanup;
