@@ -80,8 +80,7 @@ CPortFilterTopology::DeviceIoControl(
     if (IoStack->Parameters.DeviceIoControl.IoControlCode != IOCTL_KS_PROPERTY)
     {
         DPRINT1("Unhandled function %lx Length %x\n", IoStack->Parameters.DeviceIoControl.IoControlCode, IoStack->Parameters.DeviceIoControl.InputBufferLength);
-        ASSERT(FALSE);
-        Irp->IoStatus.Status = STATUS_SUCCESS;
+        Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
 
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_SUCCESS;

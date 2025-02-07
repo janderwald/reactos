@@ -2020,7 +2020,16 @@ KspDispatchIrp(
     if (Dispatch)
     {
         /* now call the dispatch function */
-        Status = Dispatch(DeviceObject, Irp);
+        _SEH2_TRY
+        {
+            Status = Dispatch(DeviceObject, Irp);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Fail the IRP */
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
     }
     else
     {

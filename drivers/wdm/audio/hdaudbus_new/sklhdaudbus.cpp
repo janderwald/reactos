@@ -298,8 +298,9 @@ HDA_AddDevice(
     DeviceObject->Flags |= DO_POWER_PAGABLE;
     DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
     KeInitializeDpc(&DeviceExtension->QueueDpc, hda_dpc_queue, DeviceObject);
-    KeInitializeDpc(&DeviceExtension->UnsolicitedDpc, hda_dpc_unsolicited, DeviceObject);
     KeInitializeDpc(&DeviceExtension->StreamDpc, hda_dpc_stream, DeviceObject);
+    KeSetImportanceDpc(&DeviceExtension->QueueDpc, HighImportance);
+    KeSetImportanceDpc(&DeviceExtension->StreamDpc, HighImportance);
 
     /* set device flags */
     DeviceObject->Flags |= DO_POWER_PAGABLE;

@@ -267,7 +267,7 @@ NTSTATUS RunSingleHDACmd(PFDO_CONTEXT fdoCtx, ULONG val, ULONG* res) {
 			if (res) {
 				*res = transfer.Input.Response;
 			}
-            DPRINT1("done\n");
+            //DPRINT1("done\n");
 			return STATUS_SUCCESS;
 		}
 
@@ -283,7 +283,7 @@ NTSTATUS RunSingleHDACmd(PFDO_CONTEXT fdoCtx, ULONG val, ULONG* res) {
 		}
         else
         {
-            DPRINT1("loopcounter %u\n", loopcounter);
+            //DPRINT1("loopcounter %u\n", loopcounter);
         }
 
 		LARGE_INTEGER Timeout;
@@ -465,16 +465,6 @@ hda_interrupt(
         }
 	}
 	return handled;
-}
-
-VOID
-NTAPI
-hda_dpc_unsolicited(PRKDPC Dpc, PVOID DeferredContext, PVOID SystemArgument1, PVOID SystemArgument2)
-{
-    PFDO_CONTEXT fdoCtx = Fdo_GetContext((PDEVICE_OBJECT)DeferredContext);
-
-    HDAProcessUnsolEvents(fdoCtx);
-    fdoCtx->processUnsol = FALSE;
 }
 
 VOID

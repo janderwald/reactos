@@ -774,7 +774,7 @@ CPortPinWaveCyclic::UpdateCommonBufferOverlap(
             if (Gap > BufferLength)
             {
                 // insert silence samples
-                DPRINT("Overlap Inserting Silence Buffer Size %lu Offset %lu Gap %lu Position %lu\n", m_CommonBufferSize, m_CommonBufferOffset, Gap, Position);
+                //DPRINT("Overlap Inserting Silence Buffer Size %lu Offset %lu Gap %lu Position %lu\n", m_CommonBufferSize, m_CommonBufferOffset, Gap, Position);
                 m_Stream->Silence((PUCHAR)m_CommonBuffer + m_CommonBufferOffset, BufferLength);
 
                 m_CommonBufferOffset += BufferLength;
@@ -878,36 +878,16 @@ CPortPinWaveCyclic::DeviceIoControl(
     IN PIRP Irp)
 {
     PIO_STACK_LOCATION IoStack;
-    PKSPROPERTY Property;
-    UNICODE_STRING GuidString;
     NTSTATUS Status = STATUS_NOT_SUPPORTED;
     ULONG Data = 0;
     KSRESET ResetValue;
-    BOOLEAN CompleteIrp = TRUE;
 
     /* get current irp stack location */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY)
     {
-        Property = (PKSPROPERTY)IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
-
-        RtlStringFromGUID(Property->Set, &GuidString);
-        DPRINT1("Property Set |%S| Id %u Flags %x\n", GuidString.Buffer, Property->Id, Property->Flags);
-        RtlFreeUnicodeString(&GuidString);
-
-        if (IsEqualGUIDAligned(Property->Set, KSPROPSETID_Connection) &&
-            Property->Id == KSPROPERTY_CONNECTION_DATAFORMAT)
-        {
-            DPRINT1("Avoid completion\n");
-            CompleteIrp = FALSE;
-            Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
-            return STATUS_NOT_SUPPORTED;
-        }
-
         /* handle property with subdevice descriptor */
         Status = PcHandlePropertyWithTable(Irp,  m_Descriptor->FilterPropertySetCount, m_Descriptor->FilterPropertySet, m_Descriptor);
-        DPRINT("Status %x\n", Status);
     }
     else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_ENABLE_EVENT)
     {
@@ -946,7 +926,7 @@ CPortPinWaveCyclic::DeviceIoControl(
         /* increment total number of packets */
         InterlockedIncrement((PLONG)&m_TotalPackets);
 
-         DPRINT1("New Packet Total %u State %x MinData %u\n", m_TotalPackets, m_State, m_IrpQueue->NumData());
+         DPRINT("New Packet Total %u State %x MinData %u\n", m_TotalPackets, m_State, m_IrpQueue->NumData());
 
          /* is the device not currently reset */
          if (m_ResetState == KSRESET_END)
@@ -976,8 +956,7 @@ CPortPinWaveCyclic::DeviceIoControl(
     if (Status != STATUS_PENDING)
     {
         Irp->IoStatus.Status = Status;
-        if (CompleteIrp)
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
     }
 
     return Status;

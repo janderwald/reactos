@@ -94,7 +94,7 @@ HDA_TransferCodecVerbs(
     PTRANSFER_CODEC_CONTEXT StreamContext = NULL;
 	//SklHdAudBusPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL, "%s called (Count: %d)!\n", __func__, Count);
 
-    DPRINT1("HDA_TransferCodecVerbs %p Count %u CodecTransfer %p Callback %p Context %p\n", _context, Count, CodecTransfer, Callback, Context);
+    //DPRINT("HDA_TransferCodecVerbs %p Count %u CodecTransfer %p Callback %p Context %p\n", _context, Count, CodecTransfer, Callback, Context);
 
 	if (!_context)
     {
@@ -472,10 +472,18 @@ HDA_GetLinkPositionRegister(
 		return STATUS_INVALID_HANDLE;
 	}
 
-    if (devData->CodecIds.CtlrVenId != VEN_INTEL) // Experimental Non-Intel support
-        *Position = (ULONG *)(stream->sdAddr + HDA_REG_SD_LPIBA);
+    if (devData->CodecIds.CtlrVenId == VEN_INTEL)
+    {
+        // Experimental Non-Intel support
+        *Position = (ULONG *)(stream->sdAddr + HDA_REG_SD_LPIB);
+        DPRINT1("using lpib %p\n", Position);
+    }
     else
+    {
+        DPRINT1("using posBuf %p\n", Position);
         *Position = (ULONG *)stream->posbuf; // Use Posbuf for all Intel
+    }
+
     //*Position = (ULONG *)stream->posbuf;
 
 	return STATUS_SUCCESS;
@@ -579,7 +587,7 @@ HDA_GetDeviceInformation(
 		DeviceInformation->CodecsDetected = devData->FdoContext->numCodecs;
 		DeviceInformation->DeviceVersion = devData->FdoContext->hwVersion;
 		DeviceInformation->DriverVersion = 0x100;
-		DeviceInformation->IsStripingSupported = FALSE;
+		DeviceInformation->IsStripingSupported = TRUE;
 	}
 	if (DeviceInformation->Size >= sizeof(HDAUDIO_DEVICE_INFORMATION_V2)) {
 		PHDAUDIO_DEVICE_INFORMATION_V2 DeviceInformationV2 = (PHDAUDIO_DEVICE_INFORMATION_V2)DeviceInformation;
@@ -598,7 +606,7 @@ HDA_GetResourceInformation(
 	_Out_ PUCHAR CodecAddress,
 	_Out_ PUCHAR FunctionGroupStartNode
 ) {
-        DPRINT1("HDA_GetResourceInformation %p\n", _context);
+    DPRINT1("HDA_GetResourceInformation %p\n", _context);
 
 	if (!_context)
 		return;

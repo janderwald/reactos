@@ -290,7 +290,6 @@ PropertyItemDispatch(
         {
             /* Fail the IRP */
             Status = _SEH2_GetExceptionCode();
-            ASSERT(FALSE);
         }
         _SEH2_END;
 

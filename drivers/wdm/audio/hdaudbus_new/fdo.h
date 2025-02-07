@@ -98,6 +98,8 @@ typedef struct _FDO_CONTEXT
     UINT16 venId;
     UINT16 devId;
     UINT8 revId;
+    UINT16 subvendorId;
+    UINT16 subsysId;
 
     PCI_BAR m_BAR0; //required
     PCI_BAR m_BAR4; //Intel AudioDSP
@@ -106,7 +108,6 @@ typedef struct _FDO_CONTEXT
     KSPIN_LOCK InterruptSpinLock;
     KDPC StreamDpc;
     KDPC QueueDpc;
-    KDPC UnsolicitedDpc;
     PDEVICE_OBJECT LowerDevice;
 
     UINT8* ppcap;

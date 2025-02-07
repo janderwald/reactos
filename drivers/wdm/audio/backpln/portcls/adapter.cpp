@@ -82,7 +82,7 @@ PcAddAdapterDevice(
     PDEVICE_OBJECT PrevDeviceObject;
     PPCLASS_DEVICE_EXTENSION portcls_ext = NULL;
 
-    DPRINT("PcAddAdapterDevice called\n");
+    DPRINT1("PcAddAdapterDevice called DriverObject %x PDO %x StartDevice %x MaxObjects %x DeviceExtensionSize %x\n", DriverObject, PhysicalDeviceObject, StartDevice, MaxObjects, DeviceExtensionSize);
     PC_ASSERT_IRQL_EQUAL(PASSIVE_LEVEL);
 
     if (!DriverObject || !PhysicalDeviceObject || !StartDevice)
@@ -185,7 +185,7 @@ PcAddAdapterDevice(
 
     // register shutdown notification
     IoRegisterShutdownNotification(PhysicalDeviceObject);
-
+    DPRINT("PcAddAdapterDevice completed successfully\n");
     return status;
 
 cleanup:

@@ -168,6 +168,8 @@ Fdo_EvtDevicePrepareHardware(
     NTSTATUS status;
     PFDO_CONTEXT fdoCtx;
     ULONG resourceCount;
+    PCI_COMMON_CONFIG PciConfig;
+
 
     fdoCtx = Fdo_GetContext(DeviceObject);
     resourceCount = ResourcesTranslated->List[0].PartialResourceList.Count;
@@ -242,7 +244,10 @@ Fdo_EvtDevicePrepareHardware(
     fdoCtx->BusInterface.GetBusData(fdoCtx->BusInterface.Context, PCI_WHICHSPACE_CONFIG, &fdoCtx->venId, 0, sizeof(UINT16));
     fdoCtx->BusInterface.GetBusData(fdoCtx->BusInterface.Context, PCI_WHICHSPACE_CONFIG, &fdoCtx->devId, 2, sizeof(UINT16));
     fdoCtx->BusInterface.GetBusData(fdoCtx->BusInterface.Context, PCI_WHICHSPACE_CONFIG, &fdoCtx->revId, 1, sizeof(UINT8));
-
+    fdoCtx->BusInterface.GetBusData(
+        fdoCtx->BusInterface.Context, PCI_WHICHSPACE_CONFIG, &PciConfig, 0, PCI_COMMON_HDR_LENGTH);
+    fdoCtx->subsysId = PciConfig.u.type0.SubSystemID;
+    fdoCtx->subvendorId = PciConfig.u.type0.SubVendorID;
     #if 0
     //mlcap & lctl (hda_intel_init_chip)
     if (fdoCtx->venId == VEN_INTEL) {
@@ -707,10 +712,10 @@ Fdo_EvtDeviceSelfManagedIoInit(
         
         UINT8 startID = (nodeCount >> 16) & 0xFF;
         nodeCount = (nodeCount & 0x7FFF);
-
+        DPRINT1("StartId %u NodeCount %u\n", startID, nodeCount);
         UINT16 mainFuncGrp = 0;
+        UINT16 nid = startID;
         {
-            UINT16 nid = startID;
             for (UINT32 i = 0; i < nodeCount; i++, nid++) {
                 UINT32 cmd = (addr << 28) | (nid << 20) |
                     (AC_VERB_PARAMETERS << 8) | AC_PAR_FUNCTION_TYPE;
@@ -720,15 +725,21 @@ Fdo_EvtDeviceSelfManagedIoInit(
                 switch (funcType & 0xFF) {
                 case AC_GRP_AUDIO_FUNCTION:
                 case AC_GRP_MODEM_FUNCTION:
-                    mainFuncGrp = nid;
+                    mainFuncGrp = funcType;
+                    DPRINT1("nid %x\n", nid);
                     break;
                 }
             }
         }
 
-        UINT32 cmd = (addr << 28) | (mainFuncGrp << 20) |
-            (AC_VERB_GET_SUBSYSTEM_ID << 8);
-        RunSingleHDACmd(fdoCtx, cmd, &subsysId);
+        UINT32 cmd = (addr << 28) | (nid << 20) | (AC_VERB_GET_SUBSYSTEM_ID << 8);
+        NTSTATUS Status = RunSingleHDACmd(fdoCtx, cmd, &subsysId);
+        DPRINT1("subsystemId %x status %x\n", subsysId, Status);
+        if (subsysId == 0)
+        {
+            subsysId = (fdoCtx->subvendorId << 16) | fdoCtx->subsysId;
+            DPRINT1("Using pci subsysid %x\n", subsysId);
+        }
 
         fdoCtx->CodecIds[fdoCtx->numCodecs].CtlrDevId = fdoCtx->devId;
         fdoCtx->CodecIds[fdoCtx->numCodecs].CtlrVenId = fdoCtx->venId;
@@ -743,6 +754,109 @@ Fdo_EvtDeviceSelfManagedIoInit(
         fdoCtx->CodecIds[fdoCtx->numCodecs].DevId = vendorDevice & 0xFFFF;
         fdoCtx->CodecIds[fdoCtx->numCodecs].SubsysId = subsysId;
         fdoCtx->CodecIds[fdoCtx->numCodecs].RevId = (revId >> 8) & 0xFFFF;
+
+        if (fdoCtx->CodecIds[fdoCtx->numCodecs].IsDSP)
+        {
+            UINT32 resetCmd = (addr << 28) | (AC_NODE_ROOT << 20) | (AC_VERB_SET_CODEC_RESET << 8);
+            ULONG resetResponse = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, resetCmd, &nodeCount)))
+            {
+                DPRINT1("resetResponse %x\n", resetResponse);
+            }
+
+            UINT32 cmdTmpl = (addr << 28) | (startID << 20) | (AC_VERB_PARAMETERS << 8);
+            ULONG nodeCount = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_NODE_COUNT, &nodeCount)))
+            {
+                ULONG startingNode = (nodeCount >> 16) & 0xFF;
+                ULONG totalWidgets = nodeCount & 0xF;
+                DPRINT1("TotalWidgets %u StartingNode %x\n", totalWidgets, startingNode);
+                for (ULONG widget = 0; widget < totalWidgets; widget++)
+                {
+                    UINT32 node = startingNode + widget;
+                    UINT32 cmdTmpl = (addr << 28) | (node << 20) | (AC_VERB_PARAMETERS << 8);
+                    ULONG widgetCaps = 0;
+                    if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AUDIO_WIDGET_CAP, &widgetCaps)))
+                    {
+                    DPRINT1(
+                        "widgetCaps %x NodeType %x PowerCntrl %x Digital %x Stripe %x\n", widgetCaps,
+                        (widgetCaps >> 20) & 0xF, (widgetCaps >> 10) & 0x1, (widgetCaps >> 9) & 0x1,
+                        (widgetCaps >> 5) & 0x1);
+                        ULONG PowerCntrl = (widgetCaps >> 10) & 0x1;
+                        if (PowerCntrl)
+                        {
+                            ULONG PowerState = 0;
+                            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_VERB_GET_POWER_STATE, &widgetCaps)))
+                            {
+                                DPRINT1("PowerState %x\n", PowerState);
+                            }
+                            ULONG SetPowerState = 0;
+                            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_VERB_SET_POWER_STATE, &widgetCaps)))
+                            {
+                                DPRINT1("Set PowerState %x\n", SetPowerState);
+                            }
+                        }
+                    }
+                    ULONG supportedPCM = 0;
+                    if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_PCM, &supportedPCM)))
+                    {
+                        DPRINT1("supportedPCM %x\n", supportedPCM);
+                    }
+                    ULONG supportedFormats = 0;
+                    if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_STREAM, &supportedPCM)))
+                    {
+                        DPRINT1("supportedFormats %x\n", supportedFormats);
+                    }
+                    ULONG amplifierInput = 0;
+                    if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AMP_IN_CAP, &amplifierInput)))
+                    {
+                        DPRINT1("amplifierInput %x\n", amplifierInput);
+                    }
+                    ULONG amplifierOutput = 0;
+                    if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AMP_OUT_CAP, &amplifierOutput)))
+                    {
+                        DPRINT1("amplifierOutput %x\n", amplifierOutput);
+                    }
+                    DPRINT1("-------------------------------------------\n");
+                }
+
+
+            }
+            ULONG nodeCaps = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AUDIO_FG_CAP, &nodeCaps)))
+            {
+                DPRINT1("nodeCaps %x\n", nodeCaps);
+            }
+            ULONG widgetCaps = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AUDIO_WIDGET_CAP, &widgetCaps)))
+            {
+                DPRINT1(
+                    "widgetCaps %x NodeType %x PowerCntrl %x Digital %x Stripe %x\n", widgetCaps,
+                    (widgetCaps >> 20) & 0xF, (widgetCaps >> 10) & 0x1, (widgetCaps >> 9) & 0x1,
+                    (widgetCaps >> 5) & 0x1);
+            }
+            ULONG supportedPCM = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_PCM, &supportedPCM)))
+            {
+                DPRINT1("supportedPCM %x\n", supportedPCM);
+            }
+            ULONG supportedFormats = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_STREAM, &supportedPCM)))
+            {
+                DPRINT1("supportedFormats %x\n", supportedFormats);
+            }
+            ULONG amplifierInput = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AMP_IN_CAP, &amplifierInput)))
+            {
+                DPRINT1("amplifierInput %x\n", amplifierInput);
+            }
+            ULONG amplifierOutput = 0;
+            if (NT_SUCCESS(RunSingleHDACmd(fdoCtx, cmdTmpl | AC_PAR_AMP_OUT_CAP, &amplifierOutput)))
+            {
+                DPRINT1("amplifierOutput %x\n", amplifierOutput);
+            }
+        }
+
 
         fdoCtx->numCodecs += 1;
     }
