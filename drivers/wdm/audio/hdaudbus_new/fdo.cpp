@@ -1,3 +1,12 @@
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
+ * PROJECT:         ReactOS Kernel Streaming
+ * FILE:            drivers/wdm/audio/hdaudbus/fdo.cpp
+ * PURPOSE:         HDAUDBUS Driver
+ * PROGRAMMER:      Coolstar TODO
+                    Johannes Anderwald
+ */
+
 #include "driver.h"
 
 NTSTATUS
