@@ -1943,8 +1943,6 @@ DECLARE_INTERFACE_(IMiniportWaveRTStreamNotification, IMiniportWaveRTStream)
     )   PURE;
 };
 
-typedef IMiniportWaveRTStreamNotification *PMINIPORTWAVERTSTREAMNOTIFICATION;
-
 #define IMP_IMiniportWaveRTStreamNotification\
     IMP_IMiniportWaveRTStream;\
     STDMETHODIMP_(NTSTATUS) AllocateBufferWithNotification\
