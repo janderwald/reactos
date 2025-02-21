@@ -76,6 +76,8 @@ typedef struct _EHCI_HC_CAPABILITY_REGISTERS {
   UCHAR CompanionPortRouteDesc[8]; // RO
 } EHCI_HC_CAPABILITY_REGISTERS, *PEHCI_HC_CAPABILITY_REGISTERS;
 
+C_ASSERT(FIELD_OFFSET(EHCI_HC_CAPABILITY_REGISTERS, StructParameters) == 0x04);
+
 typedef union _EHCI_USB_COMMAND {
   struct {
     ULONG Run                        : 1;

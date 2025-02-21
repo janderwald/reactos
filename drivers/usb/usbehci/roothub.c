@@ -7,7 +7,7 @@
 
 #include "usbehci.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 #define NDEBUG_EHCI_ROOT_HUB

@@ -7,7 +7,7 @@
 
 #include "usbehci.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 #define NDEBUG_EHCI_TRACE
@@ -1026,10 +1026,10 @@ EHCI_InitializeHardware(IN PEHCI_EXTENSION EhciExtension)
     }
 
     DPRINT("EHCI_InitializeHardware: Reset - OK\n");
-
+    DPRINT("EHCI_InitializeHardware: HCCPARAMS %p\n", &CapabilityRegisters->StructParameters.AsULONG);
     StructuralParams.AsULONG = READ_REGISTER_ULONG(&CapabilityRegisters->StructParameters.AsULONG);
 
-    EhciExtension->NumberOfPorts = StructuralParams.PortCount;
+    EhciExtension->NumberOfPorts = 4; //StructuralParams.PortCount;
     EhciExtension->PortPowerControl = StructuralParams.PortPowerControl;
 
     DPRINT("EHCI_InitializeHardware: StructuralParams - %X\n", StructuralParams.AsULONG);
