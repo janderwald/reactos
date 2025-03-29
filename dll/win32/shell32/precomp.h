@@ -23,6 +23,7 @@
 #include <wininet.h>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <emptyvc.h>
 #include <ndk/rtlfuncs.h>
 #include <fmifs/fmifs.h>
 #include <tchar.h>
@@ -172,6 +173,8 @@ SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
 HRESULT
 SHELL32_ShowFilesystemItemPropertiesDialogAsync(IDataObject *pDO);
 HRESULT
+SHELL32_ShowFilesystemItemsPropertiesDialogAsync(HWND hOwner, IDataObject *pDO);
+HRESULT
 SHELL32_ShowShellExtensionProperties(const CLSID *pClsid, IDataObject *pDO);
 HRESULT
 SHELL_ShowItemIDListProperties(LPCITEMIDLIST pidl);
@@ -296,6 +299,7 @@ BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
 HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
 
+HRESULT DataObject_GetHIDACount(IDataObject *pdo);
 PIDLIST_ABSOLUTE SHELL_CIDA_ILCloneFull(_In_ const CIDA *pCIDA, _In_ UINT Index);
 PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UINT Index);
 HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO);

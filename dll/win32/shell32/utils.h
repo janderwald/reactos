@@ -25,6 +25,13 @@ SHELL_ErrorBox(CMINVOKECOMMANDINFO &cmi, UINT Error)
 #endif
 
 static inline BOOL
+IsEqualPersistClassID(IPersist *pPersist, REFCLSID clsid)
+{
+    CLSID temp;
+    return pPersist && SUCCEEDED(pPersist->GetClassID(&temp)) && IsEqualCLSID(clsid, temp);
+}
+
+static inline BOOL
 RegValueExists(HKEY hKey, LPCWSTR Name)
 {
     return RegQueryValueExW(hKey, Name, NULL, NULL, NULL, NULL) == ERROR_SUCCESS;
@@ -91,6 +98,7 @@ SHELL_CreateFallbackExtractIconForNoAssocFile(REFIID riid, LPVOID *ppvOut)
     return SHELL_CreateShell32DefaultExtractIcon(id > 1 ? -id : 0, riid, ppvOut);
 }
 
+#ifdef __cplusplus
 struct ClipboardViewerChain
 {
     HWND m_hWndNext = HWND_BOTTOM;
@@ -124,3 +132,28 @@ struct ClipboardViewerChain
         return 0;
     }
 };
+
+struct CCidaChildArrayHelper
+{
+    // Note: This just creates an array pointing to the items and has the same lifetime as the CIDA.
+    // Use _ILCopyCidaToaPidl if you need the items to outlive the CIDA!
+    explicit CCidaChildArrayHelper(const CIDA *pCida)
+    {
+        m_hr = E_OUTOFMEMORY;
+        m_array = (PCUIDLIST_RELATIVE_ARRAY)SHAlloc(pCida->cidl * sizeof(LPITEMIDLIST));
+        if (m_array)
+        {
+            m_hr = S_OK;
+            for (UINT i = 0; i < pCida->cidl; ++i)
+                *(LPITEMIDLIST*)(&m_array[i]) = (LPITEMIDLIST)HIDA_GetPIDLItem(pCida, i);
+        }
+    }
+    ~CCidaChildArrayHelper() { SHFree((LPITEMIDLIST*)m_array); }
+
+    HRESULT hr() const { return m_hr; }
+    PCUIDLIST_RELATIVE_ARRAY GetItems() const { return m_array; }
+
+    HRESULT m_hr;
+    PCUIDLIST_RELATIVE_ARRAY m_array;
+};
+#endif // __cplusplus

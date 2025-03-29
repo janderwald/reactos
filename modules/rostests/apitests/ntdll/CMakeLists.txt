@@ -25,6 +25,7 @@ list(APPEND SOURCE
     NtContinue.c
     NtCreateFile.c
     NtCreateKey.c
+    NtCreateProfile.c
     NtCreateThread.c
     NtDeleteKey.c
     NtDuplicateObject.c
@@ -59,6 +60,7 @@ list(APPEND SOURCE
     NtSetInformationToken.c
     NtSetValueKey.c
     NtSetVolumeInformationFile.c
+    NtStartProfile.c
     NtUnloadDriver.c
     NtWriteFile.c
     probelib.c
@@ -90,6 +92,7 @@ list(APPEND SOURCE
     RtlImageDirectoryEntryToData.c
     RtlImageRvaToVa.c
     RtlIsNameLegalDOS8Dot3.c
+    RtlLocale.c
     RtlMemoryStream.c
     RtlMultipleAllocateHeap.c
     RtlNtPathNameToDosPathName.c
@@ -142,7 +145,10 @@ add_pch(ntdll_apitest precomp.h "${PCH_SKIP_SOURCE}")
 add_dependencies(ntdll_apitest load_notifications empty_dll)
 
 if(NOT MSVC)
-    set_source_files_properties(RtlGetFullPathName_UstrEx.c PROPERTIES COMPILE_OPTIONS "-Wno-format")
+    set_source_files_properties(
+        RtlGetFullPathName_UstrEx.c
+        RtlLocale.c
+        PROPERTIES COMPILE_OPTIONS "-Wno-format")
 endif()
 
 add_rostests_file(TARGET ntdll_apitest)

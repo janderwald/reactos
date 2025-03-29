@@ -54,6 +54,18 @@ BOOL SHELL_IncludeItemInFolderEnum(IShellFolder *pSF, PCUITEMID_CHILD pidl, SFGA
     return TRUE;
 }
 
+HRESULT SHELL_CreateAbsolutePidl(IShellFolder *pSF, PCUIDLIST_RELATIVE pidlChild, PIDLIST_ABSOLUTE *ppPidl)
+{
+    PIDLIST_ABSOLUTE pidlFolder;
+    HRESULT hr = SHGetIDListFromObject(pSF, &pidlFolder);
+    if (SUCCEEDED(hr))
+    {
+        hr = SHILCombine(pidlFolder, pidlChild, ppPidl);
+        ILFree(pidlFolder);
+    }
+    return hr;
+}
+
 HRESULT
 Shell_NextElement(
     _Inout_ LPWSTR *ppch,
@@ -509,16 +521,7 @@ SHELL32_ShowPropertiesDialog(IDataObject *pdtobj)
 {
     if (!pdtobj)
         return E_INVALIDARG;
-
-    CDataObjectHIDA cida(pdtobj);
-    if (FAILED_UNEXPECTEDLY(cida.hr()))
-        return cida.hr();
-    if (cida->cidl > 1)
-    {
-        ERR("SHMultiFileProperties is not yet implemented\n");
-        return E_FAIL;
-    }
-    return SHELL32_ShowFilesystemItemPropertiesDialogAsync(pdtobj);
+    return SHELL32_ShowFilesystemItemsPropertiesDialogAsync(NULL, pdtobj);
 }
 
 HRESULT

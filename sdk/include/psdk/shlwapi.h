@@ -25,6 +25,15 @@
 #include <objbase.h>
 #include <shtypes.h>
 
+#ifndef _SHLWAPI_
+#define LWSTDAPI_(type)  EXTERN_C DECLSPEC_IMPORT type WINAPI
+#define LWSTDAPIV_(type) EXTERN_C DECLSPEC_IMPORT type STDAPIVCALLTYPE
+#else
+#define LWSTDAPI_(type)  type WINAPI
+#define LWSTDAPIV_(type) type STDAPIVCALLTYPE
+#endif
+#define LWSTDAPI         LWSTDAPI_(HRESULT)
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* defined(__cplusplus) */
@@ -1558,8 +1567,8 @@ LPSTR WINAPI StrDupA(_In_ LPCSTR);
 LPWSTR WINAPI StrDupW(_In_ LPCWSTR);
 #define StrDup WINELIB_NAME_AW(StrDup)
 
-HRESULT WINAPI SHStrDupA(_In_ LPCSTR, _Outptr_ WCHAR**);
-HRESULT WINAPI SHStrDupW(_In_ LPCWSTR, _Outptr_ WCHAR**);
+HRESULT WINAPI SHStrDupA(_In_ LPCSTR psz, _Outptr_ WCHAR** ppwsz);
+HRESULT WINAPI SHStrDupW(_In_ LPCWSTR psz, _Outptr_ WCHAR** ppwsz);
 #define SHStrDup WINELIB_NAME_AW(SHStrDup)
 
 LPSTR
@@ -1896,6 +1905,14 @@ SHCreateStreamOnFileEx(
   _Outptr_ struct IStream**);
 
 HRESULT WINAPI SHCreateStreamWrapper(LPBYTE,DWORD,DWORD,struct IStream**);
+
+#ifndef _SHLWAPI_
+LWSTDAPI IStream_Reset(_In_ struct IStream*);
+#if !defined(IStream_Read) && defined(__cplusplus)
+LWSTDAPI IStream_Read(_In_ struct IStream*, _Out_ void*, _In_ ULONG);
+LWSTDAPI IStream_Write(_In_ struct IStream*, _In_ const void*, _In_ ULONG);
+#endif
+#endif
 
 #endif /* NO_SHLWAPI_STREAM */
 

@@ -47,6 +47,17 @@ enum {
     UNOP_EMPTYREGKEY = 'k',
 };
 
+BOOL IsZipFile(PCWSTR Path)
+{
+    zlib_filefunc64_def zff;
+    fill_win32_filefunc64W(&zff);
+    unzFile hzf = unzOpen2_64(Path, &zff);
+    if (!hzf)
+        return FALSE;
+    unzClose(hzf);
+    return TRUE;
+}
+
 static int
 ExtractFilesFromZip(LPCWSTR Archive, const CStringW &OutputDir,
                     EXTRACTCALLBACK Callback, void *Cookie)
@@ -173,17 +184,10 @@ struct InstallInfo : CommonInfo
     }
 };
 
-static UINT
+static inline UINT
 ErrorBox(UINT Error = GetLastError())
 {
-    if (!Error)
-        Error = ERROR_INTERNAL_ERROR;
-    WCHAR buf[400];
-    UINT fmf = FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM;
-    FormatMessageW(fmf, NULL, Error, 0, buf, _countof(buf), NULL);
-    MessageBoxW(g_pInfo->GetGuiOwner(), buf, 0, MB_OK | MB_ICONSTOP);
-    g_pInfo->Error = Error;
-    return Error;
+    return g_pInfo->Error = ErrorBox(g_pInfo->GetGuiOwner(), Error);
 }
 
 static LPCWSTR
@@ -498,7 +502,7 @@ ExtractAndInstallThread(LPVOID Parameter)
 
     if (!Info.Error)
     {
-        BOOL isCab = SplitFileAndDirectory(Archive).Right(4).CompareNoCase(L".cab") == 0;
+        BOOL isCab = LOBYTE(ClassifyFile(tempdir)) == 'C';
         Info.Error = isCab ? ExtractCab(Archive, tempdir, ExtractCallback, &Info)
                            : ExtractZip(Archive, tempdir, ExtractCallback, &Info);
     }
