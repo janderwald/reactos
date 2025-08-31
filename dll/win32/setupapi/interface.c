@@ -212,8 +212,9 @@ SETUP_CreateInterfaceList(
 
             /* Read SymbolicLink value */
             rc = RegQueryValueExW(hReferenceKey, SymbolicLink, NULL, &dwRegType, NULL, &dwLength);
-            if (rc != ERROR_SUCCESS )
+            if (rc != ERROR_SUCCESS)
             {
+                /* Skip device interface with invalid reference value (i.e. interface not actually available for this device) */
                 RegCloseKey(hReferenceKey);
                 continue;
             }

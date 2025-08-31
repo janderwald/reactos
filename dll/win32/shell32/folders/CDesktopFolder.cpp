@@ -29,9 +29,9 @@ extern BOOL SHELL32_IsShellFolderNamespaceItemHidden(LPCWSTR SubKey, REFCLSID Cl
 
 static const REQUIREDREGITEM g_RequiredItems[] =
 {
-    { CLSID_MyComputer, "sysdm.cpl", 0x50 },
-    { CLSID_NetworkPlaces, "ncpa.cpl", 0x58 },
-    { CLSID_Internet, "inetcpl.cpl", 0x68 },
+    { CLSID_MyComputer, "sysdm.cpl", REGITEMORDER_MYCOMPUTER },
+    { CLSID_NetworkPlaces, "ncpa.cpl", REGITEMORDER_NETHOOD },
+    { CLSID_Internet, "inetcpl.cpl", REGITEMORDER_INTERNET },
 };
 static const REGFOLDERINFO g_RegFolderInfo =
 {
@@ -311,9 +311,9 @@ HRESULT CDesktopFolder::_GetSFFromPidl(LPCITEMIDLIST pidl, IShellFolder2** psf)
     {
         FIXME("Desktop is unexpected here!\n");
     }
-    else
+    else if (_ILIsSpecialFolder(pidl))
     {
-        ASSERT(!_ILIsSpecialFolder(pidl));
+        FIXME("Unexpected PIDL type %#x\n", pidl->mkid.abID[0]);
     }
 #endif
     IShellFolder *pSF = IsCommonItem(pidl) ? m_SharedDesktopFSFolder : m_DesktopFSFolder;
@@ -657,21 +657,10 @@ HRESULT WINAPI CDesktopFolder::CreateViewObject(
     }
     else if (IsEqualIID (riid, IID_IContextMenu))
     {
-            HKEY hKeys[16];
-            UINT cKeys = 0;
-            AddClassKeyToArray(L"Directory\\Background", hKeys, &cKeys);
-
-            DEFCONTEXTMENU dcm;
-            dcm.hwnd = hwndOwner;
-            dcm.pcmcb = this;
-            dcm.pidlFolder = pidlRoot;
-            dcm.psf = this;
-            dcm.cidl = 0;
-            dcm.apidl = NULL;
-            dcm.cKeys = cKeys;
-            dcm.aKeys = hKeys;
-            dcm.punkAssociationInfo = NULL;
-            hr = SHCreateDefaultContextMenu (&dcm, riid, ppvOut);
+        CRegKeyHandleArray keys;
+        AddClassKeyToArray(L"Directory\\Background", keys, keys);
+        DEFCONTEXTMENU dcm = { hwndOwner, this, pidlRoot, this, 0, NULL, NULL, keys, keys };
+        hr = SHCreateDefaultContextMenu(&dcm, riid, ppvOut);
     }
     else if (IsEqualIID (riid, IID_IShellView))
     {
@@ -795,29 +784,19 @@ HRESULT WINAPI CDesktopFolder::GetUIObjectOf(
             /* Do not use the context menu of the CFSFolder here. */
             /* We need to pass a pointer of the CDesktopFolder so as the data object that the context menu gets is rooted to the desktop */
             /* Otherwise operations like that involve items from both user and shared desktop will not work */
-            HKEY hKeys[16];
-            UINT cKeys = 0;
+            CRegKeyHandleArray keys;
             if (self)
             {
-                AddClsidKeyToArray(CLSID_ShellDesktop, hKeys, &cKeys);
-                AddClassKeyToArray(L"Folder", hKeys, &cKeys);
+                AddClsidKeyToArray(CLSID_ShellDesktop, keys, keys);
+                AddClassKeyToArray(L"Folder", keys, keys);
             }
             else if (cidl > 0)
             {
-                AddFSClassKeysToArray(cidl, apidl, hKeys, &cKeys);
+                AddFSClassKeysToArray(cidl, apidl, keys, keys);
             }
 
-            DEFCONTEXTMENU dcm;
-            dcm.hwnd = hwndOwner;
-            dcm.pcmcb = this;
-            dcm.pidlFolder = pidlRoot;
-            dcm.psf = this;
-            dcm.cidl = cidl;
-            dcm.apidl = apidl;
-            dcm.cKeys = cKeys;
-            dcm.aKeys = hKeys;
-            dcm.punkAssociationInfo = NULL;
-            hr = SHCreateDefaultContextMenu (&dcm, riid, &pObj);
+            DEFCONTEXTMENU dcm = { hwndOwner, this, pidlRoot, this, cidl, apidl, NULL, keys, keys };
+            hr = SHCreateDefaultContextMenu(&dcm, riid, &pObj);
         }
     }
     else if (IsEqualIID (riid, IID_IDataObject) && (cidl >= 1))
@@ -955,14 +934,14 @@ HRESULT WINAPI CDesktopFolder::GetDefaultColumnState(UINT iColumn, SHCOLSTATEF *
     return hr;
 }
 
-HRESULT WINAPI CDesktopFolder::GetDetailsEx(
-    PCUITEMID_CHILD pidl,
-    const SHCOLUMNID *pscid,
-    VARIANT *pv)
+HRESULT WINAPI CDesktopFolder::GetDetailsEx(PCUITEMID_CHILD pidl,
+                                            const SHCOLUMNID *pscid, VARIANT *pv)
 {
-    FIXME ("(%p)\n", this);
-
-    return E_NOTIMPL;
+    HRESULT hr;
+    CComPtr<IShellFolder2> psf;
+    if (FAILED_UNEXPECTEDLY(hr = _GetSFFromPidl(pidl, &psf)))
+        return hr;
+    return psf->GetDetailsEx(pidl, pscid, pv);
 }
 
 /*************************************************************************
@@ -1002,8 +981,14 @@ HRESULT WINAPI CDesktopFolder::GetDetailsOf(
 
 HRESULT WINAPI CDesktopFolder::MapColumnToSCID(UINT column, SHCOLUMNID *pscid)
 {
-    FIXME ("(%p)\n", this);
-    return E_NOTIMPL;
+    // Note: All these folders use the same SHFSF_COL mapping (m_regFolder only handles a subset).
+    if (m_DesktopFSFolder)
+        return m_DesktopFSFolder->MapColumnToSCID(column, pscid);
+    if (m_SharedDesktopFSFolder)
+        return m_SharedDesktopFSFolder->MapColumnToSCID(column, pscid);
+    if (m_regFolder)
+        return m_regFolder->MapColumnToSCID(column, pscid);
+    return E_FAIL;
 }
 
 HRESULT WINAPI CDesktopFolder::GetClassID(CLSID *lpClassId)
@@ -1043,7 +1028,15 @@ HRESULT WINAPI CDesktopFolder::CallBack(IShellFolder *psf, HWND hwndOwner, IData
     enum { IDC_PROPERTIES };
     if (uMsg == DFM_INVOKECOMMAND && wParam == (pdtobj ? DFM_CMD_PROPERTIES : IDC_PROPERTIES))
     {
-        return SHELL_ExecuteControlPanelCPL(hwndOwner, L"desk.cpl") ? S_OK : E_FAIL;
+        if (pdtobj)
+        {
+            PIDLIST_ABSOLUTE pidl = SHELL_DataObject_ILCloneFullItem(pdtobj, 0);
+            BOOL bIsSelf = _ILIsDesktop(pidl); // Context menu on Desktop item in the shell tree?
+            ILFree(pidl);
+            if (!bIsSelf)
+                return SHELL32_ShowPropertiesDialog(pdtobj); // File selection
+        }
+        return SHELL_ExecuteControlPanelCPL(hwndOwner, L"desk.cpl") ? S_OK : E_FAIL; // Background
     }
     else if (uMsg == DFM_MERGECONTEXTMENU && !pdtobj) // Add Properties item when called for directory background
     {

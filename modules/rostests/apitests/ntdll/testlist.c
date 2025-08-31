@@ -3,6 +3,22 @@
 #define STANDALONE
 #include <apitest.h>
 
+extern void func__snprintf(void);
+extern void func__snwprintf(void);
+extern void func__vscwprintf(void);
+extern void func__vsnprintf(void);
+extern void func__vsnwprintf(void);
+extern void func_mbstowcs(void);
+extern void func_mbtowc(void);
+extern void func_setjmp(void);
+extern void func_sprintf(void);
+extern void func_strcpy(void);
+extern void func_strlen(void);
+extern void func_strtoul(void);
+extern void func_wcstoul(void);
+extern void func_wctomb(void);
+extern void func_wcstombs(void);
+
 extern void func_DllLoadNotification(void);
 extern void func_LdrEnumResources(void);
 extern void func_LdrLoadDll(void);
@@ -41,6 +57,7 @@ extern void func_NtQueryInformationToken(void);
 extern void func_NtQueryKey(void);
 extern void func_NtQueryObject(void);
 extern void func_NtQueryOpenSubKeys(void);
+extern void func_NtQuerySection(void);
 extern void func_NtQuerySystemEnvironmentValue(void);
 extern void func_NtQuerySystemInformation(void);
 extern void func_NtQueryValueKey(void);
@@ -111,6 +128,23 @@ extern void func_UserModeException(void);
 
 const struct test winetest_testlist[] =
 {
+    // CRT tests from ../crt
+    { "_snprintf", func__snprintf },
+    { "_snwprintf", func__snwprintf },
+    { "_vscwprintf", func__vscwprintf },
+    { "_vsnprintf", func__vsnprintf },
+    { "_vsnwprintf", func__vsnwprintf },
+    { "mbstowcs", func_mbstowcs },
+    { "mbtowc", func_mbtowc },
+    { "setjmp", func_setjmp },
+    { "sprintf", func_sprintf },
+    { "strcpy", func_strcpy },
+    { "strlen", func_strlen },
+    { "strtoul", func_strtoul },
+    { "wcstoul", func_wcstoul },
+    { "wctomb", func_wctomb },
+    { "wcstombs", func_wcstombs },
+
     { "DllLoadNotification",            func_DllLoadNotification },
     { "LdrEnumResources",               func_LdrEnumResources },
     { "LdrLoadDll",                     func_LdrLoadDll },
@@ -149,6 +183,7 @@ const struct test winetest_testlist[] =
     { "NtQueryKey",                     func_NtQueryKey },
     { "NtQueryObject",                  func_NtQueryObject },
     { "NtQueryOpenSubKeys",             func_NtQueryOpenSubKeys },
+    { "NtQuerySection",                 func_NtQuerySection },
     { "NtQuerySystemEnvironmentValue",  func_NtQuerySystemEnvironmentValue },
     { "NtQuerySystemInformation",       func_NtQuerySystemInformation },
     { "NtQueryValueKey",                func_NtQueryValueKey },

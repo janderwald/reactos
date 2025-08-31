@@ -554,8 +554,6 @@ MMixerSetControlDetails(
         case MIXERCONTROL_CONTROLTYPE_MUX:
             Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, TRUE, Flags, MixerControl, MixerControlDetails, MixerLine);
             break;
-        case MIXERCONTROL_CONTROLTYPE_ONOFF:
-            Status = MMixerSetGetControlTypeOnOff(MixerContext, MixerInfo, NodeId, MixerControl, MixerLine->Line.dwLineID, MixerControlDetails, MixerLine, TRUE);
         default:
             Status = MM_STATUS_NOT_IMPLEMENTED;
     }
@@ -620,7 +618,7 @@ MMixerGetControlDetails(
             Status = MMixerSetGetVolumeControlDetails(MixerContext, MixerInfo, NodeId, FALSE, MixerControl, MixerControlDetails, MixerLine);
             break;
         case MIXERCONTROL_CONTROLTYPE_ONOFF:
-            Status = MMixerSetGetControlTypeOnOff(MixerContext, MixerInfo, NodeId, MixerControl, MixerLine->Line.dwLineID, MixerControlDetails, MixerLine, FALSE);
+            DPRINT1("Not Implemented MIXERCONTROL_CONTROLTYPE_ONOFF\n");
             break;
         case MIXERCONTROL_CONTROLTYPE_MUX:
             Status = MMixerSetGetMuxControlDetails(MixerContext, MixerInfo, NodeId, FALSE, Flags, MixerControl, MixerControlDetails, MixerLine);
@@ -819,11 +817,8 @@ MMixerInitialize(
      /* store mixer list */
      MixerContext->MixerContext = (PVOID)MixerList;
 
-    /* start enumerating all available devices */
-    Count = 0;
-    DeviceIndex = 0;
-
-    do
+    /* enumerate all available devices */
+    for (DeviceIndex = 0; ; DeviceIndex++)
     {
         /* enumerate a device */
         Status = EnumFunction(EnumContext, DeviceIndex, &DeviceName, &hMixer, &hKey);
@@ -836,30 +831,27 @@ MMixerInitialize(
                 /* enumeration has finished */
                 break;
             }
-            else
-            {
-                DPRINT1("Failed to enumerate device %lu, Status %x\n", DeviceIndex, Status);
 
-                /* ignore error and continue */
-                DeviceIndex++;
-                continue;
-            }
+            DPRINT1("EnumFunction() failed for device %lu, Status %x\n", DeviceIndex, Status);
+
+            /* ignore error and continue */
         }
         else
         {
             /* create a mixer data entry */
             Status = MMixerCreateMixerData(MixerContext, MixerList, DeviceIndex, DeviceName, hMixer, hKey);
             if (Status != MM_STATUS_SUCCESS)
-                break;
-        }
+                DPRINT1("MMixerCreateMixerData() failed for device %lu, Status %x\n",
+                        DeviceIndex, Status);
 
-        /* increment device index */
-        DeviceIndex++;
-    }while(TRUE);
+            /* ignore error and continue */
+        }
+    }
 
     /* now all filters have been pre-opened
      * lets enumerate the filters
      */
+    Count = 0;
     Entry = MixerList->MixerData.Flink;
     while(Entry != &MixerList->MixerData)
     {

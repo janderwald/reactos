@@ -8556,8 +8556,13 @@ static BOOL LISTVIEW_SetColumnWidth(LISTVIEW_INFO *infoPtr, INT nColumn, INT cx)
 	if (infoPtr->himlSmall && (nColumn == 0 || (LISTVIEW_GetColumnInfo(infoPtr, nColumn)->fmt & LVCFMT_IMAGE)))
 	    max_cx += infoPtr->iconSize.cx;
 	max_cx += TRAILING_LABEL_PADDING;
+#ifdef __REACTOS__
+        if (nColumn == 0 && infoPtr->himlState)
+            max_cx += infoPtr->iconStateSize.cx;
+#else
         if (nColumn == 0 && (infoPtr->dwLvExStyle & LVS_EX_CHECKBOXES))
             max_cx += GetSystemMetrics(SM_CXSMICON);
+#endif
     }
 
     /* autosize based on listview items width */
@@ -12008,6 +12013,7 @@ LISTVIEW_WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         wParam == SPI_SETNONCLIENTMETRICS ||
         (!wParam && !lParam))
     {
+      HFONT hOldDefaultFont = infoPtr->hDefaultFont;
       BOOL bDefaultOrNullFont = (infoPtr->hDefaultFont == infoPtr->hFont || !infoPtr->hFont);
       LOGFONTW logFont;
       SystemParametersInfoW(SPI_GETICONTITLELOGFONT, 0, &logFont, 0);
@@ -12020,7 +12026,12 @@ LISTVIEW_WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
       infoPtr->hDefaultFont = CreateFontIndirectW(&logFont);
 
       if (bDefaultOrNullFont)
+      {
         infoPtr->hFont = infoPtr->hDefaultFont;
+        // Check if we just deleted the font the header is using
+        if (infoPtr->hwndHeader && hOldDefaultFont == GetWindowFont(infoPtr->hwndHeader))
+            SendMessageW(infoPtr->hwndHeader, WM_SETFONT, (WPARAM)infoPtr->hFont, TRUE);
+      }
 
       LISTVIEW_SaveTextMetrics(infoPtr);
       LISTVIEW_UpdateItemSize(infoPtr);

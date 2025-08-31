@@ -310,8 +310,5 @@ PcRegisterSubdevice(
         }
     }
 
-    // release SubDevice reference
-    SubDevice->Release();
-
     return STATUS_SUCCESS;
 }
