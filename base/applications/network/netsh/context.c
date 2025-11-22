@@ -29,6 +29,10 @@ PCONTEXT_ENTRY pCurrentContext = NULL;
 PCONTEXT_STACK_ENTRY pContextStackHead = NULL;
 PCONTEXT_STACK_ENTRY pContextStackTail = NULL;
 
+PWSTR pszMachine = NULL;
+
+static BOOL bOnline = TRUE; 
+
 /* FUNCTIONS ******************************************************************/
 
 PCONTEXT_ENTRY
@@ -38,6 +42,12 @@ AddContext(
     GUID *pGuid)
 {
     PCONTEXT_ENTRY pEntry;
+
+    DPRINT("AddContext(%S)\n", pszName);
+    if (pParentContext)
+    {
+        DPRINT("ParentContext %S\n", pParentContext->pszContextName);
+    }
 
     if (pParentContext != NULL && pszName == NULL)
         return NULL;
@@ -70,7 +80,7 @@ AddContext(
     /* Insert it */
     if (pParentContext != NULL)
     {
-        if (pParentContext->pSubContextHead == NULL && pParentContext->pSubContextTail == NULL)
+        if ((pParentContext->pSubContextHead == NULL) && (pParentContext->pSubContextTail == NULL))
         {
             pParentContext->pSubContextHead = pEntry;
             pParentContext->pSubContextTail = pEntry;
@@ -301,72 +311,346 @@ DeleteContext(
 }
 
 
+static
+int
+ContextCompare(
+    _In_ const void *p1,
+    _In_ const void *p2)
+{
+    return ((PCONTEXT_ENTRY)p1)->ulPriority - ((PCONTEXT_ENTRY)p2)->ulPriority;
+}
+
+
+static
+DWORD
+DumpContext(
+    _In_ PCONTEXT_ENTRY pContext,
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *ppwcArguments,
+    _In_ DWORD dwArgCount,
+    _In_ LPCVOID pvData)
+{
+    PCONTEXT_ENTRY pSubContext, *pSortArray = NULL;
+    DWORD dwCount, dwIndex;
+    DWORD dwError = ERROR_SUCCESS;
+
+    DPRINT("DumpContext()\n");
+
+    if (pContext->pfnDumpFn)
+    {
+        dwError = pContext->pfnDumpFn(pwszMachine,
+                                      ppwcArguments,
+                                      dwArgCount,
+                                      pvData);
+        if (dwError != ERROR_SUCCESS)
+        {
+            DPRINT1("Dump function failed (Error %lu)\n", dwError);
+            return dwError;
+        }
+    }
+
+    if (pContext->pSubContextHead == NULL)
+        return dwError;
+
+    /* Count the sub-contexts */
+    dwCount = 0;
+    pSubContext = pContext->pSubContextHead;
+    while (pSubContext)
+    {
+        dwCount++;
+        pSubContext = pSubContext->pNext;
+    }
+
+    /* Allocate the sort array */
+    pSortArray = HeapAlloc(GetProcessHeap(), 0, dwCount * sizeof(PCONTEXT_ENTRY));
+    if (pSortArray == NULL)
+        return ERROR_NOT_ENOUGH_MEMORY;
+
+    /* Fill the sort array */
+    dwIndex = 0;
+    pSubContext = pContext->pSubContextHead;
+    while (pSubContext)
+    {
+        pSortArray[dwIndex] = pSubContext;
+        dwIndex++;
+        pSubContext = pSubContext->pNext;
+    }
+
+    /* Sort the array */
+    qsort(pSortArray, dwCount, sizeof(PCONTEXT_ENTRY), ContextCompare);
+
+    /* Dump the sub-contexts */
+    for (dwIndex = 0; dwIndex < dwCount; dwIndex++)
+    {
+        dwError = DumpContext(pSortArray[dwIndex],
+                              pwszMachine,
+                              ppwcArguments,
+                              dwArgCount,
+                              pvData);
+        if (dwError != ERROR_SUCCESS)
+        {
+            DPRINT1("Dump function failed (Error %lu)\n", dwError);
+            break;
+        }
+    }
+
+    /* Free the sort array */
+    HeapFree(GetProcessHeap(), 0, pSortArray);
+
+    return dwError;
+}
+
+static
+DWORD
+CommitContext(
+    _In_ PCONTEXT_ENTRY pContext,
+    _In_ DWORD dwAction)
+{
+    PCONTEXT_ENTRY pSubContext, *pSortArray = NULL;
+    DWORD dwCount, dwIndex;
+    DWORD dwError = ERROR_SUCCESS;
+
+    DPRINT1("CommitContext(%p %lu)\n", pContext, dwAction);
+
+    if (pContext->pfnCommitFn)
+    {
+        dwError = pContext->pfnCommitFn(dwAction);
+        if (dwError != ERROR_SUCCESS)
+        {
+            DPRINT1("Commit function failed (Error %lu)\n", dwError);
+            return dwError;
+        }
+    }
+
+    if (pContext->pSubContextHead == NULL)
+        return dwError;
+
+    /* Count the sub-contexts */
+    dwCount = 0;
+    pSubContext = pContext->pSubContextHead;
+    while (pSubContext)
+    {
+        dwCount++;
+        pSubContext = pSubContext->pNext;
+    }
+
+    /* Allocate the sort array */
+    pSortArray = HeapAlloc(GetProcessHeap(), 0, dwCount * sizeof(PCONTEXT_ENTRY));
+    if (pSortArray == NULL)
+        return ERROR_NOT_ENOUGH_MEMORY;
+
+    /* Fill the sort array */
+    dwIndex = 0;
+    pSubContext = pContext->pSubContextHead;
+    while (pSubContext)
+    {
+        pSortArray[dwIndex] = pSubContext;
+        dwIndex++;
+        pSubContext = pSubContext->pNext;
+    }
+
+    /* Sort the array */
+    qsort(pSortArray, dwCount, sizeof(PCONTEXT_ENTRY), ContextCompare);
+
+    /* Commit the sub-contexts */
+    for (dwIndex = 0; dwIndex < dwCount; dwIndex++)
+    {
+        dwError = CommitContext(pSortArray[dwIndex],
+                                dwAction);
+        if (dwError != ERROR_SUCCESS)
+        {
+            DPRINT1("Commit function failed (Error %lu)\n", dwError);
+            break;
+        }
+    }
+
+    /* Free the sort array */
+    HeapFree(GetProcessHeap(), 0, pSortArray);
+
+    return dwError;
+}
+
+
 DWORD
 WINAPI
 UpCommand(
-    LPCWSTR pwszMachine,
-    LPWSTR *argv,
-    DWORD dwCurrentIndex,
-    DWORD dwArgCount,
-    DWORD dwFlags,
-    LPCVOID pvData,
-    BOOL *pbDone)
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
 {
     if (pCurrentContext != pRootContext)
         pCurrentContext = pCurrentContext->pParentContext;
 
-    return 0;
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+AbortCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("AbortCommand()\n");
+    CommitContext(pRootContext, NETSH_FLUSH);
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+CommitCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("CommitCommand()\n");
+    CommitContext(pRootContext, NETSH_SAVE);
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+DumpCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *ppwcArguments,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("DumpCommand()\n");
+
+    return DumpContext(pCurrentContext,
+                       pwszMachine,
+                       ppwcArguments,
+                       dwArgCount,
+                       pvData);
+}
+
+
+DWORD
+WINAPI
+ExecCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("ExecCommand()\n");
+
+    if (dwArgCount - dwCurrentIndex != 1)
+        return ERROR_SHOW_USAGE;
+
+    return RunScript(argv[dwCurrentIndex]);
 }
 
 
 DWORD
 WINAPI
 ExitCommand(
-    LPCWSTR pwszMachine,
-    LPWSTR *argv,
-    DWORD dwCurrentIndex,
-    DWORD dwArgCount,
-    DWORD dwFlags,
-    LPCVOID pvData,
-    BOOL *pbDone)
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
 {
+    if (bOnline == FALSE)
+        CommitContext(pRootContext, NETSH_FLUSH);
+
     *pbDone = TRUE;
-    return 0;
+    return ERROR_SUCCESS;
 }
 
 
 DWORD
 WINAPI
 RemCommand(
-    LPCWSTR pwszMachine,
-    LPWSTR *argv,
-    DWORD dwCurrentIndex,
-    DWORD dwArgCount,
-    DWORD dwFlags,
-    LPCVOID pvData,
-    BOOL *pbDone)
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
 {
-    return 0;
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+OfflineCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("OfflineCommand()\n");
+    CommitContext(pRootContext, NETSH_UNCOMMIT);
+    bOnline = FALSE;
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+OnlineCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("OnlineCommand()\n");
+    CommitContext(pRootContext, NETSH_COMMIT);
+    bOnline = TRUE;
+    return ERROR_SUCCESS;
 }
 
 
 DWORD
 WINAPI
 PopdCommand(
-    LPCWSTR pwszMachine,
-    LPWSTR *argv,
-    DWORD dwCurrentIndex,
-    DWORD dwArgCount,
-    DWORD dwFlags,
-    LPCVOID pvData,
-    BOOL *pbDone)
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
 {
     PCONTEXT_STACK_ENTRY pEntry;
 
     DPRINT("PopdCommand()\n");
 
     if (pContextStackHead == NULL)
-        return 0;
+        return ERROR_SUCCESS;
 
     pEntry = pContextStackHead;
 
@@ -385,19 +669,19 @@ PopdCommand(
 
     HeapFree(GetProcessHeap(), 0, pEntry);
 
-    return 0;
+    return ERROR_SUCCESS;
 }
 
 
 DWORD
 WINAPI
 PushdCommand(
-    LPCWSTR pwszMachine,
-    LPWSTR *argv,
-    DWORD dwCurrentIndex,
-    DWORD dwArgCount,
-    DWORD dwFlags,
-    LPCVOID pvData,
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
     _Out_ BOOL *pbDone)
 {
     PCONTEXT_STACK_ENTRY pEntry;
@@ -406,7 +690,7 @@ PushdCommand(
 
     pEntry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(CONTEXT_STACK_ENTRY));
     if (pEntry == NULL)
-        return 1;
+        return ERROR_NOT_ENOUGH_MEMORY;
 
     pEntry->pContext = pCurrentContext;
     if (pContextStackHead == NULL)
@@ -421,7 +705,99 @@ PushdCommand(
         pContextStackHead = pEntry;
     }
 
-    return 0;
+    return ERROR_SUCCESS;
+}
+
+
+DWORD
+WINAPI
+SetMachineCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DWORD dwError = ERROR_SUCCESS;
+
+    DPRINT("SetMachineCommand(pwszMachine %S  dwCurrentIndex %lu  dwArgCount %lu)\n",
+           pwszMachine, dwCurrentIndex, dwArgCount);
+
+    if ((dwArgCount - dwCurrentIndex) > 1)
+        return ERROR_SHOW_USAGE;
+
+    if (pszMachine != NULL)
+    {
+        HeapFree(GetProcessHeap(), 0, pszMachine);
+        pszMachine = NULL;
+    }
+
+    if ((dwArgCount - dwCurrentIndex) == 1)
+    {
+        pszMachine = HeapAlloc(GetProcessHeap(), 0, (sizeof(argv[dwCurrentIndex]) + 1) * sizeof(WCHAR));
+        if (pszMachine == NULL)
+            return ERROR_NOT_ENOUGH_MEMORY;
+        wcscpy(pszMachine, argv[dwCurrentIndex]);
+    }
+
+    return dwError;
+}
+
+
+DWORD
+WINAPI
+SetModeCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DWORD dwError = ERROR_SUCCESS;
+
+    DPRINT("SetModeCommand(pwszMachine %S  dwCurrentIndex %lu  dwArgCount %lu)\n",
+           pwszMachine, dwCurrentIndex, dwArgCount);
+
+    if ((dwArgCount - dwCurrentIndex) != 1)
+        return ERROR_SHOW_USAGE;
+
+    if (!_wcsicmp(argv[dwCurrentIndex], L"offline"))
+    {
+        CommitContext(pRootContext, NETSH_UNCOMMIT);
+        bOnline = FALSE;
+    }
+    else if (!_wcsicmp(argv[dwCurrentIndex], L"online"))
+    {
+        CommitContext(pRootContext, NETSH_COMMIT);
+        bOnline = TRUE;
+    }
+    else
+    {
+        dwError = ERROR_INVALID_SYNTAX;
+    }
+
+    return dwError;
+}
+
+
+DWORD
+WINAPI
+ShowModeCommand(
+    _In_ LPCWSTR pwszMachine,
+    _In_ LPWSTR *argv,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _In_ DWORD dwFlags,
+    _In_ LPCVOID pvData,
+    _Out_ BOOL *pbDone)
+{
+    DPRINT("ShowModeCommand()\n");
+    ConPuts(StdOut, bOnline ? L"online\n\n" : L"offline\n\n");
+    return ERROR_SUCCESS;
 }
 
 
@@ -430,21 +806,29 @@ CreateRootContext(VOID)
 {
     PCOMMAND_GROUP pGroup;
 
-    pRootContext = AddContext(NULL, NULL, NULL);
-    DPRINT1("pRootContext: %p\n", pRootContext);
+    pRootContext = AddContext(NULL, L"netsh", NULL);
+    DPRINT("pRootContext: %p\n", pRootContext);
     if (pRootContext == NULL)
         return FALSE;
 
-    pRootContext->hModule = GetModuleHandle(NULL);
+    pRootContext->hModule = hModule;
 
-    AddContextCommand(pRootContext, L"..",    UpCommand,    IDS_HLP_UP,    IDS_HLP_UP_EX, 0);
-    AddContextCommand(pRootContext, L"?",     NULL,         IDS_HLP_HELP, IDS_HLP_HELP_EX, 0);
-    AddContextCommand(pRootContext, L"bye",   ExitCommand,  IDS_HLP_EXIT,  IDS_HLP_EXIT_EX, 0);
-    AddContextCommand(pRootContext, L"exit",  ExitCommand,  IDS_HLP_EXIT,  IDS_HLP_EXIT_EX, 0);
-    AddContextCommand(pRootContext, L"help",  NULL,         IDS_HLP_HELP, IDS_HLP_HELP_EX, 0);
-    AddContextCommand(pRootContext, L"popd",  PopdCommand,  IDS_HLP_POPD,  IDS_HLP_POPD_EX, 0);
-    AddContextCommand(pRootContext, L"pushd", PushdCommand, IDS_HLP_PUSHD, IDS_HLP_PUSHD_EX, 0);
-    AddContextCommand(pRootContext, L"quit",  ExitCommand,  IDS_HLP_EXIT,  IDS_HLP_EXIT_EX, 0);
+    AddContextCommand(pRootContext, L"..",      UpCommand,      IDS_HLP_UP,      IDS_HLP_UP_EX, 0);
+    AddContextCommand(pRootContext, L"?",       NULL,           IDS_HLP_HELP,    IDS_HLP_HELP_EX, 0);
+    AddContextCommand(pRootContext, L"abort",   AbortCommand,   IDS_HLP_ABORT,   IDS_HLP_ABORT_EX, 0);
+    AddContextCommand(pRootContext, L"alias",   AliasCommand,   IDS_HLP_ALIAS,   IDS_HLP_ALIAS_EX, 0);
+    AddContextCommand(pRootContext, L"bye",     ExitCommand,    IDS_HLP_EXIT,    IDS_HLP_EXIT_EX, 0);
+    AddContextCommand(pRootContext, L"commit",  CommitCommand,  IDS_HLP_COMMIT,  IDS_HLP_COMMIT_EX, 0);
+    AddContextCommand(pRootContext, L"dump",    DumpCommand,    IDS_HLP_DUMP,    IDS_HLP_DUMP_EX, 0);
+    AddContextCommand(pRootContext, L"exec",    ExecCommand,    IDS_HLP_EXEC,    IDS_HLP_EXEC_EX, 0);
+    AddContextCommand(pRootContext, L"exit",    ExitCommand,    IDS_HLP_EXIT,    IDS_HLP_EXIT_EX, 0);
+    AddContextCommand(pRootContext, L"help",    NULL,           IDS_HLP_HELP,    IDS_HLP_HELP_EX, 0);
+    AddContextCommand(pRootContext, L"offline", OfflineCommand, IDS_HLP_OFFLINE, IDS_HLP_OFFLINE_EX, 0);
+    AddContextCommand(pRootContext, L"online",  OnlineCommand,  IDS_HLP_ONLINE,  IDS_HLP_ONLINE_EX, 0);
+    AddContextCommand(pRootContext, L"popd",    PopdCommand,    IDS_HLP_POPD,    IDS_HLP_POPD_EX, 0);
+    AddContextCommand(pRootContext, L"pushd",   PushdCommand,   IDS_HLP_PUSHD,   IDS_HLP_PUSHD_EX, 0);
+    AddContextCommand(pRootContext, L"quit",    ExitCommand,    IDS_HLP_EXIT,    IDS_HLP_EXIT_EX, 0);
+    AddContextCommand(pRootContext, L"unalias", UnaliasCommand, IDS_HLP_UNALIAS, IDS_HLP_UNALIAS_EX, 0);
 
     pGroup = AddCommandGroup(pRootContext, L"add", IDS_HLP_GROUP_ADD, 0);
     if (pGroup)
@@ -458,15 +842,65 @@ CreateRootContext(VOID)
         AddGroupCommand(pGroup, L"helper", DeleteHelperCommand, IDS_HLP_DEL_HELPER, IDS_HLP_DEL_HELPER_EX, 0);
     }
 
+    pGroup = AddCommandGroup(pRootContext, L"set", IDS_HLP_GROUP_SET, 0);
+    if (pGroup)
+    {
+        AddGroupCommand(pGroup, L"machine", SetMachineCommand, IDS_HLP_SET_MACHINE, IDS_HLP_SET_MACHINE_EX, 0);
+        AddGroupCommand(pGroup, L"mode",    SetModeCommand,    IDS_HLP_SET_MODE,    IDS_HLP_SET_MODE_EX, 0);
+    }
+
     pGroup = AddCommandGroup(pRootContext, L"show", IDS_HLP_GROUP_SHOW, 0);
     if (pGroup)
     {
+        AddGroupCommand(pGroup, L"alias",  ShowAliasCommand,  IDS_HLP_SHOW_ALIAS,  IDS_HLP_SHOW_ALIAS_EX, 0);
         AddGroupCommand(pGroup, L"helper", ShowHelperCommand, IDS_HLP_SHOW_HELPER, IDS_HLP_SHOW_HELPER_EX, 0);
+        AddGroupCommand(pGroup, L"mode",   ShowModeCommand,   IDS_HLP_SHOW_MODE,   IDS_HLP_SHOW_MODE_EX, 0);
     }
 
     pCurrentContext = pRootContext;
 
     return TRUE;
+}
+
+
+static
+PCONTEXT_ENTRY
+FindSubContextByGuid(
+    PCONTEXT_ENTRY pContext,
+    const GUID *pGuid)
+{
+    PCONTEXT_ENTRY pResultContext, pSubContext;
+
+    DPRINT("FindSubContextByGuid(%p)\n", pContext);
+    DPRINT("%lx <--> %lx\n", pContext->Guid.Data1, pGuid->Data1);
+
+    if (IsEqualGUID(&pContext->Guid, pGuid))
+    {
+        DPRINT("Found!\n");
+        return pContext;
+    }
+
+    pSubContext = pContext->pSubContextHead;
+    while (pSubContext)
+    {
+        pResultContext = FindSubContextByGuid(pSubContext, pGuid);
+        if (pResultContext)
+            return pResultContext;
+
+        pSubContext = pSubContext->pNext;
+    }
+
+    return NULL;
+}
+
+
+PCONTEXT_ENTRY
+FindContextByGuid(
+    const GUID *pGuid)
+{
+    if (pRootContext == NULL)
+        return NULL;
+    return FindSubContextByGuid(pRootContext, pGuid);
 }
 
 
@@ -476,7 +910,7 @@ RegisterContext(
     _In_ const NS_CONTEXT_ATTRIBUTES *pChildContext)
 {
     PHELPER_ENTRY pHelper;
-    PCONTEXT_ENTRY pContext;
+    PCONTEXT_ENTRY pContext, pParentContext;
     PCOMMAND_GROUP pGroup;
     DWORD i, j;
 
@@ -501,10 +935,25 @@ RegisterContext(
     DPRINT("Top commands: %lu\n", pChildContext->ulNumTopCmds);
 
     pHelper = FindHelper(&pChildContext->guidHelper, pHelperListHead);
+    DPRINT("Helper %p\n", pHelper);
+    pParentContext = pRootContext;
+    if (pHelper != NULL)
+    {
+        pParentContext = FindContextByGuid(&pHelper->ParentHelperGuid);
+        DPRINT("pParentContext %p\n", pParentContext);
+        if (pParentContext == NULL)
+            pParentContext = pRootContext;
+    }
 
-    pContext = AddContext(pRootContext, pChildContext->pwszContext, (GUID*)&pChildContext->guidHelper);
+    pContext = AddContext(pParentContext, pChildContext->pwszContext, (GUID*)&pChildContext->guidHelper);
     if (pContext != NULL)
     {
+        pContext->pfnCommitFn = pChildContext->pfnCommitFn;
+        pContext->pfnDumpFn = pChildContext->pfnDumpFn;
+        pContext->pfnConnectFn = pChildContext->pfnConnectFn;
+        pContext->ulPriority = (pChildContext->dwFlags & CMD_FLAG_PRIORITY) ?
+                               pChildContext->ulPriority : DEFAULT_CONTEXT_PRIORITY;
+
         if ((pHelper != NULL) && (pHelper->pDllEntry != NULL))
         {
             pContext->hModule = pHelper->pDllEntry->hModule;

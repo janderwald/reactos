@@ -28,12 +28,6 @@
 #error Compiler too old!
 #endif
 
-#if (defined(_LP64) || defined(__LP64__)) && !defined(_M_AMD64)
-#ifndef __ROS_LONG64__
-#define __ROS_LONG64__
-#endif
-#endif
-
 #include <ctype.h>
 //#include <winapifamily.h>
 #ifdef __GNUC__
@@ -63,7 +57,8 @@
 #endif
 
 #ifndef DECLSPEC_NOINITALL
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (!defined(__clang__) || (__clang_major__ >= 22)) && \
+    (_MSC_VER >= 1915) && !defined(MIDL_PASS) && !defined(SORTPP_PASS) && !defined(RC_INVOKED)
 #define DECLSPEC_NOINITALL __pragma(warning(push)) __pragma(warning(disable:4845)) __declspec(no_init_all) __pragma(warning(pop))
 #else
 #define DECLSPEC_NOINITALL

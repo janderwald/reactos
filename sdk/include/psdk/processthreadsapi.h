@@ -72,6 +72,20 @@ typedef struct _PROCESS_INFORMATION
 typedef struct _PROC_THREAD_ATTRIBUTE_LIST *PPROC_THREAD_ATTRIBUTE_LIST, *LPPROC_THREAD_ATTRIBUTE_LIST;
 
 WINBASEAPI
+HRESULT
+WINAPI
+GetThreadDescription(
+    _In_ HANDLE hThread,
+    _Outptr_result_z_ PWSTR* ppszThreadDescription);
+
+WINBASEAPI
+HRESULT
+WINAPI
+SetThreadDescription(
+    _In_ HANDLE hThread,
+    _In_ PCWSTR lpThreadDescription);
+
+WINBASEAPI
 BOOL
 WINAPI
 SetThreadStackGuarantee(
@@ -142,6 +156,23 @@ GetCurrentThreadEffectiveToken(
 }
 
 #endif // (_WIN32_WINNT >= 0x602) || defined(__REACTOS__)
+
+typedef enum _PROCESS_INFORMATION_CLASS
+{
+    ProcessMemoryPriority,
+    ProcessMemoryExhaustionInfo,
+    ProcessAppMemoryInfo,
+    ProcessInPrivateInfo,
+    ProcessPowerThrottling,
+    ProcessReservedValue1,  // Formerly ProcessActivityThrottlePolicyInfo
+    ProcessTelemetryCoverageInfo,
+    ProcessProtectionLevelInfo,
+    ProcessLeapSecondInfo,
+    ProcessMachineTypeInfo,
+    ProcessOverrideSubsequentPrefetchParameter,
+    ProcessMaxOverridePrefetchParameter,
+    ProcessInformationClassMax
+} PROCESS_INFORMATION_CLASS;
 
 #ifdef __cplusplus
 } // extern "C"
