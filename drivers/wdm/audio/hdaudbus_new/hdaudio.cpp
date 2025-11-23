@@ -338,24 +338,28 @@ HDA_SetDmaEngineState(
 		}
 
 		WdfInterruptAcquireLock(devData->FdoContext->Interrupt);
-
-		if (StreamState == RunState && !stream->running) {
-			hdac_stream_start(stream);
-			stream->running = TRUE;
-		}
-		else if ((StreamState == PauseState || StreamState == StopState) && stream->running) {
-			hdac_stream_stop(stream);
-			stream->running = FALSE;
-		}
-		else if (StreamState == ResetState) {
-			if (!stream->running) {
-				hdac_stream_reset(stream);
-			}
-			else {
-				return STATUS_INVALID_PARAMETER;
-			}
-		}
-
+         if (StreamState == RunState && !stream->running)
+         {
+            hdac_stream_setup(stream);
+            hdac_stream_start(stream);
+            stream->running = TRUE;
+         }
+         else if ((StreamState == PauseState || StreamState == StopState) && stream->running)
+         {
+            hdac_stream_stop(stream);
+            stream->running = FALSE;
+         }
+         else if (StreamState == ResetState)
+         {
+            if (!stream->running)
+            {
+                hdac_stream_reset(stream);
+                hdac_stream_setup(stream);
+            }
+            else
+            {
+            }
+         }
 		WdfInterruptReleaseLock(devData->FdoContext->Interrupt);
 	}
 
@@ -509,7 +513,7 @@ HDA_GetResourceInformation(
 ) {
 	if (!_context)
 		return;
-	
+
 	PPDO_DEVICE_DATA devData = (PPDO_DEVICE_DATA)_context;
 	if (CodecAddress)
 		*CodecAddress = (UINT8)devData->CodecIds.CodecAddress;
