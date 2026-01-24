@@ -315,23 +315,6 @@ MMixerGetMixerControlById(
     return MM_STATUS_UNSUCCESSFUL;
 }
 
-ULONG
-MMixerGetVolumeControlIndex(
-    LPMIXERVOLUME_DATA VolumeData,
-    LONG Value)
-{
-    ULONG Index;
-
-    for (Index = 0; Index < VolumeData->ValuesCount; Index++)
-    {
-        if (VolumeData->Values[Index] > Value)
-        {
-            return VolumeData->InputSteppingDelta * Index;
-        }
-    }
-    return VolumeData->InputSteppingDelta * (VolumeData->ValuesCount - 1);
-}
-
 VOID
 MMixerNotifyControlChange(
     IN PMIXER_CONTEXT MixerContext,
@@ -344,7 +327,7 @@ MMixerNotifyControlChange(
 
     /* enumerate list and perform notification */
     Entry = MixerInfo->EventList.Flink;
-    while (Entry != &MixerInfo->EventList)
+    while(Entry != &MixerInfo->EventList)
     {
         /* get notification entry offset */
         NotificationEntry = (PEVENT_NOTIFICATION_ENTRY)CONTAINING_RECORD(Entry, EVENT_NOTIFICATION_ENTRY, Entry);
@@ -720,8 +703,8 @@ MMixerSetGetVolumeControlDetails(
     LPMIXERLINE_EXT MixerLine)
 {
     LPMIXERCONTROLDETAILS_UNSIGNED Input;
-    LONG Value;
-    ULONG Index, Channel;
+    LONG MaxRange, Value;
+    ULONG Channel;
     MIXER_STATUS Status;
     LPMIXERVOLUME_DATA VolumeData;
 
@@ -737,21 +720,17 @@ MMixerSetGetVolumeControlDetails(
     if (!Input)
         return MM_STATUS_UNSUCCESSFUL; /* To prevent dereferencing NULL */
 
+    /* Get maximum available range */
+    MaxRange = VolumeData->SignedMaximum - VolumeData->SignedMinimum;
+
     /* Loop for each channel */
     for (Channel = 0; Channel < MixerControlDetails->cChannels; Channel++)
     {
         if (bSet)
         {
             /* FIXME SEH */
-            Index = Input[Channel].dwValue / VolumeData->InputSteppingDelta;
-
-            if (Index >= VolumeData->ValuesCount)
-            {
-                DPRINT1("Index %u out of bounds %u \n", Index, VolumeData->ValuesCount);
-                return MM_STATUS_INVALID_PARAMETER;
-            }
-
-            Value = VolumeData->Values[Index];
+            /* Convert from logical units to hardware range (DB) */
+            Value = (LONG)((INT64)Input[Channel].dwValue * MaxRange / 0x10000 + VolumeData->SignedMinimum);
         }
 
         /* Get/set control details */
@@ -760,7 +739,8 @@ MMixerSetGetVolumeControlDetails(
         if (!bSet)
         {
             /* FIXME SEH */
-            Input[Channel].dwValue = MMixerGetVolumeControlIndex(VolumeData, Value);
+            /* Convert from hardware range (DB) to logical units */
+            Input[Channel].dwValue = (ULONG)(((INT64)Value - VolumeData->SignedMinimum + 1) * 0x10000 / MaxRange);
         }
     }
 
