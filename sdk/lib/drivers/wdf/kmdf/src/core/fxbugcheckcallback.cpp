@@ -1067,7 +1067,7 @@ FX_DRIVER_TRACKER_CACHE_AWARE::Register(
                 //
                 // This feature is not supported for Windows 2000.
                 //
-                ASSERT(FALSE);
+                //ASSERT(FALSE);
                 status = STATUS_NOT_SUPPORTED;
                 goto Done;
             }
