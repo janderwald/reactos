@@ -254,9 +254,6 @@ NTSTATUS ADSPPrepareDSP(
 
 	WdfInterruptReleaseLock(devData->FdoContext->Interrupt);
 
-	PHYSICAL_ADDRESS maxAddr;
-	maxAddr.QuadPart = devData->FdoContext->is64BitOK ? MAXULONG64 : MAXULONG32;
-
 	stream->mdlBuf = NULL;
 	stream->bufSz = ByteSize;
 	stream->numBlocks = (UINT16)NumBlocks;
@@ -378,8 +375,8 @@ ADSP_BUS_INTERFACE ADSP_BusInterface(PVOID Context) {
 	busInterface.Size = sizeof(ADSP_BUS_INTERFACE);
 	busInterface.Version = 1;
 	busInterface.Context = Context;
-	busInterface.InterfaceReference = (PINTERFACE_REFERENCE)WdfDeviceInterfaceReferenceNoOp;
-	busInterface.InterfaceDereference = (PINTERFACE_DEREFERENCE)WdfDeviceInterfaceDereferenceNoOp;
+	busInterface.InterfaceReference = WdfDeviceInterfaceReferenceNoOp;
+	busInterface.InterfaceDereference = WdfDeviceInterfaceDereferenceNoOp;
 	busInterface.CtlrDevId = devData->CodecIds.CtlrDevId;
 	busInterface.GetResources = ADSPGetResources;
 	busInterface.SetDSPPowerState = ADSPSetPowerState;

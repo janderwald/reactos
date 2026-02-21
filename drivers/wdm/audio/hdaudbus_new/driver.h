@@ -36,7 +36,11 @@ extern "C" {
 #include "hdac_stream.h"
 #include "hda_verbs.h"
 
+#ifdef __REACTOS__
+#define DRIVERNAME "hdaudbus.sys: "
+#else
 #define DRIVERNAME "sklhdaudbus.sys: "
+#endif
 #define SKLHDAUDBUS_POOL_TAG 'SADH'
 
 #define VEN_INTEL 0x8086
@@ -48,9 +52,9 @@ extern "C" {
 #include "regfuncs.h"
 
 #ifdef __REACTOS__
-#define MAXUINT64 ((UINT64)~ ((UINT64)0))
-#define MAXULONG64 ((ULONG64)~ ((ULONG64)0))
-#define MAXULONG32 ((ULONG32) ~((ULONG32)0))
+#define MAXUINT64 ((UINT64)UINT64_MAX)
+#define MAXULONG64 ((ULONG64)ULONG64_MAX)
+#define MAXULONG32 ((ULONG32)ULONG_MAX)
 #endif
 
 NTSTATUS HDA_WaitForTransfer(
@@ -83,6 +87,7 @@ static inline void udelay(LONG usec) {
 // Helper macros
 //
 
+#if DBG
 #define DEBUG_LEVEL_ERROR   1
 #define DEBUG_LEVEL_INFO    2
 #define DEBUG_LEVEL_VERBOSE 3
@@ -91,13 +96,12 @@ static inline void udelay(LONG usec) {
 #define DBG_PNP   2
 #define DBG_IOCTL 4
 
-static ULONG SklHdAudBusDebugLevel = 100;
-static ULONG SklHdAudBusDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
+#define SklHdAudBusDebugLevel 100
+#define SklHdAudBusDebugCategories (DBG_INIT | DBG_PNP | DBG_IOCTL)
 
-#if 0
-#define SklHdAudBusPrint(dbglevel, dbgcatagory, fmt, ...) {          \
+#define SklHdAudBusPrint(dbglevel, dbgcategory, fmt, ...) {          \
     if (SklHdAudBusDebugLevel >= dbglevel &&                         \
-        (SklHdAudBusDebugCatagories && dbgcatagory))                 \
+        (SklHdAudBusDebugCategories & dbgcategory))                 \
 		    {                                                           \
         DbgPrint(DRIVERNAME);                                   \
         DbgPrint(fmt, ##__VA_ARGS__);                             \

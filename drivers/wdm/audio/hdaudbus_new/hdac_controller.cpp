@@ -33,7 +33,7 @@ NTSTATUS ResetHDAController(PFDO_CONTEXT fdoCtx, BOOLEAN wakeup) {
 	}
 
 	if (gctl & HDA_GCTL_RESET) {
-		DbgPrint("Error: unable to put controller in reset\n");
+		SklHdAudBusPrint(DEBUG_LEVEL_ERROR, DBG_INIT, "%s Error: unable to put controller in reset\n", __func__);
 		return STATUS_DEVICE_POWER_FAILURE;
 	}
 
@@ -53,7 +53,7 @@ NTSTATUS ResetHDAController(PFDO_CONTEXT fdoCtx, BOOLEAN wakeup) {
 		udelay(10);
 	}
 	if (!(gctl & HDA_GCTL_RESET)) {
-		DbgPrint("Error: controller stuck in reset\n");
+		SklHdAudBusPrint(DEBUG_LEVEL_ERROR, DBG_INIT, "%s Error: controller stuck in reset\n", __func__);
 		return STATUS_DEVICE_POWER_FAILURE;
 	}
 
@@ -74,7 +74,7 @@ NTSTATUS GetHDACapabilities(PFDO_CONTEXT fdoCtx) {
 	SklHdAudBusPrint(DEBUG_LEVEL_INFO, DBG_INIT,
 		"chipset global capabilities = 0x%x\n", gcap);
 
-	fdoCtx->is64BitOK = (gcap & 0x1);
+	fdoCtx->is64BitOK = !!(gcap & 0x1);
 	SklHdAudBusPrint(DEBUG_LEVEL_INFO, DBG_INIT,
 		"64 bit OK? %d\n", fdoCtx->is64BitOK);
 
@@ -127,7 +127,7 @@ void HDAInitRirb(PFDO_CONTEXT fdoCtx) {
 	//Set the rirb size to 256 entries
 	hda_write8(fdoCtx, RIRBSIZE, 0x02);
 
-	//Setup CORB address
+	//Setup RIRB address
 	fdoCtx->rirb.buf = (UINT32*)(fdoCtx->rb + 0x800);
 	fdoCtx->rirb.addr = MmGetPhysicalAddress(fdoCtx->rirb.buf);
 	RtlZeroMemory(fdoCtx->rirb.cmds, sizeof(fdoCtx->rirb.cmds));
@@ -163,7 +163,7 @@ NTSTATUS StartHDAController(PFDO_CONTEXT fdoCtx) {
 	NTSTATUS status;
 	status = ResetHDAController(fdoCtx, TRUE);
 	if (!NT_SUCCESS(status)) {
-		return status;
+		goto exit;
 	}
 
 	//Clear STATESTS
@@ -179,15 +179,18 @@ NTSTATUS StartHDAController(PFDO_CONTEXT fdoCtx) {
 	hda_write32(fdoCtx, GCTL, hda_read32(fdoCtx, GCTL) | HDA_GCTL_UNSOL);
 	hda_write32(fdoCtx, INTCTL, hda_read32(fdoCtx, INTCTL) | HDA_INT_CTRL_EN | HDA_INT_GLOBAL_EN);
 
+	{
 	//Program position buffer
 	PHYSICAL_ADDRESS posbufAddr = MmGetPhysicalAddress(fdoCtx->posbuf);
 	hda_write32(fdoCtx, DPLBASE, posbufAddr.LowPart);
 	hda_write32(fdoCtx, DPUBASE, posbufAddr.HighPart);
+	}
 
 	udelay(1000);
 
 	fdoCtx->ControllerEnabled = TRUE;
 
+exit:
 	return status;
 }
 
@@ -307,7 +310,7 @@ static void HDAFlushRIRB(PFDO_CONTEXT fdoCtx) {
 				continue;
 
 			UINT Tag = response.Unsolicited.Tag;
-			CODEC_UNSOLIT_CALLBACK callback = codec->unsolitCallbacks[Tag];
+			CODEC_UNSOLICITED_CALLBACK callback = codec->unsolitCallbacks[Tag];
 			if (callback.inUse && callback.Routine) {
 				callback.Routine(response, callback.Context);
 			}

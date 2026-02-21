@@ -187,8 +187,8 @@ typedef ACPI_ENUM_CHILDREN_OUTPUT_BUFFER UNALIGNED *PACPI_ENUM_CHILDREN_OUTPUT_B
                                        MethodArgumentsBegin,                \
                                        MethodArgumentsEnd )                 \
     for (PACPI_METHOD_ARGUMENT MethodArgument = (MethodArgumentsBegin);     \
-            MethodArgument < (MethodArgumentsEnd);                          \
-            MethodArgument = ACPI_METHOD_NEXT_ARGUMENT(MethodArgument))
+         MethodArgument < (MethodArgumentsEnd);                             \
+         MethodArgument = ACPI_METHOD_NEXT_ARGUMENT(MethodArgument))
 
 #define IOCTL_ACPI_ASYNC_EVAL_METHOD    CTL_CODE(FILE_DEVICE_ACPI, 0, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 #define IOCTL_ACPI_EVAL_METHOD          CTL_CODE(FILE_DEVICE_ACPI, 1, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)

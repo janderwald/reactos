@@ -40,8 +40,8 @@ typedef struct _HDAUDIO_CODEC_RESPONSE {
         struct {
           ULONG Response:26;
           ULONG Tag:6;
-          } Unsolicited;
-          ULONG Response;
+        } Unsolicited;
+        ULONG Response;
       };
       ULONG SDataIn:4;
       ULONG IsUnsolicitedResponse:1;
@@ -98,7 +98,7 @@ typedef VOID
   PVOID);
 
 typedef VOID
-(NTAPI * PHDAUDIO_DMA_NOTIFICATION_CALLBACK)(
+(NTAPI *PHDAUDIO_DMA_NOTIFICATION_CALLBACK)(
     PVOID Context,
     LARGE_INTEGER Progress);
 
@@ -111,14 +111,14 @@ typedef struct _HDAUDIO_DEVICE_INFORMATION {
 } HDAUDIO_DEVICE_INFORMATION, *PHDAUDIO_DEVICE_INFORMATION;
 
 typedef struct _HDAUDIO_DEVICE_INFORMATION_V2 {
- USHORT  Size;
- USHORT  DeviceVersion;
- USHORT  DriverVersion;
- USHORT  CodecsDetected;
- BOOLEAN IsStripingSupported;
- UCHAR   CtrlRevision;
- USHORT  CtrlVendorId;
- USHORT  CtrlDeviceId;
+  USHORT  Size;
+  USHORT  DeviceVersion;
+  USHORT  DriverVersion;
+  USHORT  CodecsDetected;
+  BOOLEAN IsStripingSupported;
+  UCHAR   CtrlRevision;
+  USHORT  CtrlVendorId;
+  USHORT  CtrlDeviceId;
 } HDAUDIO_DEVICE_INFORMATION_V2, *PHDAUDIO_DEVICE_INFORMATION_V2;
 
 typedef struct _HDAUDIO_BUFFER_DESCRIPTOR {
@@ -245,18 +245,18 @@ typedef VOID
 
 typedef NTSTATUS
 (NTAPI *PREGISTER_NOTIFICATION_CALLBACK)(
-  PVOID _context,
-  HANDLE Handle,
-  PDEVICE_OBJECT Fdo,
-  PHDAUDIO_DMA_NOTIFICATION_CALLBACK NotificationCallback,
-  PVOID CallbackContext);
+  _In_ PVOID _context,
+  _In_ HANDLE Handle,
+  _In_ PDEVICE_OBJECT Fdo,
+  _In_ PHDAUDIO_DMA_NOTIFICATION_CALLBACK NotificationCallback,
+  _In_ PVOID CallbackContext);
 
 typedef NTSTATUS
 (NTAPI *PUNREGISTER_NOTIFICATION_CALLBACK)(
-  PVOID _context,
-  HANDLE Handle,
-  PHDAUDIO_DMA_NOTIFICATION_CALLBACK NotificationCallback,
-  PVOID CallbackContext);
+  _In_ PVOID _context,
+  _In_ HANDLE Handle,
+  _In_ PHDAUDIO_DMA_NOTIFICATION_CALLBACK NotificationCallback,
+  _In_ PVOID CallbackContext);
 
 
 typedef struct _HDAUDIO_BUS_INTERFACE {
@@ -430,7 +430,7 @@ typedef struct _HDAUDIO_BUS_INTERFACE_V3 {
   PUNREGISTER_NOTIFICATION_EVENT         UnregisterNotificationEvent;
   PREGISTER_NOTIFICATION_CALLBACK        RegisterNotificationCallback;
   PUNREGISTER_NOTIFICATION_CALLBACK      UnregisterNotificationCallback;
-}HDAUDIO_BUS_INTERFACE_V3, *PHDAUDIO_BUS_INTERFACE_V3;
+} HDAUDIO_BUS_INTERFACE_V3, *PHDAUDIO_BUS_INTERFACE_V3;
 
 #ifdef _MSC_VER
 #pragma warning(default:4201)

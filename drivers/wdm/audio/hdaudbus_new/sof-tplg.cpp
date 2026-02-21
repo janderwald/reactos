@@ -92,17 +92,11 @@ GetSOFTplg(
 		NULL
 	);
 	if (!NT_SUCCESS(status)) {
-		if (outputMemory != WDF_NO_HANDLE) {
-			WdfObjectDelete(outputMemory);
-		}
-		return status;
+		goto Exit;
 	}
 
 	if (outputBuffer->Signature != ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE) {
-		if (outputMemory != WDF_NO_HANDLE) {
-			WdfObjectDelete(outputMemory);
-		}
-		return status;
+		goto Exit;
 	}
 
 	SklHdAudBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
@@ -110,10 +104,7 @@ GetSOFTplg(
 
 	if (outputBuffer->Count % 2) {
 		status = STATUS_ACPI_INVALID_DATA;
-		if (outputMemory != WDF_NO_HANDLE) {
-			WdfObjectDelete(outputMemory);
-		}
-		return status;
+		goto Exit;
 	}
 
 	status = STATUS_NOT_FOUND;
@@ -122,6 +113,7 @@ GetSOFTplg(
 	sofTplg->magic = SOFTPLG_MAGIC;
 	sofTplg->length = sizeof(*sofTplg);
 
+	{
 	PACPI_METHOD_ARGUMENT currArgument = &outputBuffer->Argument[0];
 	for (ULONG i = 0; i < outputBuffer->Count; i += 2) {
 		PACPI_METHOD_ARGUMENT guidArg = currArgument;
@@ -156,7 +148,9 @@ GetSOFTplg(
 			}
 		}
 	}
+	}
 
+Exit:
 	if (outputMemory != WDF_NO_HANDLE) {
 		WdfObjectDelete(outputMemory);
 	}

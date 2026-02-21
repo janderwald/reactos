@@ -2,7 +2,6 @@
 #include "adsp.h"
 
 NTSTATUS
-NTAPI
 Bus_CreatePdo(
     _In_ WDFDEVICE       Device,
     _In_ PWDFDEVICE_INIT DeviceInit,
@@ -155,7 +154,6 @@ Return Value:
 }
 
 NTSTATUS
-NTAPI
 Bus_CreatePdo(
     _In_ WDFDEVICE       Device,
     _In_ PWDFDEVICE_INIT DeviceInit,
@@ -450,12 +448,12 @@ Bus_CreatePdo(
     status = WdfPdoInitAddDeviceText(DeviceInit,
         &buffer,
         &deviceLocation,
-        0x409);
+        MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US));
     if (!NT_SUCCESS(status)) {
         return status;
     }
 
-    WdfPdoInitSetDefaultLocale(DeviceInit, 0x409);
+    WdfPdoInitSetDefaultLocale(DeviceInit, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US));
 
     //
     // Initialize the attributes to specify the size of PDO device extension.
