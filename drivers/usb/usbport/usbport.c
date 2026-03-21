@@ -2298,7 +2298,6 @@ NTAPI
 USBPORT_CompleteTransfer(IN PURB Urb,
                          IN USBD_STATUS TransferStatus)
 {
-    struct _URB_CONTROL_TRANSFER *UrbTransfer;
     PUSBPORT_TRANSFER Transfer;
     NTSTATUS Status;
     PIRP Irp;
@@ -2318,13 +2317,22 @@ USBPORT_CompleteTransfer(IN PURB Urb,
            Urb,
            TransferStatus);
 
-    UrbTransfer = &Urb->UrbControlTransfer;
-    Transfer = UrbTransfer->hca.Reserved8[0];
+    if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+    {
+        Transfer = Urb->UrbIsochronousTransfer.hca.Reserved8[0];
+        TransferLength = Urb->UrbIsochronousTransfer.TransferBufferLength;
+        Mdl = Urb->UrbIsochronousTransfer.TransferBufferMDL;
+    }
+    else
+    {
+        Transfer = Urb->UrbControlTransfer.hca.Reserved8[0];
+        TransferLength = Urb->UrbControlTransfer.TransferBufferLength;
+        Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
+        Urb->UrbControlTransfer.TransferBufferLength = Transfer->CompletedTransferLen;
+    }
 
     Transfer->USBDStatus = TransferStatus;
     Status = USBPORT_USBDStatusToNtStatus(Urb, TransferStatus);
-
-    UrbTransfer->TransferBufferLength = Transfer->CompletedTransferLen;
 
     if (Transfer->Flags & TRANSFER_FLAG_DMA_MAPPED)
     {
@@ -2334,9 +2342,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
         DmaOperations = FdoExtension->DmaAdapter->DmaOperations;
 
         WriteToDevice = Transfer->Direction == USBPORT_DMA_DIRECTION_TO_DEVICE;
-        Mdl = UrbTransfer->TransferBufferMDL;
         CurrentVa = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
-        TransferLength = UrbTransfer->TransferBufferLength;
 
         IsFlushSuccess = DmaOperations->FlushAdapterBuffers(FdoExtension->DmaAdapter,
                                                             Mdl,
@@ -2366,9 +2372,16 @@ USBPORT_CompleteTransfer(IN PURB Urb,
         Urb->UrbHeader.UsbdFlags |= ~USBD_FLAG_ALLOCATED_MDL;
     }
 
-    Urb->UrbControlTransfer.hca.Reserved8[0] = NULL;
-    Urb->UrbHeader.UsbdFlags |= ~USBD_FLAG_ALLOCATED_TRANSFER;
+    if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+    {
+        Urb->UrbIsochronousTransfer.hca.Reserved8[0] = NULL;
+    }
+    else
+    {
+        Urb->UrbControlTransfer.hca.Reserved8[0] = NULL;
+    }
 
+    Urb->UrbHeader.UsbdFlags |= ~USBD_FLAG_ALLOCATED_TRANSFER;
     Irp = Transfer->Irp;
 
     if (Irp)
@@ -2751,7 +2764,15 @@ USBPORT_AllocateTransfer(IN PDEVICE_OBJECT FdoDevice,
 
     KeInitializeSpinLock(&Transfer->TransferSpinLock);
 
-    Urb->UrbControlTransfer.hca.Reserved8[0] = Transfer;
+    if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+    {
+        Urb->UrbIsochronousTransfer.hca.Reserved8[0] = Transfer;
+    }
+    else
+    {
+        Urb->UrbControlTransfer.hca.Reserved8[0] = Transfer;
+    }
+
     Urb->UrbHeader.UsbdFlags |= USBD_FLAG_ALLOCATED_TRANSFER;
 
     USBDStatus = USBD_STATUS_SUCCESS;

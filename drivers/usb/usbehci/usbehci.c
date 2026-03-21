@@ -2796,7 +2796,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             ITD->HwTD.NextLink = LinkPointer;
 
             /* setup frame link */
-            LinkPointer.AsULONG = ITD->PhysicalAddress;
+            LinkPointer.Address = (ITD->PhysicalAddress >> 5);
             LinkPointer.Type = EHCI_LINK_TYPE_iTD;
             LinkPointer.Terminate = 0;
             LinkPointer.Reserved = 0;
@@ -2825,6 +2825,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             CurrentFrame++;
             ITDCount++;
         }
+        ASSERT(EhciTransfer->ActiveITD == NULL);
         EhciTransfer->ActiveITD = FirstITD;
         EhciEndpoint->FrameCount += ITDCount;
         EhciTransfer->PendingTDs += ITDCount;
@@ -4424,6 +4425,8 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
 
         /* Mark iTD as free */
         ITD->TdFlags &= ~EHCI_HCD_ITD_FLAG_ALLOCATED;
+        ITD->NextHcdTD = NULL;
+        ITD->EhciTransfer = NULL;
         EhciEndpoint->RemainITDs++;
 
         /* Update per-iTD count */
@@ -4463,42 +4466,47 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
 
     HcResourcesVA = EhciExtension->HcResourcesVA;
     FrameIndex = Frame % EHCI_FRAME_LIST_MAX_ENTRIES;
-    TargetPhysicalAddress = ITD->PhysicalAddress;
+    ASSERT(FrameIndex == ITD->ScheduledFrame);
+    TargetPhysicalAddress = (ITD->PhysicalAddress >> 5);
 
     DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinking iTD %p from frame %d\n", ITD, FrameIndex);
 
     /* Search and unlink from frame list - simplified version */
     CurrentLink.AsULONG = HcResourcesVA->PeriodicFrameList[FrameIndex];
 
-    if ((CurrentLink.AsULONG & LINK_POINTER_MASK) == TargetPhysicalAddress &&
+    if (CurrentLink.Address == TargetPhysicalAddress &&
         CurrentLink.Type == EHCI_LINK_TYPE_iTD)
     {
         /* Found the iTD at the head of the frame list */
         HcResourcesVA->PeriodicFrameList[FrameIndex] = ITD->HwTD.NextLink.AsULONG;
         DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinked iTD from frame %d head\n", FrameIndex);
-        EhciTransfer->ActiveITD = EhciTransfer->ActiveITD->NextHcdTD;
     }
-    else
+    PrevITD = NULL;
+    CurrentITD = EhciTransfer->ActiveITD;
+    do
     {
-        PrevITD = EhciTransfer->ActiveITD;
-        CurrentITD = PrevITD->NextHcdTD;
-        do
+        ASSERT(CurrentITD->EhciTransfer == EhciTransfer);
+        if (CurrentITD == ITD)
         {
-            if (CurrentITD == ITD)
+            /* unlink */
+            if (PrevITD)
             {
-                /* unlink */
                 PrevITD->NextHcdTD = CurrentITD->NextHcdTD;
-                PrevITD->HwTD.NextLink = CurrentITD->HwTD.NextLink;
-                break;
             }
-            PrevITD = CurrentITD;
-            if (CurrentITD)
+            else
             {
-                CurrentITD = CurrentITD->NextHcdTD;
+                EhciTransfer->ActiveITD = CurrentITD->NextHcdTD;
             }
-        } while (CurrentITD != NULL);
-    }
+            break;
+        }
+        PrevITD = CurrentITD;
+        CurrentITD = CurrentITD->NextHcdTD;
+    } while (CurrentITD != NULL);
+
+    ASSERT(CurrentITD == ITD);
     RtlClearBits(&EhciExtension->IsoBitmap, ITD->ScheduledFrame, 1);
+    ITD->NextHcdTD = NULL;
+    ITD->EhciTransfer = NULL;
 }
 
 BOOLEAN
