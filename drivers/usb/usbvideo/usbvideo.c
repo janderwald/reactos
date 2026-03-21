@@ -279,6 +279,7 @@ USBVideoPnPStart(
         Device->Context = DeviceExtension;
         DeviceExtension->LowerDevice = Device->NextDeviceObject;
         KeInitializeEvent(&DeviceExtension->StoppedStreamingEvent, NotificationEvent, FALSE);
+        KeInitializeSpinLock(&DeviceExtension->StreamingLock);
 
         /* add to object bag*/
         KsAddItemToObjectBag(Device->Bag, Device->Context, ExFreePool);

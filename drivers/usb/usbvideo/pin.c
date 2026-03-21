@@ -200,13 +200,15 @@ USBVideoSetStreamingDefaults(
         }
         else
         {
-            ULONG TransferSize = 650 * 1024; // FIXME determine
+            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize;
+            ULONG Payload = (DeviceExtension->dwMaxPayloadTransferSize);
+            TransferSize = ROUND_UP(TransferSize, Payload);
             DeviceExtension->IsoTransferSize = TransferSize;
-            DeviceExtension->FrameContextCount = 1;
+            DeviceExtension->FrameContextCount = 3;
             DeviceExtension->FrameContextSize = DeviceExtension->IsoTransferSize;
-            DeviceExtension->UrbPoolCount = 1;
-            DeviceExtension->IsoPacketCount = DeviceExtension->IsoTransferSize / DeviceExtension->dwMaxPayloadTransferSize;
-            if (DeviceExtension->IsoTransferSize % DeviceExtension->dwMaxPayloadTransferSize != 0)
+            DeviceExtension->UrbPoolCount = 3;
+            DeviceExtension->IsoPacketCount = DeviceExtension->IsoTransferSize / Payload;
+            if (DeviceExtension->IsoTransferSize % Payload != 0)
             {
                 DeviceExtension->IsoPacketCount++;
             }
@@ -268,7 +270,7 @@ USBVideoSetStreamingFormat(
     {
         case 0x0100: // 1.0
             Length = 26;
-            break;
+            //break;
         case 0x0110: // 1.1
             Length = 34;
             break;
@@ -282,11 +284,12 @@ USBVideoSetStreamingFormat(
             break;
     }
     RtlZeroMemory(&ProbeCommit, sizeof(VS_PROBE_COMMIT_CONTROL));
-    ProbeCommit.bmHint = 0x0001;
+    ProbeCommit.bmHint = 0x09;
     ProbeCommit.bFormatIndex    = FormatIndex;
     ProbeCommit.bFrameIndex     = FrameIndex;
     ProbeCommit.dwFrameInterval = dwFrameInterval;
-    //ProbeCommit.wCompQuality = 10000;
+    ProbeCommit.wCompQuality = 10000;
+    ProbeCommit.bmFramingInfo = 0x3;
 
     UCHAR ProbeControl = 0x01;
     USHORT ProbeValue = 0x100;
@@ -306,8 +309,20 @@ USBVideoSetStreamingFormat(
         return Status;
     }
     /* todo check if format matches request */
+    DPRINT1("bmHint %x\n", ProbeCommit.bmHint);
+    DPRINT1("bFormatIndex %x\n", ProbeCommit.bFormatIndex);
+    DPRINT1("bFrameIndex %x\n", ProbeCommit.bFrameIndex);
+    DPRINT1("dwFrameInterval %x\n", ProbeCommit.dwFrameInterval);
+    DPRINT1("wKeyFrameRate %x\n", ProbeCommit.wKeyFrameRate);
+    DPRINT1("wPFrameRate %x\n", ProbeCommit.wPFrameRate);
+    DPRINT1("wCompQuality %x\n", ProbeCommit.wCompQuality);
+    DPRINT1("wCompWindowSize %x\n", ProbeCommit.wCompWindowSize);
+    DPRINT1("wDelay %x\n", ProbeCommit.wDelay);
+    DPRINT1("dwMaxVideoFrameSize %x\n", ProbeCommit.dwMaxVideoFrameSize);
     DPRINT1("dwMaxPayloadTransferSize %x\n", ProbeCommit.dwMaxPayloadTransferSize);
+    DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
     DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
+
     /* set format */
     UCHAR SetFormat = 0x01;
     USHORT CommitControl = 0x200;
@@ -352,6 +367,7 @@ USBVideoSetStreamingFormat(
     DeviceExtension->PipeType = Urb->UrbSelectInterface.Interface.Pipes[0].PipeType;
     DeviceExtension->hPipe = Urb->UrbSelectInterface.Interface.Pipes[0].PipeHandle;
     DeviceExtension->MaximumPacketSize = Urb->UrbSelectInterface.Interface.Pipes[0].MaximumPacketSize;
+    DPRINT1("MaximumPacketSize %x\n", DeviceExtension->MaximumPacketSize);
     USBVideoSetStreamingDefaults(Pin, ConnectionFormat);
     DPRINT1("USBVideoSetFormat success\n");
     return Status;
@@ -696,7 +712,27 @@ USBVideoPinClose(
     FreeFunction(Urb);
     DPRINT1("USBVideoPinClose Status %x\n", Status);
 
-    /* todo cleanup irps, urbs, etc */
+    for(ULONG i = 0; i < DeviceExtension->FrameContextCount; i++)
+    {
+        FreeFunction(DeviceExtension->FrameCtx[i].FrameBuffer);
+    }
+
+    for (ULONG i = 0; i < DeviceExtension->UrbPoolCount; i++)
+    {
+        FreeFunction(DeviceExtension->Irp[i]);
+        FreeFunction(DeviceExtension->Urb[i]);
+        FreeFunction(DeviceExtension->Buffer[i]);
+    }
+    FreeFunction(DeviceExtension->FrameCtx);
+    FreeFunction(DeviceExtension->Irp);
+    FreeFunction(DeviceExtension->Urb);
+    FreeFunction(DeviceExtension->Buffer);
+
+    DeviceExtension->FrameCtx = NULL;
+    DeviceExtension->Urb = NULL;
+    DeviceExtension->Irp = NULL;
+    DeviceExtension->Buffer = NULL;
+
     Irp->IoStatus.Status = Status;
     return Status;
 }

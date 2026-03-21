@@ -106,8 +106,8 @@ UvcPatchAvi1ToJfif(
                   pFrame + restOffset,
                   restSize);
     // mark header as done
-    pOut[2 + sizeof(JFIF_APP0) + restSize + 1] = 0xFF;
-    pOut[2 + sizeof(JFIF_APP0) + restSize + 2] = 0xD9;
+    pOut[2 + sizeof(JFIF_APP0) + restSize] = 0xFF;
+    pOut[2 + sizeof(JFIF_APP0) + restSize + 1] = 0xD9;
 
     *pOutSize = outSize;
     return STATUS_SUCCESS;
@@ -123,6 +123,7 @@ USBVideoDeliverFrame(
     PKSSTREAM_POINTER StreamPointer;
     PKSPIN Pin;
     NTSTATUS Status;
+    KIRQL OldLevel;
 
     if (!DeviceExtension || !DeviceExtension->Pin)
     {
@@ -151,11 +152,16 @@ USBVideoDeliverFrame(
     ULONG BytesToCopy = min(StreamPointer->Offset->Remaining, FrameSize);
     if (BytesToCopy > 0)
     {
+        ASSERT(BytesToCopy == FrameSize);
+        ASSERT(FrameSize < StreamPointer->Offset->Remaining);
         ULONG Offset = StreamPointer->Offset->Count - StreamPointer->Offset->Remaining;
         DPRINT("USBVideoDeliverFrame: Copying %u bytes at offset %u user buffer (frame size %u)\n",
             BytesToCopy,
             Offset,
             FrameSize);
+
+        KeAcquireSpinLock(&DeviceExtension->StreamingLock, &OldLevel);
+
         if (DeviceExtension->NeedFramePatching)
         {
             Status = UvcPatchAvi1ToJfif(FrameBuffer, BytesToCopy, StreamPointer->StreamHeader->Data, &BytesToCopy);
@@ -166,11 +172,12 @@ USBVideoDeliverFrame(
             Status = STATUS_SUCCESS;
         }
 
+        KeReleaseSpinLock(&DeviceExtension->StreamingLock, OldLevel);
+
         if (NT_SUCCESS(Status))
         {
             /* Advance the stream pointer to deliver the buffer */
-            KsStreamPointerAdvanceOffsetsAndUnlock(StreamPointer, 0, BytesToCopy, FALSE);
-            KsStreamPointerUnlock(StreamPointer, FALSE);
+            KsStreamPointerAdvanceOffsetsAndUnlock(StreamPointer, 0, BytesToCopy, TRUE);
         }
         else
         {

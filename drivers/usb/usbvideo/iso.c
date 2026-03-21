@@ -53,15 +53,14 @@ USBVideoQueueIsoRead(
     Urb->UrbIsochronousTransfer.Hdr.Length = GET_ISO_URB_SIZE(DeviceExtension->IsoPacketCount);
     Urb->UrbIsochronousTransfer.PipeHandle = DeviceExtension->hPipe;
     Urb->UrbIsochronousTransfer.TransferFlags = USBD_TRANSFER_DIRECTION_IN | USBD_START_ISO_TRANSFER_ASAP;
-    Urb->UrbIsochronousTransfer.TransferBufferLength = DeviceExtension->dwMaxPayloadTransferSize * DeviceExtension->IsoPacketCount;
+    Urb->UrbIsochronousTransfer.TransferBufferLength = (DeviceExtension->dwMaxPayloadTransferSize) * DeviceExtension->IsoPacketCount;
     Urb->UrbIsochronousTransfer.TransferBuffer = TransferBuffer;
     Urb->UrbIsochronousTransfer.NumberOfPackets = DeviceExtension->IsoPacketCount;
     Urb->UrbIsochronousTransfer.StartFrame = 0;
 
     for (Index = 0; Index < DeviceExtension->IsoPacketCount; Index++)
     {
-        Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset = Index * DeviceExtension->dwMaxPayloadTransferSize;
-        Urb->UrbIsochronousTransfer.IsoPacket[Index].Length = DeviceExtension->dwMaxPayloadTransferSize;
+        Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset = Index * (DeviceExtension->dwMaxPayloadTransferSize);
     }
     /* setup next stack location */
     IoStack = IoGetNextIrpStackLocation(Irp);
@@ -109,16 +108,64 @@ USBVideoIsoReadComplete(
         return STATUS_MORE_PROCESSING_REQUIRED;
     }
     BytesReceived = 0;
+    UCHAR FirstFID = 0xFF, NewFid = 0xFF;
+    ULONG PacketFIDChange = -1;
+    Data         = (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer;
 
     for(Index = 0; Index < Urb->UrbIsochronousTransfer.NumberOfPackets; Index++)
     {
         //DPRINT1("Index %u Length %u\n", Index, Urb->UrbIsochronousTransfer.IsoPacket[Index].Length);
         BytesReceived += Urb->UrbIsochronousTransfer.IsoPacket[Index].Length;
+        if (Urb->UrbIsochronousTransfer.IsoPacket[Index].Status != USBD_STATUS_SUCCESS)
+        {
+            DPRINT("Status %x failed for packet %u\n", Urb->UrbIsochronousTransfer.IsoPacket[Index].Status, Index);
+            continue;
+        }
+        Offset = Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset;
+        Hdr = (PUVC_PAYLOAD_HEADER)(Data + Offset);
+        HeaderLen = Hdr->bHeaderLength;
+        /* validate header length */
+        if (HeaderLen < 2 || HeaderLen > 12 || Offset + HeaderLen > BytesReceived)
+        {
+            DPRINT("Invalid packet atIso Index %u Offset %u HeaderLen %u BytesReceived %u\n", Index,
+                    Offset, HeaderLen, BytesReceived);
+            continue;
+        }
+        if (FirstFID == 0xFF)
+        {
+            /* valid first packet */
+            FirstFID = Hdr->FID;
+            continue;
+        }
+        if (FirstFID != Hdr->FID)
+        {
+            if (PacketFIDChange == (ULONG)-1)
+            {
+                PUCHAR DataBuffer = (PUCHAR)(Data + Offset + HeaderLen);
+                if (DataBuffer[0] == 0xFF && DataBuffer[1] == 0xD8)
+                {
+                    /* fid changed at packet */
+                    PacketFIDChange = Index;
+                    NewFid = Hdr->FID;
+                }
+            }
+        }
     }
 
-    Data         = (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer;
     Offset        = 0;
-    for(Index = 0; Index < Urb->UrbIsochronousTransfer.NumberOfPackets; Index++)
+    if (PacketFIDChange != (ULONG)-1)
+    {
+          Index = PacketFIDChange;
+          Frame->LastFid = NewFid;
+          Frame->FrameSize = 0;
+          Frame->FrameStarted = TRUE;
+          //DPRINT1("FIDChange at Packet Index %u\n", Index);
+    }
+    else
+    {
+        Index = Urb->UrbIsochronousTransfer.NumberOfPackets + 1; // throw away packet
+    }
+    for(; Index < Urb->UrbIsochronousTransfer.NumberOfPackets; Index++)
     {
         if (Urb->UrbIsochronousTransfer.IsoPacket[Index].Status != USBD_STATUS_SUCCESS)
         {
@@ -136,19 +183,28 @@ USBVideoIsoReadComplete(
                     Offset, HeaderLen, BytesReceived);
             continue;
         }
-#if 0
+
+        /* discard packet if EOH bit is not set */
+        if (Hdr->EOH == 0) {
+            DPRINT1("EOH bit not set at IsoPacket Index %u\n", Index);//, Value[0], Status);
+            continue;
+        }
+
+        /* discard packet if RES bit is set */
+        if (Hdr->RES) {
+            DPRINT1("RES bit set at IsoPacket Index %u\n", Index);//, Value[0], Status);
+            continue;
+        }
+
         /* discard frame if err bit is set */
         if (Hdr->ERR) {
-            //PUCHAR Value = AllocFunction(sizeof(UCHAR)*2);
-            //NTSTATUS Status = USBVideoTransferControlPacket(Pin, Value, sizeof(UCHAR)*2, USBD_TRANSFER_DIRECTION_IN, 0x81, 0x0200, 0x00);
             DPRINT1("ERR bit set at IsoPacket Index %u\n", Index);//, Value[0], Status);
             Frame->FrameStarted = FALSE;
             Frame->FrameSize    = 0;
-            break;
+            continue;
         }
-#endif
         /* check FID */
-        if (Frame->FrameStarted && (Hdr->FID != Frame->LastFid || Hdr->EOF)) {
+        if (Frame->FrameStarted && Frame->FrameSize > 0 && (Hdr->FID != Frame->LastFid)) {
             USBVideoDeliverFrame(DeviceExtension,
                             Frame->FrameBuffer,
                             Frame->FrameSize);
@@ -159,12 +215,13 @@ USBVideoIsoReadComplete(
 
         /* copy payload */
         ULONG PayloadDataOffset = Offset + HeaderLen;
-        ULONG PayloadDataLen    = DeviceExtension->dwMaxPayloadTransferSize - HeaderLen;
-
+        ULONG Length = Urb->UrbIsochronousTransfer.IsoPacket[Index].Length;
+        ULONG PayloadDataLen    = Length - HeaderLen;
+#if 0
         /* validate payload length*/
         if (PayloadDataOffset + PayloadDataLen > BytesReceived)
             PayloadDataLen = BytesReceived - PayloadDataOffset;
-
+#endif
         if (PayloadDataLen > 0 && Frame->FrameSize + PayloadDataLen <= Frame->MaxFrameSize) {
 
             RtlCopyMemory(
@@ -175,6 +232,19 @@ USBVideoIsoReadComplete(
             /* update buffer */
             Frame->FrameSize   += PayloadDataLen;
             Frame->FrameStarted = TRUE;
+        }
+
+        /* check FID */
+        if (Frame->FrameStarted && Frame->FrameSize > 2 && Hdr->EOF) {
+            if (Frame->FrameBuffer[Frame->FrameSize-2] == 0xFF &&
+                Frame->FrameBuffer[Frame->FrameSize-1] == 0xD9)
+            {
+                USBVideoDeliverFrame(DeviceExtension,
+                                Frame->FrameBuffer,
+                                Frame->FrameSize);
+                Frame->FrameSize    = 0;
+                Frame->FrameStarted = FALSE;
+            }
         }
 
         if (Frame->FrameSize == Frame->MaxFrameSize)

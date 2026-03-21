@@ -27,14 +27,12 @@ typedef struct _VS_PROBE_COMMIT_CONTROL {
     USHORT  wDelay;
     ULONG   dwMaxVideoFrameSize;
     ULONG   dwMaxPayloadTransferSize;
- #if 0
     // UVC 1.1+
     DWORD  dwClockFrequency;
     UCHAR   bmFramingInfo;
     UCHAR   bPreferedVersion;
     UCHAR   bMinVersion;
     UCHAR   bMaxVersion;
-#endif
 }VS_PROBE_COMMIT_CONTROL;
 
 typedef struct _JFIF_APP0 {
@@ -308,6 +306,8 @@ typedef struct
 
 #include <poppack.h>
 
+#define ROUND_DOWN(n, align) (((ULONG)n) & ~((align) - 1l))
+#define ROUND_UP(n, align) ROUND_DOWN(((ULONG)n) + (align) - 1, (align))
 
 typedef struct
 {
@@ -324,6 +324,7 @@ typedef struct
     USBD_PIPE_TYPE PipeType;                                      /* pipe type */
     ULONG MaximumPacketSize;                                      /* max packet size */
     PFRAME_CONTEXT FrameCtx;
+    ULONG dwMaxVideoFrameSize;                                    /* max video frame size */
     ULONG dwMaxPayloadTransferSize;
     PVIDEO_FORMAT_INFO VideoFormatInfo;                           /* video format lookup info */
     PUCHAR * Buffer;                                              /* buffer array for irp queue */
@@ -333,7 +334,7 @@ typedef struct
     ULONG StopStreaming;                                          /* stops streaming */
     ULONG StoppedStreamingIrps;                                   /* stopped streaming irp count */
     KEVENT StoppedStreamingEvent;                                  /* stopped streaming event */
-
+    KSPIN_LOCK StreamingLock;
     ULONG BulkTransferSize;
     ULONG IsoTransferSize;
     ULONG FrameContextCount;
