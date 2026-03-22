@@ -202,19 +202,25 @@ USBVideoSetStreamingDefaults(
         {
             ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize;
             ULONG Payload = (DeviceExtension->dwMaxPayloadTransferSize);
-            TransferSize = ROUND_UP(TransferSize, Payload);
-            DeviceExtension->IsoTransferSize = TransferSize;
-            DeviceExtension->FrameContextCount = 3;
-            DeviceExtension->FrameContextSize = DeviceExtension->IsoTransferSize;
-            DeviceExtension->UrbPoolCount = 3;
-            DeviceExtension->IsoPacketCount = DeviceExtension->IsoTransferSize / Payload;
-            if (DeviceExtension->IsoTransferSize % Payload != 0)
+            ULONG Rest = TransferSize % Payload;
+            ULONG PacketCount = TransferSize / Payload;
+            if (Rest != 0)
             {
-                DeviceExtension->IsoPacketCount++;
+                PacketCount++;
             }
-            DeviceExtension->IsoPacketCount = min(DeviceExtension->IsoPacketCount, 256);
+            PacketCount = ROUND_UP(PacketCount, 8);
+            TransferSize = DeviceExtension->dwMaxPayloadTransferSize * PacketCount;
+
+            DeviceExtension->IsoTransferSize = TransferSize;
+            DeviceExtension->FrameContextCount = 1;
+            DeviceExtension->FrameContextSize = TransferSize * 2;
+            DeviceExtension->UrbPoolCount = 1;
+            DeviceExtension->IsoPacketCount = PacketCount;
             DeviceExtension->NeedFramePatching = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
+
         }
+        DPRINT1("bFixedSizeSamples %u\n", Format->bFixedSizeSamples);
+        DPRINT1("dwMaxVideoFrameSize %u\n", DeviceExtension->dwMaxVideoFrameSize);
         DPRINT1("IsoTransferSize %u\n", DeviceExtension->IsoTransferSize);
         DPRINT1("FrameContextCount %u\n", DeviceExtension->FrameContextCount);
         DPRINT1("FrameContextSize %u\n", DeviceExtension->FrameContextSize);

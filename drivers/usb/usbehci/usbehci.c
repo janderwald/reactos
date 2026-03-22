@@ -2620,6 +2620,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
     EhciTransfer->TransferParameters = TransferParameters;
     EhciTransfer->USBDStatus = USBD_STATUS_SUCCESS;
     EhciTransfer->EhciEndpoint = EhciEndpoint;
+    InitializeListHead(&EhciTransfer->ActiveITDs);
 
     DeviceSpeed = EhciEndpoint->EndpointProperties.DeviceSpeed;
 
@@ -2662,6 +2663,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             return MP_STATUS_NO_RESOURCES;
         }
         DPRINT("OriginalFrame %u New FrameNumber %u\n", IsoTransfer->Packets[0].FrameNumber, CurrentFrame);
+        EHCI_DisablePeriodicList(EhciExtension);
 
         /* Allocate and program iTDs, one per frame */
         while (PacketIndex < IsoTransfer->TotalPackets)
@@ -2681,6 +2683,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 /* TODO: free previously allocated iTDs */
                 return MP_STATUS_NO_RESOURCES;
             }
+
             DPRINT("ITD %p CurrentFrame %x\n", ITD, CurrentFrame);
             EndpointProperties = &EhciEndpoint->EndpointProperties;
             DeviceAddress = EndpointProperties->DeviceAddress;
@@ -2707,7 +2710,10 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             ITD->HwTD.Buffer[1].Direction = Direction;
 
             /* Setup buffer page 2 with multi (transactions per microframe) */
-            ITD->HwTD.Buffer[2].Multi = EndpointProperties->TransactionPerMicroframe;
+            ITD->HwTD.Buffer[2].Multi = IsoTransfer->Packets[PacketIndex].PacketLength / EndpointProperties->MaxPacketSize;
+            ASSERT(IsoTransfer->Packets[PacketIndex].PacketLength % EndpointProperties->MaxPacketSize == 0);
+            ASSERT(ITD->HwTD.Buffer[2].Multi > 0);
+            ASSERT(ITD->HwTD.Buffer[2].Multi <= 3);
 
             /* Program each packet into a transaction slot */
             for (p = 0; p < PacketsThisITD; p++)
@@ -2824,9 +2830,9 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             PacketIndex += PacketsThisITD;
             CurrentFrame++;
             ITDCount++;
+            InsertTailList(&EhciTransfer->ActiveITDs, &ITD->ActiveITDEntry);
+            //DPRINT1("Submitted ITD %p at Frame %u\n", ITD, ITD->ScheduledFrame);
         }
-        ASSERT(EhciTransfer->ActiveITD == NULL);
-        EhciTransfer->ActiveITD = FirstITD;
         EhciEndpoint->FrameCount += ITDCount;
         EhciTransfer->PendingTDs += ITDCount;
         EhciExtension->PendingTransfers++;
@@ -2866,10 +2872,11 @@ EHCI_AbortIsoTransfer(IN PEHCI_EXTENSION EhciExtension,
         DPRINT("EHCI_AbortIsoTransfer: Aborting high-speed ISO transfer\n");
 
         /* Find iTDs belonging to this transfer and abort them */
-        while(EhciTransfer->ActiveITD)
+        while(!IsListEmpty(&EhciTransfer->ActiveITDs))
         {
             /* grab first */
-            ITD = EhciTransfer->ActiveITD;
+            PLIST_ENTRY Entry = RemoveHeadList(&EhciTransfer->ActiveITDs);
+            ITD = CONTAINING_RECORD(Entry, EHCI_HCD_ITD, ActiveITDEntry);
             /* Found an iTD for this transfer */
             DPRINT("EHCI_AbortIsoTransfer: Aborting iTD %p\n", ITD);
 
@@ -3909,8 +3916,9 @@ EHCI_PollIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
                 if (ITD->PacketLength[TransIdx] > 0)
                 {
                     HasProgrammedTransactions = TRUE;
-                    if (ITD->HwTD.Transaction[TransIdx].Status &
-                       (EHCI_TOKEN_STATUS_ACTIVE >> 4))
+
+                    ULONG Status = ITD->HwTD.Transaction[TransIdx].Status;
+                    if (Status & (1 << 3))
                     {
                         StillActive = TRUE;
                         break;
@@ -3940,6 +3948,7 @@ EHCI_PollEndpoint(IN PVOID ehciExtension,
 {
     PEHCI_EXTENSION EhciExtension = ehciExtension;
     PEHCI_ENDPOINT EhciEndpoint = ehciEndpoint;
+
     ULONG TransferType;
 
     //DPRINT_EHCI("EHCI_PollEndpoint: EhciEndpoint - %p\n", EhciEndpoint);
@@ -4427,6 +4436,10 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
         ITD->TdFlags &= ~EHCI_HCD_ITD_FLAG_ALLOCATED;
         ITD->NextHcdTD = NULL;
         ITD->EhciTransfer = NULL;
+        ITD->EhciEndpoint = NULL;
+        for(ULONG Index = 0; Index < EHCI_MAX_ITD_TRANSACTIONS; Index++)
+            ITD->PacketLength[Index] = 0;
+
         EhciEndpoint->RemainITDs++;
 
         /* Update per-iTD count */
@@ -4436,10 +4449,10 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                ITD, TotalBytesTransferred, EhciTransfer->PendingTDs);
 
         /* Complete the transfer only when ALL iTDs are done */
-        if (EhciTransfer->ActiveITD == NULL)
+        if (IsListEmpty(&EhciTransfer->ActiveITDs))
         {
+            ASSERT(EhciTransfer->PendingTDs == 0);
             EhciExtension->PendingTransfers--;
-            ASSERT(EhciTransfer->ActiveITD == NULL);
             DPRINT("EHCI_ProcessCompletedITD: Transfer fully completed, %d total bytes\n",
                    EhciTransfer->TransferLen);
 
@@ -4462,7 +4475,7 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
     ULONG FrameIndex;
     ULONG TargetPhysicalAddress;
     EHCI_LINK_POINTER CurrentLink;
-    PEHCI_HCD_ITD PrevITD, CurrentITD;
+
 
     HcResourcesVA = EhciExtension->HcResourcesVA;
     FrameIndex = Frame % EHCI_FRAME_LIST_MAX_ENTRIES;
@@ -4481,29 +4494,7 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
         HcResourcesVA->PeriodicFrameList[FrameIndex] = ITD->HwTD.NextLink.AsULONG;
         DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinked iTD from frame %d head\n", FrameIndex);
     }
-    PrevITD = NULL;
-    CurrentITD = EhciTransfer->ActiveITD;
-    do
-    {
-        ASSERT(CurrentITD->EhciTransfer == EhciTransfer);
-        if (CurrentITD == ITD)
-        {
-            /* unlink */
-            if (PrevITD)
-            {
-                PrevITD->NextHcdTD = CurrentITD->NextHcdTD;
-            }
-            else
-            {
-                EhciTransfer->ActiveITD = CurrentITD->NextHcdTD;
-            }
-            break;
-        }
-        PrevITD = CurrentITD;
-        CurrentITD = CurrentITD->NextHcdTD;
-    } while (CurrentITD != NULL);
-
-    ASSERT(CurrentITD == ITD);
+    RemoveEntryList(&ITD->ActiveITDEntry);
     RtlClearBits(&EhciExtension->IsoBitmap, ITD->ScheduledFrame, 1);
     ITD->NextHcdTD = NULL;
     ITD->EhciTransfer = NULL;

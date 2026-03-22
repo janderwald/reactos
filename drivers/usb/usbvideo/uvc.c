@@ -155,7 +155,7 @@ USBVideoDeliverFrame(
         ASSERT(BytesToCopy == FrameSize);
         ASSERT(FrameSize < StreamPointer->Offset->Remaining);
         ULONG Offset = StreamPointer->Offset->Count - StreamPointer->Offset->Remaining;
-        DPRINT("USBVideoDeliverFrame: Copying %u bytes at offset %u user buffer (frame size %u)\n",
+        DPRINT1("USBVideoDeliverFrame: Copying %u bytes at offset %u user buffer (frame size %u)\n",
             BytesToCopy,
             Offset,
             FrameSize);

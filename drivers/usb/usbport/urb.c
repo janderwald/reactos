@@ -637,6 +637,33 @@ USBPORT_ValidateTransferParametersURB(IN PURB Urb)
 
     DPRINT_URB("USBPORT_ValidateTransferParametersURB: Urb - %p\n", Urb);
 
+    if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+    {
+            if (Urb->UrbIsochronousTransfer.TransferBuffer != NULL &&
+        Urb->UrbIsochronousTransfer.TransferBufferMDL == NULL &&
+        Urb->UrbIsochronousTransfer.TransferBufferLength != 0)
+        {
+            Mdl = IoAllocateMdl(Urb->UrbIsochronousTransfer.TransferBuffer,
+                            Urb->UrbIsochronousTransfer.TransferBufferLength,
+                            FALSE,
+                            FALSE,
+                            NULL);
+
+            if (!Mdl)
+            {
+                DPRINT1("USBPORT_ValidateTransferParametersURB: Not allocated Mdl\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            MmBuildMdlForNonPagedPool(Mdl);
+
+            Urb->UrbIsochronousTransfer.TransferBufferMDL = Mdl;
+            Urb->UrbHeader.UsbdFlags |= USBD_FLAG_ALLOCATED_MDL;
+            return STATUS_SUCCESS;
+        }
+    }
+
+
     UrbRequest = &Urb->UrbControlTransfer;
 
     if (UrbRequest->TransferBuffer == NULL &&

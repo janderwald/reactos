@@ -60,8 +60,8 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
     ULONG TotalPackets, Idx;
     ULONG Period;
     BOOLEAN IsHighSpeed;
-    //PUSBPORT_DEVICE_EXTENSION FdoExtension;
-    //PUSBPORT_REGISTRATION_PACKET Packet;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    PUSBPORT_REGISTRATION_PACKET Packet;
 
     DPRINT("USBPORT_InitializeIsoTransfer: FdoDevice - %p, Urb - %p Irp - %p\n", FdoDevice, Urb, Transfer->Irp);
 
@@ -99,7 +99,6 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
 
     IsoBlock->TotalPackets = TotalPackets;
     IsoBlock->MappedBuffer = (PVOID)SgTable->MappedSystemVa;
-#if 0
     if (Urb->TransferFlags & USBD_START_ISO_TRANSFER_ASAP)
     {
         FdoExtension = FdoDevice->DeviceExtension;
@@ -107,7 +106,6 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
         Urb->StartFrame = (Packet->Get32BitFrameNumber(FdoExtension->MiniPortExt) + 64) & 0xFFFFFFF0;
         DPRINT("Urb StartFrame %u\n", Urb->StartFrame);
     }
-#endif
     /*
      * Walk each URB packet descriptor, compute its actual byte length
      * from the offset array, resolve the physical scatter/gather mapping,
@@ -274,7 +272,6 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
             PacketLength = IsoUrb->TransferBufferLength - PacketDescriptor->Offset;
         }
 
-
         if (RemainingLength >= PacketLength)
         {
             PacketDescriptor->Status = USBD_STATUS_SUCCESS;
@@ -287,8 +284,11 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
             PacketDescriptor->Status = USBD_STATUS_SUCCESS;
             PacketDescriptor->Length = RemainingLength;
             CompletedLength += RemainingLength;
-            RemainingLength = 0;
-            i++;
+            if (RemainingLength > 0)
+            {
+                RemainingLength = 0;
+                i++;
+            }
             break;
         }
     }while(i++ < IsoUrb->NumberOfPackets);
