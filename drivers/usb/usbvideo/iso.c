@@ -131,19 +131,20 @@ USBVideoIsoReadComplete(
 
         /* discard frame if err bit is set */
         if (Hdr->ERR) {
-            DPRINT1("ERR bit set at IsoPacket Index %u BytesReceived %u\n", Index, BytesReceived);//, Value[0], Status);
+            DPRINT("ERR bit set at IsoPacket Index %u BytesReceived %u\n", Index, BytesReceived);//, Value[0], Status);
+            Frame->FrameSize = 0;
+            Frame->FrameStarted = FALSE;
             continue;
         }
-#if 0
         /* check FID */
         if (Frame->FrameStarted && Frame->FrameSize > 0 && (Hdr->FID != Frame->LastFid)) {
             USBVideoDeliverFrame(DeviceExtension,
                             Frame->FrameBuffer,
-                            Frame->FrameSize);
+                            Frame->FrameSize,
+                            TRUE);
             Frame->FrameSize    = 0;
             Frame->FrameStarted = FALSE;
         }
-#endif
         Frame->LastFid = Hdr->FID;
 
         /* copy payload */
@@ -151,21 +152,23 @@ USBVideoIsoReadComplete(
         ULONG Length = Urb->UrbIsochronousTransfer.IsoPacket[Index].Length;
         ULONG PayloadDataLen    = Length - HeaderLen;
 
-        if (Data[PayloadDataOffset] == 0xFF &&
-           Data[PayloadDataOffset+1] == 0xD8)
+        if (DeviceExtension->IsMjpegFormat)
         {
-            if (Frame->FrameStarted && Frame->FrameSize > 0)
+            if (Data[PayloadDataOffset] == 0xFF &&
+                Data[PayloadDataOffset+1] == 0xD8)
             {
-                DPRINT1("SOF found at Offset %u PacketIndex %u\n", PayloadDataOffset, Index);
-                USBVideoDeliverFrame(DeviceExtension,
-                                Frame->FrameBuffer,
-                                Frame->FrameSize);
-
+                if (Frame->FrameStarted && Frame->FrameSize > 0)
+                {
+                    DPRINT("SOF found at Offset %u PacketIndex %u\n", PayloadDataOffset, Index);
+                    USBVideoDeliverFrame(DeviceExtension,
+                                    Frame->FrameBuffer,
+                                    Frame->FrameSize,
+                                    TRUE);
+                }
+                Frame->FrameSize    = 0;
+                Frame->FrameStarted = FALSE;
             }
-            Frame->FrameSize    = 0;
-            Frame->FrameStarted = FALSE;
         }
-
 
         if (PayloadDataLen > 0 && Frame->FrameSize + PayloadDataLen <= Frame->MaxFrameSize)
          {
@@ -180,54 +183,41 @@ USBVideoIsoReadComplete(
             Frame->FrameStarted = TRUE;
         }
 
-
-        if (Frame->FrameSize > 2 && Frame->FrameBuffer[Frame->FrameSize-2] == 0xFF &&
-            Frame->FrameBuffer[Frame->FrameSize-1] == 0xD9)
+        if (DeviceExtension->IsMjpegFormat)
         {
-            DPRINT1("EOF found\n");
-            USBVideoDeliverFrame(DeviceExtension,
-                                Frame->FrameBuffer,
-                                Frame->FrameSize);
-            Frame->FrameSize    = 0;
-            Frame->FrameStarted = FALSE;
-        }
-#if 0
-        /* check FID */
-
-        if (Frame->FrameStarted && Frame->FrameSize > 2 && Hdr->EOF) {
-            if (Frame->FrameBuffer[Frame->FrameSize-2] == 0xFF &&
+            if (Frame->FrameSize > 2 && Frame->FrameBuffer[Frame->FrameSize-2] == 0xFF &&
                 Frame->FrameBuffer[Frame->FrameSize-1] == 0xD9)
             {
                 USBVideoDeliverFrame(DeviceExtension,
-                                Frame->FrameBuffer,
-                                Frame->FrameSize);
+                                    Frame->FrameBuffer,
+                                    Frame->FrameSize,
+                                    TRUE);
                 Frame->FrameSize    = 0;
                 Frame->FrameStarted = FALSE;
             }
         }
-#endif
+        /* check FID */
+        if (Frame->FrameStarted && Frame->FrameSize > 2 && Hdr->EOF)
+        {
+            USBVideoDeliverFrame(DeviceExtension,
+                                Frame->FrameBuffer,
+                                Frame->FrameSize,
+                                TRUE);
+            Frame->FrameSize    = 0;
+            Frame->FrameStarted = FALSE;
+        }
+
         if (Frame->FrameSize == Frame->MaxFrameSize)
         {
-            DPRINT1("Buffer full transmitting\n");
-                        USBVideoDeliverFrame(DeviceExtension,
+            USBVideoDeliverFrame(DeviceExtension,
                                 Frame->FrameBuffer,
-                                Frame->FrameSize);
+                                Frame->FrameSize,
+                                FALSE);
 
             Frame->FrameSize    = 0;
             Frame->FrameStarted = FALSE;
         }
     }
-
-        if (Frame->FrameSize > 2)
-        {
-            DPRINT1("after loop\n");
-            USBVideoDeliverFrame(DeviceExtension,
-                                Frame->FrameBuffer,
-                                Frame->FrameSize);
-            Frame->FrameSize    = 0;
-            Frame->FrameStarted = FALSE;
-        }
-
     RtlZeroMemory(Urb->UrbIsochronousTransfer.TransferBuffer, DeviceExtension->IsoTransferSize);
     /* requeue irp */
     USBVideoQueueIsoRead(Pin,

@@ -2457,7 +2457,15 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
     Endpoint = Transfer->Endpoint;
     TransferLength = Transfer->TransferParameters.TransferBufferLength;
 
-    Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
+    if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+    {
+        Mdl = Urb->UrbIsochronousTransfer.TransferBufferMDL;
+    }
+    else
+    {
+        Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
+    }
+
     CurrentVa = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
 
     sgList = &Transfer->SgList;
@@ -2704,10 +2712,6 @@ USBPORT_AllocateTransfer(IN PDEVICE_OBJECT FdoDevice,
 
             PagesNeed = ADDRESS_AND_SIZE_TO_SPAN_PAGES(VirtualAddr,
                                                    TransferLength);
-            if (PagesNeed > 0)
-            {
-                PagesNeed--;
-            }
         }
     }
 

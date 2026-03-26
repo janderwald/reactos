@@ -138,7 +138,6 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
         PktData->PacketLength = PktBytes;
         PktData->BytesTransferred = 0;
         PktData->CompletionStatus = USBD_STATUS_NOT_ACCESSED;
-
         /* Assign USB frame/microframe indices based on bus speed */
         if (IsHighSpeed)
         {

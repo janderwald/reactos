@@ -121,7 +121,8 @@ USBVideoBulkReadComplete(
         if (Frame->FrameStarted && Hdr->FID != Frame->LastFid) {
             USBVideoDeliverFrame(DeviceExtension,
                             Frame->FrameBuffer,
-                            Frame->FrameSize);
+                            Frame->FrameSize,
+                            TRUE);
             Frame->FrameSize    = 0;
             Frame->FrameStarted = FALSE;
         }
@@ -151,7 +152,8 @@ USBVideoBulkReadComplete(
         if (Hdr->EOF && Frame->FrameStarted) {
             USBVideoDeliverFrame(DeviceExtension,
                             Frame->FrameBuffer,
-                            Frame->FrameSize);
+                            Frame->FrameSize,
+                            TRUE);
             /* reset buffer */
             Frame->FrameSize    = 0;
             Frame->FrameStarted = FALSE;

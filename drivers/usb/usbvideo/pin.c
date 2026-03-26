@@ -173,14 +173,14 @@ USBVideoSetStreamingDefaults(
         DeviceExtension->FrameContextCount = 1;
         DeviceExtension->UrbPoolCount = 4;
         DeviceExtension->FrameContextSize = Format->VideoInfoHeader.dwBitRate;
-        DeviceExtension->NeedFramePatching = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
+        DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
         DPRINT1("BulkTransferSize %u\n", DeviceExtension->BulkTransferSize);
         DPRINT1("FrameContextCount %u\n", DeviceExtension->FrameContextCount);
         DPRINT1("FrameContextSize %u\n", DeviceExtension->FrameContextSize);
         DPRINT1("UrbPoolCount %u\n", DeviceExtension->UrbPoolCount);
         DPRINT1("IsoPacketCount %u\n", DeviceExtension->IsoPacketCount);
-        DPRINT1("NeedFramePatching %u\n", DeviceExtension->NeedFramePatching);
+        DPRINT1("IsMjpegFormat %u\n", DeviceExtension->IsMjpegFormat);
     }
     else
     {
@@ -196,7 +196,7 @@ USBVideoSetStreamingDefaults(
             DeviceExtension->FrameContextSize = DeviceExtension->IsoTransferSize;
             DeviceExtension->UrbPoolCount = 2;
             DeviceExtension->IsoPacketCount = Count;
-            DeviceExtension->NeedFramePatching = FALSE;
+            DeviceExtension->IsMjpegFormat = FALSE;
         }
         else
         {
@@ -216,7 +216,7 @@ USBVideoSetStreamingDefaults(
             DeviceExtension->FrameContextSize = TransferSize * 2;
             DeviceExtension->UrbPoolCount = 1;
             DeviceExtension->IsoPacketCount = PacketCount;
-            DeviceExtension->NeedFramePatching = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
+            DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
         }
         DPRINT1("bFixedSizeSamples %u\n", Format->bFixedSizeSamples);
@@ -226,7 +226,7 @@ USBVideoSetStreamingDefaults(
         DPRINT1("FrameContextSize %u\n", DeviceExtension->FrameContextSize);
         DPRINT1("UrbPoolCount %u\n", DeviceExtension->UrbPoolCount);
         DPRINT1("IsoPacketCount %u\n", DeviceExtension->IsoPacketCount);
-        DPRINT1("NeedFramePatching %u\n", DeviceExtension->NeedFramePatching);
+        DPRINT1("IsMjpegFormat %u\n", DeviceExtension->IsMjpegFormat);
     }
 }
 
@@ -276,7 +276,7 @@ USBVideoSetStreamingFormat(
     {
         case 0x0100: // 1.0
             Length = 26;
-            //break;
+            break;
         case 0x0110: // 1.1
             Length = 34;
             break;
@@ -290,7 +290,7 @@ USBVideoSetStreamingFormat(
             break;
     }
     RtlZeroMemory(&ProbeCommit, sizeof(VS_PROBE_COMMIT_CONTROL));
-    ProbeCommit.bmHint = 0x09;
+    ProbeCommit.bmHint = 0x01;
     ProbeCommit.bFormatIndex    = FormatIndex;
     ProbeCommit.bFrameIndex     = FrameIndex;
     ProbeCommit.dwFrameInterval = dwFrameInterval;
@@ -324,8 +324,8 @@ USBVideoSetStreamingFormat(
     DPRINT1("wCompQuality %x\n", ProbeCommit.wCompQuality);
     DPRINT1("wCompWindowSize %x\n", ProbeCommit.wCompWindowSize);
     DPRINT1("wDelay %x\n", ProbeCommit.wDelay);
-    DPRINT1("dwMaxVideoFrameSize %x\n", ProbeCommit.dwMaxVideoFrameSize);
-    DPRINT1("dwMaxPayloadTransferSize %x\n", ProbeCommit.dwMaxPayloadTransferSize);
+    DPRINT1("dwMaxVideoFrameSize %u\n", ProbeCommit.dwMaxVideoFrameSize);
+    DPRINT1("dwMaxPayloadTransferSize %u\n", ProbeCommit.dwMaxPayloadTransferSize);
     DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
     DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
 
@@ -373,7 +373,7 @@ USBVideoSetStreamingFormat(
     DeviceExtension->PipeType = Urb->UrbSelectInterface.Interface.Pipes[0].PipeType;
     DeviceExtension->hPipe = Urb->UrbSelectInterface.Interface.Pipes[0].PipeHandle;
     DeviceExtension->MaximumPacketSize = Urb->UrbSelectInterface.Interface.Pipes[0].MaximumPacketSize;
-    DPRINT1("MaximumPacketSize %x\n", DeviceExtension->MaximumPacketSize);
+    DPRINT1("MaximumPacketSize %u\n", DeviceExtension->MaximumPacketSize);
     USBVideoSetStreamingDefaults(Pin, ConnectionFormat);
     DPRINT1("USBVideoSetFormat success\n");
     return Status;

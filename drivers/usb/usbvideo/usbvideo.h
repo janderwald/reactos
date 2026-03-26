@@ -15,7 +15,8 @@
 
 #include <pshpack1.h>
 
-typedef struct _VS_PROBE_COMMIT_CONTROL {
+typedef struct _VS_PROBE_COMMIT_CONTROL
+{
     USHORT  bmHint;
     UCHAR   bFormatIndex;
     UCHAR   bFrameIndex;
@@ -33,20 +34,8 @@ typedef struct _VS_PROBE_COMMIT_CONTROL {
     UCHAR   bPreferedVersion;
     UCHAR   bMinVersion;
     UCHAR   bMaxVersion;
-}VS_PROBE_COMMIT_CONTROL;
-
-typedef struct _JFIF_APP0 {
-    UCHAR  marker[2];
-    USHORT length;
-    UCHAR  identifier[5];
-    UCHAR  versionMajor;
-    UCHAR  versionMinor;
-    UCHAR  pixelAspect;
-    USHORT xDensity;
-    USHORT yDensity;
-    UCHAR  xThumbnail;
-    UCHAR  yThumbnail;
-} JFIF_APP0;
+    // TODO UVC 1.5
+} VS_PROBE_COMMIT_CONTROL;
 
 typedef struct
 {
@@ -55,8 +44,7 @@ typedef struct
         UCHAR bCompressionIndex;
         ULONG dwMaxVideoFrameSize;
         ULONG dwMaxPayloadTransferSize;
-}STILL_PROBE_COMMIT, *PSTILL_PROBE_COMMIT;;
-
+} STILL_PROBE_COMMIT, *PSTILL_PROBE_COMMIT;;
 
 typedef struct _FRAME_CONTEXT {
     PUCHAR  FrameBuffer;
@@ -341,7 +329,7 @@ typedef struct
     ULONG FrameContextSize;
     ULONG UrbPoolCount;
     ULONG IsoPacketCount;
-    BOOLEAN NeedFramePatching;
+    BOOLEAN IsMjpegFormat;
 } USB_VIDEO_DEVICE_EXTENSION, *PUSB_VIDEO_DEVICE_EXTENSION;
 
 
@@ -627,4 +615,5 @@ NTAPI
 USBVideoDeliverFrame(
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     PUCHAR FrameBuffer,
-    ULONG FrameSize);
+    ULONG FrameSize,
+    UCHAR CompleteFrame);
