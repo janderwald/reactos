@@ -2703,6 +2703,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             if (PacketsThisITD > PacketsPerITD)
                 PacketsThisITD = PacketsPerITD;
             ASSERT(PacketsThisITD <= 8);
+            ASSERT(PacketsThisITD > 0);
 
             /* Setup buffer page 0 with device/endpoint info */
             ITD->HwTD.Buffer[0].DeviceAddress = DeviceAddress;
@@ -2718,6 +2719,9 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             ASSERT(ITD->HwTD.Buffer[2].Multi > 0);
             ASSERT(ITD->HwTD.Buffer[2].Multi <= 3);
 
+            // store number of packets
+            ITD->PacketsThisITD = PacketsThisITD;
+
             /* Program each packet into a transaction slot */
             for (p = 0; p < PacketsThisITD; p++)
             {
@@ -2726,6 +2730,9 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 ULONG PageAddr;
                 ULONG Offset;
                 ULONG ThisPageSelect;
+
+                /* store USBPORT iso packet ref*/
+                ITD->IsoPacket[p] = Packet;
 
                 /* Determine microframe slot: for period=1, slots 0,1,2,...7 */
                 MicroFrame = p * Period;
@@ -2792,7 +2799,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 ITD->HwTD.Transaction[MicroFrame].xOffset = Offset;
                 ITD->HwTD.Transaction[MicroFrame].PageSelect = ThisPageSelect;
                 ITD->HwTD.Transaction[MicroFrame].xLength = Packet->PacketLength;
-                ITD->HwTD.Transaction[MicroFrame].Status = EHCI_TOKEN_STATUS_ACTIVE >> 4;
+                ITD->HwTD.Transaction[MicroFrame].Status = 1 << 3;
 
                 /* Set IOC on the last transaction of the last iTD */
                 if (p == PacketsThisITD - 1)
@@ -2823,22 +2830,11 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             KeMemoryBarrier();
             /* Store the frame index in the iTD for unlinking later */
             ITD->ScheduledFrame = FrameIndex;
-            /* clear next itd software link */
-            ITD->NextHcdTD = NULL;
 
             /* Track which frame this iTD was inserted at */
             if (ITDCount == 0)
                 EhciEndpoint->StartingFrame = FrameIndex;
 
-            if (!FirstITD)
-            {
-                FirstITD = ITD;
-            }
-            if (LastITD)
-            {
-                LastITD->NextHcdTD = ITD;
-            }
-            LastITD = ITD;
             PacketIndex += PacketsThisITD;
             CurrentFrame++;
             ITDCount++;
@@ -3917,18 +3913,18 @@ EHCI_PollIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
                 ITD = (PEHCI_HCD_ITD)((ULONG_PTR)ITD + Size);
                 continue;
             }
-
+            KeMemoryBarrier();
             /* Check if any initialized transaction in this iTD is still active.
              * Also verify at least one transaction was programmed to avoid
              * false-completing an allocated but not-yet-programmed iTD. */
             StillActive = FALSE;
             BOOLEAN HasProgrammedTransactions = FALSE;
-            for (TransIdx = 0; TransIdx < EHCI_MAX_ITD_TRANSACTIONS; TransIdx++)
+            ASSERT(ITD->PacketsThisITD);
+            for (TransIdx = 0; TransIdx < ITD->PacketsThisITD; TransIdx++)
             {
                 if (ITD->PacketLength[TransIdx] > 0)
                 {
                     HasProgrammedTransactions = TRUE;
-
                     ULONG Status = ITD->HwTD.Transaction[TransIdx].Status;
                     if (Status & (1 << 3))
                     {
@@ -3937,7 +3933,7 @@ EHCI_PollIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
                     }
                 }
             }
-
+            KeMemoryBarrier();
             if (HasProgrammedTransactions && !StillActive)
             {
                 /* All programmed transactions completed, process this iTD */
@@ -4397,8 +4393,12 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
     if (!EhciTransfer || !EhciEndpoint)
         return;
 
+    /* make sure we are in sync */
+    KeMemoryBarrier();
+
     /* Check all transactions in the iTD */
-    for (TransactionIndex = 0; TransactionIndex < EHCI_MAX_ITD_TRANSACTIONS; TransactionIndex++)
+    ASSERT(ITD->PacketsThisITD);
+    for (TransactionIndex = 0; TransactionIndex < ITD->PacketsThisITD; TransactionIndex++)
     {
         /* Use PacketLength[] (original programmed length) to detect used transactions.
          * The hardware xLength field contains REMAINING bytes after transfer, so a
@@ -4408,7 +4408,7 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
         {
             ULONG Status = ITD->HwTD.Transaction[TransactionIndex].Status;
             ULONG Remaining = ITD->HwTD.Transaction[TransactionIndex].xLength;
-
+            ULONG Completed;
             if ((Status & (1 << 3))) //EHCI_TOKEN_STATUS_ACTIVE >> 4))
             {
                 /* Transaction still active, not complete yet */
@@ -4421,7 +4421,8 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                 ASSERT((Status & (1 << 1)) == 0);
 
                 /* Transaction completed - bytes transferred = programmed - remaining */
-                TotalBytesTransferred += ITD->PacketLength[TransactionIndex] - Remaining;
+                Completed = ITD->PacketLength[TransactionIndex] - Remaining;
+                TotalBytesTransferred += Completed;
 
                 /* Check for errors (bit 2 = Transaction Error in 4-bit status) */
                 if (Status & 0x04)
@@ -4429,12 +4430,18 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                     DPRINT1("EHCI_ProcessCompletedITD: Transaction %d error, status 0x%x\n",
                             TransactionIndex, Status);
                     EhciTransfer->USBDStatus = USBD_STATUS_XACT_ERROR;
+                    ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_XACT_ERROR;
                 }
-
+                else
+                {
+                    ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_SUCCESS;
+                    ITD->IsoPacket[TransactionIndex]->BytesTransferred = Completed;
+                }
                 ITD->PacketStatus[TransactionIndex] = Status;
             }
         }
     }
+    KeMemoryBarrier();
 
     if (TransferComplete)
     {
@@ -4443,14 +4450,15 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
 
         /* Remove iTD from frame list */
         EHCI_UnlinkITDFromFrameList(EhciExtension, ITD, ITD->ScheduledFrame, EhciTransfer);
-
-        /* Mark iTD as free */
-        ITD->TdFlags &= ~EHCI_HCD_ITD_FLAG_ALLOCATED;
-        ITD->NextHcdTD = NULL;
         ITD->EhciTransfer = NULL;
         ITD->EhciEndpoint = NULL;
         for(ULONG Index = 0; Index < EHCI_MAX_ITD_TRANSACTIONS; Index++)
+        {
             ITD->PacketLength[Index] = 0;
+            ITD->IsoPacket[Index] = NULL;
+        }
+        /* Mark iTD as free */
+        ITD->TdFlags &= ~EHCI_HCD_ITD_FLAG_ALLOCATED;
 
         EhciEndpoint->RemainITDs++;
 
@@ -4508,9 +4516,13 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
         DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinked iTD from frame %d head\n", FrameIndex);
         KeMemoryBarrier();
     }
+    else
+    {
+        // LINKING ERROR
+        ASSERT(FALSE);
+    }
     RemoveEntryList(&ITD->ActiveITDEntry);
     RtlClearBits(&EhciExtension->IsoBitmap, ITD->ScheduledFrame, 1);
-    ITD->NextHcdTD = NULL;
     ITD->EhciTransfer = NULL;
 }
 

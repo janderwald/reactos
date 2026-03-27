@@ -218,10 +218,11 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
 {
     PUSBPORT_ENDPOINT Endpoint;
     PUSBPORT_TRANSFER Transfer;
+    PUSBPORT_ISO_TRANSFER_DATA IsoBlock;
     struct _URB_ISOCH_TRANSFER *IsoUrb;
-    USBD_ISO_PACKET_DESCRIPTOR *PacketDescriptor, * NextPacketDescriptor;
-    ULONG i, PacketLength;
-    ULONG CompletedLength = 0;
+    PUSBPORT_ISO_PACKET_DATA IsoPacketData;
+    USBD_ISO_PACKET_DESCRIPTOR *PacketDescriptor;
+    ULONG i;
     ULONG RemainingLength = TransferLength;
 
     DPRINT("USBPORT_CompleteIsoTransfer: TransferLength - %lu\n", TransferLength);
@@ -245,6 +246,14 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
         return 0;
     }
 
+
+    IsoBlock = (PUSBPORT_ISO_TRANSFER_DATA)Transfer->IsoBlockPtr;
+    if (!IsoBlock)
+    {
+        DPRINT1("USBPORT_CompleteIsoTransfer: Invalid Transfer or URB\n");
+        return 0;
+    }
+
     IsoUrb = (struct _URB_ISOCH_TRANSFER *)Transfer->Urb;
 
     // Validate this is actually an ISO transfer
@@ -255,59 +264,26 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
     }
 
     // Update packet descriptors with completion status
+    ASSERT(IsoBlock->TotalPackets == IsoUrb->NumberOfPackets);
     i = 0;
     do
     {
         PacketDescriptor = &IsoUrb->IsoPacket[i];
+        IsoPacketData = &IsoBlock->Packets[i];
 
-        if (i + 1 < IsoUrb->NumberOfPackets)
-        {
-            NextPacketDescriptor = &IsoUrb->IsoPacket[i+1];
-            PacketLength = NextPacketDescriptor->Offset - PacketDescriptor->Offset;
-        }
-        else
-        {
-            /* last packet */
-            PacketLength = IsoUrb->TransferBufferLength - PacketDescriptor->Offset;
-        }
-
-        if (RemainingLength >= PacketLength)
-        {
-            PacketDescriptor->Status = USBD_STATUS_SUCCESS;
-            PacketDescriptor->Length = PacketLength;
-            CompletedLength += PacketDescriptor->Length;
-            RemainingLength -= PacketDescriptor->Length;
-        }
-        else
-        {
-            PacketDescriptor->Status = USBD_STATUS_SUCCESS;
-            PacketDescriptor->Length = RemainingLength;
-            CompletedLength += RemainingLength;
-            if (RemainingLength > 0)
-            {
-                RemainingLength = 0;
-                i++;
-            }
-            break;
-        }
+        PacketDescriptor->Status = IsoPacketData->CompletionStatus;
+        PacketDescriptor->Length = IsoPacketData->BytesTransferred;
+        DPRINT("Status %x Length %u Index %u\n", PacketDescriptor->Status, PacketDescriptor->Length, i);
     }while(i++ < IsoUrb->NumberOfPackets);
-
-    // Mark remaining packets as not processed if any
-    for (; i < IsoUrb->NumberOfPackets; i++)
-    {
-        PacketDescriptor = &IsoUrb->IsoPacket[i];
-        PacketDescriptor->Status = USBD_STATUS_NOT_ACCESSED;
-        PacketDescriptor->Length = 0;
-    }
 
     // Complete the transfer
     USBPORT_MiniportCompleteTransfer(MiniPortExtension,
                                      MiniPortEndpoint,
                                      TransferParameters,
                                      USBD_STATUS_SUCCESS,
-                                     CompletedLength);
+                                     TransferLength);
 
-    DPRINT("USBPORT_CompleteIsoTransfer: Completed %lu bytes\n", CompletedLength);
-    return CompletedLength;
+    DPRINT("USBPORT_CompleteIsoTransfer: Completed %lu bytes\n", TransferLength);
+    return TransferLength;
 }
 

@@ -104,16 +104,17 @@ typedef struct _EHCI_HCD_ITD {
   ULONG TdFlags;
   struct _EHCI_ENDPOINT * EhciEndpoint;
   struct _EHCI_TRANSFER * EhciTransfer;
-  struct _EHCI_HCD_ITD * NextHcdTD;
   ULONG PacketLength[EHCI_MAX_ITD_TRANSACTIONS];
   ULONG PacketStatus[EHCI_MAX_ITD_TRANSACTIONS];
   LIST_ENTRY ActiveITDEntry;
   LIST_ENTRY DoneLink;
+  PUSBPORT_ISO_PACKET_DATA IsoPacket[EHCI_MAX_ITD_TRANSACTIONS];
   ULONG ScheduledFrame; /* Frame list index where this iTD was inserted */
+  ULONG PacketsThisITD;
 #ifdef _WIN64
   ULONG Pad[16];
 #else
-  ULONG Pad[23];
+  ULONG Pad[15];
 #endif
 } EHCI_HCD_ITD, *PEHCI_HCD_ITD;
 C_ASSERT(sizeof(EHCI_HCD_ITD) == ROUND_UP(sizeof(EHCI_HCD_ITD), 32));
