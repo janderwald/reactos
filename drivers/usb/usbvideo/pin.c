@@ -192,9 +192,9 @@ USBVideoSetStreamingDefaults(
             if (Format->VideoInfoHeader.dwBitRate % DeviceExtension->dwMaxPayloadTransferSize != 0)
                 Count++;
             DeviceExtension->IsoTransferSize = Count * DeviceExtension->dwMaxPayloadTransferSize;
-            DeviceExtension->FrameContextCount = 2;
+            DeviceExtension->FrameContextCount = 1;
             DeviceExtension->FrameContextSize = DeviceExtension->IsoTransferSize;
-            DeviceExtension->UrbPoolCount = 2;
+            DeviceExtension->UrbPoolCount = 1;
             DeviceExtension->IsoPacketCount = Count;
             DeviceExtension->IsMjpegFormat = FALSE;
         }

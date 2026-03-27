@@ -939,6 +939,7 @@ EHCI_AddDummyQHs(IN PEHCI_EXTENSION EhciExtension)
     EHCI_QH_EP_PARAMS EndpointParams;
     EHCI_LINK_POINTER PAddress;
     ULONG Frame;
+    ULONG Size;
 
     DPRINT("EHCI_AddDummyQueueHeads: EhciExtension - %p\n", EhciExtension);
 
@@ -946,11 +947,11 @@ EHCI_AddDummyQHs(IN PEHCI_EXTENSION EhciExtension)
 
     DummyQH = EhciExtension->IsoDummyQHListVA;
     DummyQhPA = EhciExtension->IsoDummyQHListPA;
-
+    Size = ROUND_UP(sizeof(EHCI_HCD_QH), 32);
     for (Frame = 0; Frame < EHCI_FRAME_LIST_MAX_ENTRIES; Frame++)
     {
-        RtlZeroMemory(DummyQH, sizeof(EHCI_HCD_QH));
-
+        RtlZeroMemory(DummyQH, Size);
+        KeMemoryBarrier();
         PAddress.AsULONG = HcResourcesVA->PeriodicFrameList[Frame];
 
         DummyQH->sqh.HwQH.HorizontalLink.AsULONG = PAddress.AsULONG;
@@ -979,9 +980,9 @@ EHCI_AddDummyQHs(IN PEHCI_EXTENSION EhciExtension)
         PAddress.Type = EHCI_LINK_TYPE_QH;
 
         HcResourcesVA->PeriodicFrameList[Frame] = PAddress.AsULONG;
-
-        DummyQH++;
-        DummyQhPA += sizeof(EHCI_HCD_QH);
+        KeMemoryBarrier();
+        DummyQH = (PEHCI_HCD_QH)((ULONG_PTR)DummyQH + Size);
+        DummyQhPA += Size;
     }
 }
 
@@ -1055,6 +1056,7 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
 
     HcResourcesVA = (PEHCI_HC_RESOURCES)BaseVA;
     HcResourcesPA = BasePA;
+    ASSERT(!(HcResourcesPA & 0x3FF));
 
     EhciExtension->HcResourcesVA = HcResourcesVA;
     EhciExtension->HcResourcesPA = BasePA;
@@ -1111,8 +1113,9 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
         //DPRINT_EHCI("EHCI_InitializeSchedule: StaticHeadPA[%x] - %X\n",
         //            Frame,
         //            StaticHeadPA);
-
+        KeMemoryBarrier();
         HcResourcesVA->PeriodicFrameList[Frame] = StaticHeadPA.AsULONG;
+        KeMemoryBarrier();
     }
 
     EhciExtension->IsoDummyQHListVA = &HcResourcesVA->IsoDummyQH[0];
@@ -2654,7 +2657,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
         /* Use the first packet's FrameNumber for scheduling */
         CurrentFrame = IsoTransfer->Packets[0].FrameNumber % EHCI_FRAME_LIST_MAX_ENTRIES;
-
+        ASSERT(CurrentFrame % 8 == 0);
         CurrentFrame = RtlFindClearBitsAndSet(&EhciExtension->IsoBitmap, NumITDs, CurrentFrame);
         if (CurrentFrame == (ULONG)-1)
         {
@@ -2727,7 +2730,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 /* Determine microframe slot: for period=1, slots 0,1,2,...7 */
                 MicroFrame = p * Period;
 
-                BufferPA = Packet->Segment0Addr.LowPart;
+              <  BufferPA = Packet->Segment0Addr.LowPart;
                 PageAddr = BufferPA >> 12;
                 Offset = BufferPA & 0xFFF;
 
@@ -2738,17 +2741,19 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                     ThisPageSelect = BufferPageCount;
                     if (BufferPageCount == 0)
                     {
-                        ITD->HwTD.Buffer[0].AsULONG = (ITD->HwTD.Buffer[0].AsULONG & 0xFFF) |
-                                                       ((PageAddr << 12) & ~0xFFF);
+                        ITD->HwTD.Buffer[0].DataBuffer0 = PageAddr;
                     }
                     else if (BufferPageCount == 1)
                     {
-                        ITD->HwTD.Buffer[1].AsULONG = (ITD->HwTD.Buffer[1].AsULONG & 0xFFF) |
-                                                       ((PageAddr << 12) & ~0xFFF);
+                        ITD->HwTD.Buffer[1].DataBuffer1 = PageAddr;
+                    }
+                    else if (BufferPageCount == 2)
+                    {
+                        ITD->HwTD.Buffer[BufferPageCount].DataBuffer2 = PageAddr;
                     }
                     else if (BufferPageCount < 7)
                     {
-                        ITD->HwTD.Buffer[BufferPageCount].AsULONG = (PageAddr << 12);
+                        ITD->HwTD.Buffer[BufferPageCount].DataBuffer = PageAddr;
                     }
                     LastPage = PageAddr;
                     BufferPageCount++;
@@ -2765,14 +2770,18 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                     ULONG Page1Addr = Packet->Segment1Addr.LowPart >> 12;
                     if (Page1Addr != LastPage)
                     {
+                        ASSERT(BufferPageCount != 0);
                         if (BufferPageCount == 1)
                         {
-                            ITD->HwTD.Buffer[1].AsULONG = (ITD->HwTD.Buffer[1].AsULONG & 0xFFF) |
-                                                           ((Page1Addr << 12) & ~0xFFF);
+                            ITD->HwTD.Buffer[1].DataBuffer1 = Page1Addr;
                         }
-                        else
+                        else if (BufferPageCount == 2)
                         {
-                            ITD->HwTD.Buffer[BufferPageCount].AsULONG = (Page1Addr << 12);
+                            ITD->HwTD.Buffer[BufferPageCount].DataBuffer2 = Page1Addr;
+                        }
+                        else if (BufferPageCount < 7)
+                        {
+                            ITD->HwTD.Buffer[BufferPageCount].DataBuffer = Page1Addr;
                         }
                         LastPage = Page1Addr;
                         BufferPageCount++;
@@ -2786,8 +2795,10 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 ITD->HwTD.Transaction[MicroFrame].Status = EHCI_TOKEN_STATUS_ACTIVE >> 4;
 
                 /* Set IOC on the last transaction of the last iTD */
-                if (PacketIndex + p == IsoTransfer->TotalPackets - 1)
+                if (p == PacketsThisITD - 1)
                     ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 1;
+                else
+                    ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 0;
 
                 /* Store software tracking info */
                 ITD->PacketLength[MicroFrame] = Packet->PacketLength;
@@ -2797,6 +2808,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             /* Schedule this iTD in the periodic frame list */
             FrameIndex = CurrentFrame % (EHCI_FRAME_LIST_MAX_ENTRIES);
 
+            KeMemoryBarrier();
             /* link last ITD to dummy qh */
             LinkPointer.AsULONG = HcResourcesVA->PeriodicFrameList[FrameIndex];
             ITD->HwTD.NextLink = LinkPointer;
@@ -2808,7 +2820,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             LinkPointer.Reserved = 0;
 
             HcResourcesVA->PeriodicFrameList[FrameIndex] = LinkPointer.AsULONG;
-
+            KeMemoryBarrier();
             /* Store the frame index in the iTD for unlinking later */
             ITD->ScheduledFrame = FrameIndex;
             /* clear next itd software link */
@@ -4491,8 +4503,10 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
         CurrentLink.Type == EHCI_LINK_TYPE_iTD)
     {
         /* Found the iTD at the head of the frame list */
+        KeMemoryBarrier();
         HcResourcesVA->PeriodicFrameList[FrameIndex] = ITD->HwTD.NextLink.AsULONG;
         DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinked iTD from frame %d head\n", FrameIndex);
+        KeMemoryBarrier();
     }
     RemoveEntryList(&ITD->ActiveITDEntry);
     RtlClearBits(&EhciExtension->IsoBitmap, ITD->ScheduledFrame, 1);

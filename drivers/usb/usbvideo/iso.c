@@ -218,6 +218,9 @@ USBVideoIsoReadComplete(
             Frame->FrameStarted = FALSE;
         }
     }
+    Frame->FrameSize    = 0;
+    Frame->FrameStarted = FALSE;
+
     RtlZeroMemory(Urb->UrbIsochronousTransfer.TransferBuffer, DeviceExtension->IsoTransferSize);
     /* requeue irp */
     USBVideoQueueIsoRead(Pin,
