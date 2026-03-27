@@ -2730,7 +2730,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 /* Determine microframe slot: for period=1, slots 0,1,2,...7 */
                 MicroFrame = p * Period;
 
-              <  BufferPA = Packet->Segment0Addr.LowPart;
+                BufferPA = Packet->Segment0Addr.LowPart;
                 PageAddr = BufferPA >> 12;
                 Offset = BufferPA & 0xFFF;
 
