@@ -6,47 +6,11 @@
 * PROGRAMMERS:
 *              Johannes Anderwald (johannes.anderwald@reactos.org)
 */
-
+#define NDEBUG
 #include "usbaudio.h"
 
-#define PACKET_COUNT 10
-
-
-NTSTATUS
-GetMaxPacketSizeForInterface(
-    IN PUSB_CONFIGURATION_DESCRIPTOR ConfigurationDescriptor,
-    IN PUSB_INTERFACE_DESCRIPTOR InterfaceDescriptor,
-    KSPIN_DATAFLOW DataFlow)
-{
-    PUSB_COMMON_DESCRIPTOR CommonDescriptor;
-    PUSB_ENDPOINT_DESCRIPTOR EndpointDescriptor;
-
-    /* loop descriptors */
-    CommonDescriptor = (PUSB_COMMON_DESCRIPTOR)((ULONG_PTR)InterfaceDescriptor + InterfaceDescriptor->bLength);
-    ASSERT(InterfaceDescriptor->bNumEndpoints > 0);
-    while (CommonDescriptor)
-    {
-        if (CommonDescriptor->bDescriptorType == USB_ENDPOINT_DESCRIPTOR_TYPE)
-        {
-            EndpointDescriptor = (PUSB_ENDPOINT_DESCRIPTOR)CommonDescriptor;
-            return EndpointDescriptor->wMaxPacketSize;
-        }
-
-        if (CommonDescriptor->bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE)
-        {
-            /* reached next interface descriptor */
-            break;
-        }
-
-        if ((ULONG_PTR)CommonDescriptor + CommonDescriptor->bLength >= ((ULONG_PTR)ConfigurationDescriptor + ConfigurationDescriptor->wTotalLength))
-            break;
-
-        CommonDescriptor = (PUSB_COMMON_DESCRIPTOR)((ULONG_PTR)CommonDescriptor + CommonDescriptor->bLength);
-    }
-
-    /* default to 100 */
-    return 100;
-}
+#define PACKET_COUNT 64
+#define IRP_CAPTURE_COUNT 8
 
 NTSTATUS
 UsbAudioAllocCaptureUrbIso(
@@ -92,13 +56,61 @@ UsbAudioAllocCaptureUrbIso(
 
 NTSTATUS
 UsbAudioSetFormat(
-    IN PKSPIN Pin)
+    IN PKSPIN Pin,
+    IN const KSDATARANGE * DataRange)
 {
     PURB Urb;
     PUCHAR SampleRateBuffer;
-    PPIN_CONTEXT PinContext;
     NTSTATUS Status;
     PKSDATAFORMAT_WAVEFORMATEX WaveFormatEx;
+    PFILTER_CONTEXT FilterContext;
+    PKSFILTER Filter;
+    ULONG FormatIndex;
+    PPIN_CONTEXT PinContext;
+
+    DPRINT1("UsbAudioSetFormat entered\n");
+
+    /* choose correct dataformat */
+    FormatIndex = GetDataRangeIndexForFormat(DataRange, Pin->Descriptor->PinDescriptor.DataRanges, Pin->Descriptor->PinDescriptor.DataRangesCount);
+    if (FormatIndex == MAXULONG)
+    {
+        /* no format match */
+        DPRINT1("UsbAudioSetFormat no matching format found\n");
+        return STATUS_NO_MATCH;
+    }
+
+    DPRINT1("UsbAudioSetFormat FormatIndex %u\n", FormatIndex);
+
+    Filter = KsPinGetParentFilter(Pin);
+    if (Filter == NULL)
+    {
+        /* invalid parameter */
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* get filter context */
+    FilterContext = Filter->Context;
+
+    if (!Pin->Context)
+    {
+        /* allocate pin context */
+        PinContext = AllocFunction(sizeof(PIN_CONTEXT));
+        if (!PinContext)
+        {
+            /* no memory*/
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* store pin context*/
+        Pin->Context = PinContext;
+    }
+    else
+    {
+        PinContext = (PPIN_CONTEXT)Pin->Context;
+    }
+
+    Status = USBAudioSelectAudioStreamingInterface(Pin, PinContext, FilterContext->DeviceExtension,
+        FilterContext->DeviceExtension->ConfigurationDescriptor, FormatIndex);
 
     /* allocate sample rate buffer */
     SampleRateBuffer = AllocFunction(sizeof(ULONG));
@@ -108,11 +120,11 @@ UsbAudioSetFormat(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (IsEqualGUIDAligned(&Pin->ConnectionFormat->MajorFormat, &KSDATAFORMAT_TYPE_AUDIO) &&
-        IsEqualGUIDAligned(&Pin->ConnectionFormat->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM) &&
-        IsEqualGUIDAligned(&Pin->ConnectionFormat->Specifier, &KSDATAFORMAT_SPECIFIER_WAVEFORMATEX))
+    if (IsEqualGUIDAligned(&DataRange->MajorFormat, &KSDATAFORMAT_TYPE_AUDIO) &&
+        IsEqualGUIDAligned(&DataRange->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM) &&
+        IsEqualGUIDAligned(&DataRange->Specifier, &KSDATAFORMAT_SPECIFIER_WAVEFORMATEX))
     {
-        WaveFormatEx = (PKSDATAFORMAT_WAVEFORMATEX)Pin->ConnectionFormat;
+        WaveFormatEx = (PKSDATAFORMAT_WAVEFORMATEX)DataRange;
         SampleRateBuffer[2] = (WaveFormatEx->WaveFormatEx.nSamplesPerSec >> 16) & 0xFF;
         SampleRateBuffer[1] = (WaveFormatEx->WaveFormatEx.nSamplesPerSec >> 8) & 0xFF;
         SampleRateBuffer[0] = (WaveFormatEx->WaveFormatEx.nSamplesPerSec >> 0) & 0xFF;
@@ -135,10 +147,6 @@ UsbAudioSetFormat(
         FreeFunction(SampleRateBuffer);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-
-    /* get pin context */
-    PinContext = Pin->Context;
-
     /* FIXME: determine controls and format urb */
     UsbBuildVendorRequest(Urb,
         URB_FUNCTION_CLASS_ENDPOINT,
@@ -147,16 +155,14 @@ UsbAudioSetFormat(
         0,
         0x01, // SET_CUR
         0x100,
-        PinContext->DeviceExtension->InterfaceInfo->Pipes[0].EndpointAddress,
+        PinContext->InterfaceInfo->Pipes[0].EndpointAddress,
         SampleRateBuffer,
         NULL,
         3,
         NULL);
 
-
-
     /* submit urb */
-    Status = SubmitUrbSync(PinContext->LowerDevice, Urb);
+    Status = SubmitUrbSync(FilterContext->LowerDevice, Urb);
 
     DPRINT1("USBAudioPinSetDataFormat Pin %p Status %x\n", Pin, Status);
     FreeFunction(Urb);
@@ -245,15 +251,15 @@ USBAudioSelectAudioStreamingInterface(
      if (NT_SUCCESS(Status))
      {
          /* free old interface info */
-         if (DeviceExtension->InterfaceInfo)
+         if (PinContext->InterfaceInfo)
          {
              /* free old info */
-             FreeFunction(DeviceExtension->InterfaceInfo);
+             FreeFunction(PinContext->InterfaceInfo);
          }
 
          /* alloc interface info */
-         DeviceExtension->InterfaceInfo = AllocFunction(Urb->UrbSelectInterface.Interface.Length);
-         if (DeviceExtension->InterfaceInfo == NULL)
+         PinContext->InterfaceInfo = AllocFunction(Urb->UrbSelectInterface.Interface.Length);
+         if (PinContext->InterfaceInfo == NULL)
          {
              /* no memory */
              FreeFunction(Urb);
@@ -261,9 +267,9 @@ USBAudioSelectAudioStreamingInterface(
          }
 
          /* copy interface info */
-         RtlCopyMemory(DeviceExtension->InterfaceInfo, &Urb->UrbSelectInterface.Interface, Urb->UrbSelectInterface.Interface.Length);
+         RtlCopyMemory(PinContext->InterfaceInfo, &Urb->UrbSelectInterface.Interface, Urb->UrbSelectInterface.Interface.Length);
          PinContext->InterfaceDescriptor = InterfaceDescriptor;
-     }
+    }
 
      /* free urb */
      FreeFunction(Urb);
@@ -291,14 +297,17 @@ CaptureGateOnWorkItem(
         /* acquire processing mutex */
         KsPinAcquireProcessingMutex(Pin);
 
-        /* get pin control gate */
-        Gate = KsPinGetAndGate(Pin);
+        if (!PinContext->StopStreaming)
+        {
+            /* get pin control gate */
+            Gate = KsPinGetAndGate(Pin);
 
-        /* turn input on */
-        KsGateTurnInputOn(Gate);
+            /* turn input on */
+            KsGateTurnInputOn(Gate);
 
-        /* schedule processing */
-        KsPinAttemptProcessing(Pin, TRUE);
+            /* schedule processing */
+            KsPinAttemptProcessing(Pin, TRUE);
+        }
 
         /* release processing mutex */
         KsPinReleaseProcessingMutex(Pin);
@@ -393,6 +402,7 @@ CaptureInitializeUrbAndIrp(
     /* backup urb and transferbuffer */
     Urb = Irp->Tail.Overlay.DriverContext[0];
     TransferBuffer = Urb->UrbIsochronousTransfer.TransferBuffer;
+    ASSERT(TransferBuffer);
 
     /* initialize irp */
     IoInitializeIrp(Irp, IoSizeOfIrp(PinContext->DeviceExtension->LowerDevice->StackSize), PinContext->DeviceExtension->LowerDevice->StackSize);
@@ -418,17 +428,17 @@ CaptureInitializeUrbAndIrp(
 
     /* init urb */
     Urb->UrbIsochronousTransfer.Hdr.Function = URB_FUNCTION_ISOCH_TRANSFER;
-    Urb->UrbIsochronousTransfer.Hdr.Length = GET_ISO_URB_SIZE(10);
-    Urb->UrbIsochronousTransfer.PipeHandle = PinContext->DeviceExtension->InterfaceInfo->Pipes[0].PipeHandle;
+    Urb->UrbIsochronousTransfer.Hdr.Length = GET_ISO_URB_SIZE(PACKET_COUNT);
+    Urb->UrbIsochronousTransfer.PipeHandle = PinContext->InterfaceInfo->Pipes[0].PipeHandle;
     Urb->UrbIsochronousTransfer.TransferFlags = USBD_TRANSFER_DIRECTION_IN | USBD_START_ISO_TRANSFER_ASAP;
-    Urb->UrbIsochronousTransfer.TransferBufferLength = PinContext->DeviceExtension->InterfaceInfo->Pipes[0].MaximumPacketSize * 10;
+    Urb->UrbIsochronousTransfer.TransferBufferLength = PinContext->InterfaceInfo->Pipes[0].MaximumPacketSize * PACKET_COUNT;
     Urb->UrbIsochronousTransfer.TransferBuffer = TransferBuffer;
     Urb->UrbIsochronousTransfer.NumberOfPackets = PACKET_COUNT;
     Urb->UrbIsochronousTransfer.StartFrame = 0;
 
     for (Index = 0; Index < PACKET_COUNT; Index++)
     {
-        Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset = Index * PinContext->DeviceExtension->InterfaceInfo->Pipes[0].MaximumPacketSize;
+        Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset = Index * PinContext->InterfaceInfo->Pipes[0].MaximumPacketSize;
     }
 }
 
@@ -501,9 +511,8 @@ InitCapturePin(
     PKSALLOCATOR_FRAMING_EX Framing;
     PKSGATE Gate;
 
-
     /* set sample rate */
-    Status = UsbAudioSetFormat(Pin);
+    Status = UsbAudioSetFormat(Pin, Pin->ConnectionFormat);
     if (!NT_SUCCESS(Status))
     {
         /* failed */
@@ -514,10 +523,13 @@ InitCapturePin(
     PinContext = Pin->Context;
 
     /* lets get maximum packet size */
-    MaximumPacketSize = GetMaxPacketSizeForInterface(PinContext->DeviceExtension->ConfigurationDescriptor, PinContext->InterfaceDescriptor, Pin->DataFlow);
+    MaximumPacketSize = PinContext->InterfaceInfo->Pipes[0].MaximumPacketSize;
 
     /* initialize work item for capture worker */
     ExInitializeWorkItem(&PinContext->CaptureWorkItem, CaptureGateOnWorkItem, (PVOID)Pin);
+
+    /* initialize completion event */
+    KeInitializeEvent(&PinContext->StoppedStreamingEvent, NotificationEvent, FALSE);
 
     /* register worker */
     Status = KsRegisterCountedWorker(CriticalWorkQueue, &PinContext->CaptureWorkItem, &PinContext->CaptureWorker);
@@ -537,6 +549,7 @@ InitCapturePin(
         /* failed */
         KsUnregisterWorker(PinContext->CaptureWorker);
     }
+    DPRINT1("InitCapturePin MaximumPacketSize %u\n", MaximumPacketSize);
 
     /* lets edit framing struct */
     Framing = (PKSALLOCATOR_FRAMING_EX)Pin->Descriptor->AllocatorFraming;
@@ -546,8 +559,8 @@ InitCapturePin(
         Framing->FramingItem[0].FramingRange.Range.MaxFrameSize =
     MaximumPacketSize;
 
-    /* calculate buffer size 8 irps * 10 iso packets * max packet size */
-    BufferSize = 8 * PACKET_COUNT * MaximumPacketSize;
+    /* calculate buffer size 8 irps * 64 iso packets * max packet size */
+    BufferSize = IRP_CAPTURE_COUNT * PACKET_COUNT * MaximumPacketSize;
 
     /* allocate pin capture buffer */
     PinContext->BufferSize = BufferSize;
@@ -560,7 +573,7 @@ InitCapturePin(
     KsAddItemToObjectBag(Pin->Bag, PinContext->Buffer, ExFreePool);
 
     /* init irps */
-    for (Index = 0; Index < 8; Index++)
+    for (Index = 0; Index < IRP_CAPTURE_COUNT; Index++)
     {
         /* allocate irp */
         Irp = AllocFunction(IoSizeOfIrp(PinContext->DeviceExtension->LowerDevice->StackSize));
@@ -696,7 +709,7 @@ InitStreamPin(
 
 ULONG
 GetDataRangeIndexForFormat(
-    IN PKSDATARANGE ConnectionFormat,
+    IN const KSDATARANGE * ConnectionFormat,
     IN const PKSDATARANGE * DataRanges,
     IN ULONG DataRangesCount)
 {
@@ -726,6 +739,7 @@ GetDataRangeIndexForFormat(
              !IsEqualGUIDAligned(&CurrentDataRange->Specifier, &ConnectionFormat->Specifier))
          {
              /* no match */
+             DPRINT1("No GUID Match\n");
              continue;
          }
 
@@ -736,18 +750,21 @@ GetDataRangeIndexForFormat(
          if (CurrentAudioDataRange->MaximumChannels != ConnectionDataFormat->WaveFormatEx.nChannels)
          {
              /* number of channels mismatch */
+             DPRINT1("NoChannelMatch %u\n", ConnectionDataFormat->WaveFormatEx.nChannels);
              continue;
          }
 
          if (CurrentAudioDataRange->MinimumSampleFrequency > ConnectionDataFormat->WaveFormatEx.nSamplesPerSec)
          {
              /* channel frequency too low */
+             DPRINT1("Minimum Sample freq too low %u\n", ConnectionDataFormat->WaveFormatEx.nSamplesPerSec);
              continue;
          }
 
          if (CurrentAudioDataRange->MaximumSampleFrequency < ConnectionDataFormat->WaveFormatEx.nSamplesPerSec)
          {
              /* channel frequency too high */
+             DPRINT1("MaxFrequency too high %u\n", ConnectionDataFormat->WaveFormatEx.nSamplesPerSec);
              continue;
          }
 
@@ -781,13 +798,24 @@ USBAudioPinCreate(
     /* get filter context */
     FilterContext = Filter->Context;
 
-    /* allocate pin context */
-    PinContext = AllocFunction(sizeof(PIN_CONTEXT));
-    if (!PinContext)
+    if (!Pin->Context)
     {
-        /* no memory*/
-        return STATUS_INSUFFICIENT_RESOURCES;
+        /* allocate pin context */
+        PinContext = AllocFunction(sizeof(PIN_CONTEXT));
+        if (!PinContext)
+        {
+            /* no memory*/
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* store pin context*/
+        Pin->Context = PinContext;
     }
+    else
+    {
+        PinContext = (PPIN_CONTEXT)Pin->Context;
+    }
+
 
     /* init pin context */
     PinContext->DeviceExtension = FilterContext->DeviceExtension;
@@ -795,9 +823,6 @@ USBAudioPinCreate(
     InitializeListHead(&PinContext->IrpListHead);
     InitializeListHead(&PinContext->DoneIrpListHead);
     KeInitializeSpinLock(&PinContext->IrpListLock);
-
-    /* store pin context*/
-    Pin->Context = PinContext;
 
     /* lets edit allocator framing struct */
     Status = _KsEdit(Pin->Bag, (PVOID*)&Pin->Descriptor, sizeof(KSPIN_DESCRIPTOR_EX), sizeof(KSPIN_DESCRIPTOR_EX), USBAUDIO_TAG);
@@ -813,15 +838,6 @@ USBAudioPinCreate(
     {
         /* no format match */
         return STATUS_NO_MATCH;
-    }
-
-    /* select streaming interface */
-    Status = USBAudioSelectAudioStreamingInterface(Pin, PinContext, PinContext->DeviceExtension, PinContext->DeviceExtension->ConfigurationDescriptor, FormatIndex);
-    if (!NT_SUCCESS(Status))
-    {
-        /* failed */
-        DPRINT1("USBAudioSelectAudioStreamingInterface failed with %x\n", Status);
-        return Status;
     }
 
     if (Pin->DataFlow == KSPIN_DATAFLOW_OUT)
@@ -844,8 +860,53 @@ USBAudioPinClose(
     _In_ PKSPIN Pin,
     _In_ PIRP Irp)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PPIN_CONTEXT PinContext;
+    PURB Urb;
+    NTSTATUS Status;
+    //ULONG InterfaceIndex;
+
+    /* get pin context */
+    PinContext = Pin->Context;
+
+    PinContext->StopStreaming = TRUE;
+
+    /* wait for completion */
+    KeWaitForSingleObject(&PinContext->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+
+    /* now abort pipe*/
+    Urb = AllocFunction(sizeof(URB));
+    if (!Urb)
+    {
+        /* no memory */
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    Urb->UrbHeader.Length   = sizeof(struct _URB_PIPE_REQUEST);
+    Urb->UrbHeader.Function = URB_FUNCTION_ABORT_PIPE;
+    Urb->UrbPipeRequest.PipeHandle = PinContext->InterfaceInfo->Pipes[0].PipeHandle;
+    Status = SubmitUrbSync(PinContext->DeviceExtension->LowerDevice, Urb);
+    if (!NT_SUCCESS(Status))
+    {
+        /* failed */
+        DPRINT1("USBVideoPinClose Status %x\n", Status);
+        FreeFunction(Urb);
+        Irp->IoStatus.Status = Status;
+        return Status;
+    }
+#if 0
+    Status = USBAudioGetInterfaceDescriptorForStreaming(Pin, &InterfaceIndex);
+    ASSERT(NT_SUCCESS(Status));
+    UsbBuildSelectInterfaceRequest(Urb,
+        GET_SELECT_INTERFACE_REQUEST_SIZE(1),
+        PinContext->DeviceExtension->ConfigurationHandle,
+        InterfaceIndex,
+        0);
+
+    Status = SubmitUrbSync(PinContext->DeviceExtension->LowerDevice, Urb);
+    FreeFunction(Urb);
+ #endif
+    DPRINT1("USBAudioPinClose Status %x\n", Status);
+    return Status;
 }
 
 NTSTATUS
@@ -928,7 +989,7 @@ UsbAudioCaptureComplete(
 
     if (!NT_SUCCESS(Urb->UrbIsochronousTransfer.Hdr.Status))
     {
-        //DPRINT("UsbAudioCaptureComplete Irp %p Urb %p Status %x Packet Status %x\n", Irp, Urb, Urb->UrbIsochronousTransfer.Hdr.Status, Urb->UrbIsochronousTransfer.IsoPacket[0].Status);
+        DPRINT1("UsbAudioCaptureComplete Irp %p Urb %p Status %x Packet Status %x\n", Irp, Urb, Urb->UrbIsochronousTransfer.Hdr.Status, Urb->UrbIsochronousTransfer.IsoPacket[0].Status);
 
         /* insert entry into ready list */
         InsertTailList(&PinContext->IrpListHead, &Irp->Tail.Overlay.ListEntry);
@@ -940,6 +1001,7 @@ UsbAudioCaptureComplete(
     }
     else
     {
+        DPRINT("UsbAudioCaptureComplete Irp %p\n", Irp);
         /* insert entry into done list */
         InsertTailList(&PinContext->DoneIrpListHead, &Irp->Tail.Overlay.ListEntry);
 
@@ -1128,20 +1190,55 @@ PinCaptureProcess(
     PIRP Irp;
     PURB Urb;
     PUCHAR TransferBuffer, OutBuffer;
-    ULONG Offset, Length;
-    NTSTATUS Status;
+    ULONG Offset, Length, TargetOffset;
     PKSGATE Gate;
 
-    //DPRINT1("PinCaptureProcess\n");
-    LeadingStreamPointer = KsPinGetLeadingEdgeStreamPointer(Pin, KSSTREAM_POINTER_STATE_LOCKED);
-    if (LeadingStreamPointer == NULL)
+    DPRINT1("PinCaptureProcess entered\n");
+
+    /* get pin context */
+    PinContext = Pin->Context;
+
+    if (PinContext->StopStreaming)
     {
+        DPRINT1("PinCaptureProcess StopStreaming == TRUE\n");
+
+        /* acquire spin lock */
+        KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
+
+        while (!IsListEmpty(&PinContext->DoneIrpListHead))
+        {
+            /* remove entry from list */
+            CurEntry = RemoveHeadList(&PinContext->DoneIrpListHead);
+
+            /* increment stopped irp count */
+            InterlockedIncrement(&PinContext->StoppedStreamingIrps);
+        }
+
+        /* release lock */
+        KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
+
+        if (PinContext->StoppedStreamingIrps == IRP_CAPTURE_COUNT)
+        {
+            DPRINT1("PinCaptureProcess entered signaling event\n");
+            KeSetEvent(&PinContext->StoppedStreamingEvent, 0, FALSE);
+        }
+        return STATUS_SUCCESS;
+    }
+
+
+    LeadingStreamPointer = KsPinGetLeadingEdgeStreamPointer(Pin, KSSTREAM_POINTER_STATE_LOCKED);
+    if (LeadingStreamPointer == NULL || LeadingStreamPointer->StreamHeader->Data == NULL)
+    {
+        DPRINT1("NoData available\n");
+        /* unlock */
+        if (LeadingStreamPointer)
+            KsStreamPointerUnlock(LeadingStreamPointer, FALSE);
+
         /* get process control gate */
         Gate = KsPinGetAndGate(Pin);
 
         /* shutdown processing */
         KsGateTurnInputOff(Gate);
-
         return STATUS_SUCCESS;
     }
 
@@ -1175,59 +1272,78 @@ PinCaptureProcess(
         OutBuffer = (PUCHAR)LeadingStreamPointer->StreamHeader->Data;
 
         /* calculate length */
-        Length = min(LeadingStreamPointer->OffsetOut.Count - LeadingStreamPointer->StreamHeader->DataUsed, Urb->UrbIsochronousTransfer.TransferBufferLength - Offset);
+        Length = min(LeadingStreamPointer->OffsetOut.Remaining, Urb->UrbIsochronousTransfer.TransferBufferLength - Offset);
 
+        /* target buffer offset */
+        TargetOffset = LeadingStreamPointer->OffsetOut.Count - LeadingStreamPointer->OffsetOut.Remaining;
+
+        DPRINT1("Irp %p Remaining %u Offset %u TransferBufferLength %u Length %u\n", Irp, LeadingStreamPointer->OffsetOut.Remaining, Offset, Urb->UrbIsochronousTransfer.TransferBufferLength, Length );
         /* FIXME copy each packet extra */
         /* copy audio bytes */
-        RtlCopyMemory((PUCHAR)&OutBuffer[LeadingStreamPointer->StreamHeader->DataUsed], &TransferBuffer[Offset], Length);
+        RtlCopyMemory((PUCHAR)&OutBuffer[TargetOffset], &TransferBuffer[Offset], Length);
 
         //DPRINT1("Irp %p Urb %p OutBuffer %p TransferBuffer %p Offset %lu Remaining %lu TransferBufferLength %lu Length %lu\n", Irp, Urb, OutBuffer, TransferBuffer, Offset, LeadingStreamPointer->OffsetOut.Remaining, Urb->UrbIsochronousTransfer.TransferBufferLength, Length);
-
-        /* adjust streampointer */
-        LeadingStreamPointer->StreamHeader->DataUsed += Length;
-
         if (Length == LeadingStreamPointer->OffsetOut.Remaining)
         {
+            DPRINT1("Ejecting StreamPointer %p\n", LeadingStreamPointer);
             KsStreamPointerAdvanceOffsetsAndUnlock(LeadingStreamPointer, 0, Length, TRUE);
 
             /* acquire spin lock */
             KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
 
-            /* adjust offset */
-            Irp->Tail.Overlay.DriverContext[1] = UlongToPtr(Length);
-
-            /* reinsert into processed list */
-            InsertHeadList(&PinContext->DoneIrpListHead, &Irp->Tail.Overlay.ListEntry);
-
-            /* release lock */
-            KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
-
-            LeadingStreamPointer = KsPinGetLeadingEdgeStreamPointer(Pin, KSSTREAM_POINTER_STATE_LOCKED);
-            if (LeadingStreamPointer == NULL)
+            if (Offset + Length < Urb->UrbIsochronousTransfer.TransferBufferLength)
             {
-                /* no more work to be done*/
-                return STATUS_PENDING;
+                /* adjust offset */
+                Irp->Tail.Overlay.DriverContext[1] = UlongToPtr(Offset + Length);
+
+                /* reinsert into processed list */
+                InsertHeadList(&PinContext->DoneIrpListHead, &Irp->Tail.Overlay.ListEntry);
+
+                /* release lock */
+                KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
             }
             else
             {
-                /* resume work on this irp */
-                continue;
+                /* finished irp and intermediate irp */
+                InsertTailList(&PinContext->IrpListHead, &Irp->Tail.Overlay.ListEntry);
+
+                /* release lock */
+                KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
             }
+
+            /* reaquire lock */
+            KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
         }
         else
         {
-            Status = KsStreamPointerAdvanceOffsets(LeadingStreamPointer, 0, Length, FALSE);
-            NT_ASSERT(NT_SUCCESS(Status));
-            ASSERT(Length == Urb->UrbIsochronousTransfer.TransferBufferLength - Offset);
+            /* adjust offsets */
+            KsStreamPointerAdvanceOffsets(LeadingStreamPointer, 0, Length, FALSE);
+
+            /* release lock */
+            KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
+
+            if (Offset + Length < Urb->UrbIsochronousTransfer.TransferBufferLength)
+            {
+                /* adjust offset */
+                Irp->Tail.Overlay.DriverContext[1] = UlongToPtr(Offset + Length);
+
+                /* reinsert into processed list */
+                InsertHeadList(&PinContext->DoneIrpListHead, &Irp->Tail.Overlay.ListEntry);
+            }
+            else
+            {
+                /* finished intermediate irp */
+                InsertTailList(&PinContext->IrpListHead, &Irp->Tail.Overlay.ListEntry);
+            }
         }
 
-
-        /* acquire spin lock */
-        KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
-
-        InsertTailList(&PinContext->IrpListHead, &Irp->Tail.Overlay.ListEntry);
+        if (LeadingStreamPointer->StreamHeader->Data == NULL)
+        {
+            /* no more work to be done*/
+            break;
+        }
     }
-
+    DPRINT1("PinCaptureProcess process ready list\n");
     while (!IsListEmpty(&PinContext->IrpListHead))
     {
         /* remove entry from list */
@@ -1260,6 +1376,8 @@ PinCaptureProcess(
 
     /* shutdown processing */
     KsGateTurnInputOff(Gate);
+
+    DPRINT1("PinCaptureProcess done\n");
 
     return STATUS_PENDING;
 }
@@ -1302,14 +1420,7 @@ USBAudioPinSetDataFormat(
     _In_ const KSDATARANGE* DataRange,
     _In_opt_ const KSATTRIBUTE_LIST* AttributeRange)
 {
-    if (OldFormat == NULL)
-    {
-        /* TODO: verify connection format */
-        UNIMPLEMENTED;
-        return STATUS_SUCCESS;
-    }
-
-    return UsbAudioSetFormat(Pin);
+    return UsbAudioSetFormat(Pin, DataRange);;
 }
 
 NTSTATUS
@@ -1323,6 +1434,8 @@ StartCaptureIsocTransfer(
 
     /* get pin context */
     PinContext = Pin->Context;
+
+    DPRINT1("StartCaptureIsocTransfer entered\n");
 
     /* acquire spin lock */
     KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
@@ -1346,12 +1459,11 @@ StartCaptureIsocTransfer(
 
         /* acquire spin lock */
         KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
-
     }
 
     /* release lock */
     KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
-
+    DPRINT1("StartCaptureIsocTransfer done\n");
     return STATUS_SUCCESS;
 }
 

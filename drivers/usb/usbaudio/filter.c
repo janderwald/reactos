@@ -957,6 +957,7 @@ USBAudioFilterCreate(
     /* init context */
     FilterContext->DeviceExtension = Device->Context;
     FilterContext->LowerDevice = Device->NextDeviceObject;
+    FilterContext->InterfaceInfo = FilterContext->DeviceExtension->InterfaceInfo;
     Filter->Context = FilterContext;
 
     DPRINT("USBAudioFilterCreate FilterContext %p LowerDevice %p DeviceExtension %p\n", FilterContext, FilterContext->LowerDevice, FilterContext->DeviceExtension);
@@ -1162,7 +1163,7 @@ UsbAudioGetDataRanges(
     PUSB_INTERFACE_DESCRIPTOR Descriptor;
     PKSDATARANGE_AUDIO DataRangeAudio;
     PKSDATARANGE *DataRangeAudioArray;
-    
+
     ULONG NumFrequency, DataRangeCount, DataRangeIndex, Index;
 
     /* count all data ranges */
