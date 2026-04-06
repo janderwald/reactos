@@ -271,14 +271,11 @@ EnqueueWaveHeader(
                     DoWaveStreaming(SoundDeviceInstance);
                 }
             }
-        } else if (DeviceType == WAVE_IN_DEVICE_TYPE)
-        {
-            if (SoundDeviceInstance->RTStreamingStarted)
-            {
-                DoWaveStreaming(SoundDeviceInstance);
-            }
         }
-
+        else if (DeviceType == WAVE_IN_DEVICE_TYPE)
+        {
+            DoWaveStreaming(SoundDeviceInstance);
+        }
     }
     else
     {
@@ -297,7 +294,10 @@ EnqueueWaveHeader(
             /* Only do wave streaming when the stream has not been paused */
             if ( SoundDeviceInstance->LegacyStreaming && SoundDeviceInstance->bPaused == FALSE && SoundDeviceInstance->bClosed == FALSE )
             {
-                DoWaveStreaming(SoundDeviceInstance);
+                if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+                {
+                    DoWaveStreaming(SoundDeviceInstance);
+                }
             }
         }
     }
