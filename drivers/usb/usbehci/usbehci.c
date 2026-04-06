@@ -567,6 +567,7 @@ EHCI_OpenHsIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
     EhciEndpoint->RemainSITDs = 0;
     EhciEndpoint->StartingFrame = 0;
     EhciEndpoint->FrameCount = 0;
+    InitializeListHead(&EhciEndpoint->ListTransfers);
 
     DPRINT("EHCI_OpenHsIsoEndpoint: ItdCount - %d\n", ItdCount);
 
@@ -2844,6 +2845,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
         EhciEndpoint->FrameCount += ITDCount;
         EhciTransfer->PendingTDs += ITDCount;
         EhciExtension->PendingTransfers++;
+        InsertTailList(&EhciEndpoint->ListTransfers, &EhciTransfer->EndpointEntry);
         EHCI_EnablePeriodicList(EhciExtension);
 
         DPRINT("EHCI_SubmitIsoTransfer: Scheduled %lu iTDs for %lu packets\n",
@@ -3885,11 +3887,12 @@ EHCI_PollIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
                      IN PEHCI_ENDPOINT EhciEndpoint)
 {
     PEHCI_HCD_ITD ITD;
-    ULONG ix;
+    PLIST_ENTRY Entry;
+    PLIST_ENTRY ITDEntry;
+    PEHCI_TRANSFER Transfer;
     ULONG TransIdx;
-    BOOLEAN StillActive;
+    BOOLEAN StillActive, HasProgrammedTransactions;
     ULONG DeviceSpeed;
-    ULONG Size;
 
     DeviceSpeed = EhciEndpoint->EndpointProperties.DeviceSpeed;
 
@@ -3903,43 +3906,43 @@ EHCI_PollIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
             return;
         }
 
-        ITD = EhciEndpoint->FirstITD;
-        Size = ROUND_UP(sizeof(EHCI_HCD_ITD), 32);
-
-        for (ix = 0; ix < EhciEndpoint->MaxITDs; ix++)
+        Entry = EhciEndpoint->ListTransfers.Flink;
+        while(Entry != &EhciEndpoint->ListTransfers)
         {
-            if (!(ITD->TdFlags & EHCI_HCD_ITD_FLAG_ALLOCATED))
+            Transfer = CONTAINING_RECORD(Entry, EHCI_TRANSFER, EndpointEntry);
+            if (!IsListEmpty(&Transfer->ActiveITDs))
             {
-                ITD = (PEHCI_HCD_ITD)((ULONG_PTR)ITD + Size);
-                continue;
-            }
-            KeMemoryBarrier();
-            /* Check if any initialized transaction in this iTD is still active.
-             * Also verify at least one transaction was programmed to avoid
-             * false-completing an allocated but not-yet-programmed iTD. */
-            StillActive = FALSE;
-            BOOLEAN HasProgrammedTransactions = FALSE;
-            ASSERT(ITD->PacketsThisITD);
-            for (TransIdx = 0; TransIdx < ITD->PacketsThisITD; TransIdx++)
-            {
-                if (ITD->PacketLength[TransIdx] > 0)
+                ITDEntry = Transfer->ActiveITDs.Flink;
+                while(ITDEntry != &Transfer->ActiveITDs)
                 {
-                    HasProgrammedTransactions = TRUE;
-                    ULONG Status = ITD->HwTD.Transaction[TransIdx].Status;
-                    if (Status & (1 << 3))
+                    ITD = CONTAINING_RECORD(ITDEntry, EHCI_HCD_ITD, ActiveITDEntry);
+                    ASSERT(ITD->PacketsThisITD);
+                    StillActive = FALSE;
+                    HasProgrammedTransactions = FALSE;
+                    KeMemoryBarrier();
+                    for (TransIdx = 0; TransIdx < ITD->PacketsThisITD; TransIdx++)
                     {
-                        StillActive = TRUE;
-                        break;
+                        if (ITD->PacketLength[TransIdx] > 0)
+                        {
+                            HasProgrammedTransactions = TRUE;
+                            ULONG Status = ITD->HwTD.Transaction[TransIdx].Status;
+                            if (Status & (1 << 3))
+                            {
+                                StillActive = TRUE;
+                                break;
+                            }
+                        }
+                    }
+                    KeMemoryBarrier();
+                    ITDEntry = ITDEntry->Flink;
+                    if (HasProgrammedTransactions && !StillActive)
+                    {
+                        /* All programmed transactions completed, process this iTD */
+                        EHCI_ProcessCompletedITD(EhciExtension, ITD);
                     }
                 }
             }
-            KeMemoryBarrier();
-            if (HasProgrammedTransactions && !StillActive)
-            {
-                /* All programmed transactions completed, process this iTD */
-                EHCI_ProcessCompletedITD(EhciExtension, ITD);
-            }
-            ITD = (PEHCI_HCD_ITD)((ULONG_PTR)ITD + Size);
+            Entry = Entry->Flink;
         }
     }
     else
@@ -4471,7 +4474,12 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
         /* Complete the transfer only when ALL iTDs are done */
         if (IsListEmpty(&EhciTransfer->ActiveITDs))
         {
+            /* sanity check */
             ASSERT(EhciTransfer->PendingTDs == 0);
+
+            /* remove from endpoint list */
+            RemoveEntryList(&EhciTransfer->EndpointEntry);
+
             EhciExtension->PendingTransfers--;
             DPRINT("EHCI_ProcessCompletedITD: Transfer fully completed, %d total bytes\n",
                    EhciTransfer->TransferLen);

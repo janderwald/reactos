@@ -205,6 +205,7 @@ typedef struct _EHCI_ENDPOINT {
   PEHCI_HCD_TD HcdHeadP;
   PEHCI_HCD_TD HcdTailP;
   LIST_ENTRY ListTDs;
+  LIST_ENTRY ListTransfers;
   const EHCI_PERIOD * PeriodTable;
   PEHCI_STATIC_QH StaticQH;
   /* Isochronous endpoint fields */
@@ -226,6 +227,7 @@ typedef struct _EHCI_TRANSFER {
   ULONG TransferLen;
   PEHCI_ENDPOINT EhciEndpoint;
   LIST_ENTRY ActiveITDs;
+  LIST_ENTRY EndpointEntry;
   ULONG PendingTDs;
   ULONG TransferOnAsyncList;
 } EHCI_TRANSFER, *PEHCI_TRANSFER;
