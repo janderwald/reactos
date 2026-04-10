@@ -211,6 +211,8 @@ typedef struct
     ULONG StopStreaming;                                          /* stops streaming */
     ULONG StoppedStreamingIrps;                                   /* stopped streaming irp count */
     KEVENT StoppedStreamingEvent;                                  /* stopped streaming event */
+    ULONG MaximumPacketSize;                                       /* max packet size */
+    ULONG DataPacketLength;                                        /* max packet data length */
 }PIN_CONTEXT, *PPIN_CONTEXT;
 
 /* filter.c */
