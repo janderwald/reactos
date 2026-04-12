@@ -526,6 +526,20 @@ BuildUSBAudioFilterTopology(
 
                             FilterDescriptor->NodeDescriptorsCount++;
                         }
+                        else if ((InputTerminalDescriptor->wTerminalType & 0xFF00) == 0x400)
+                        {
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].Type = &KSNODETYPE_DAC;
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].Name = &KSNODETYPE_DAC;
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].AutomationTable = AllocFunction(sizeof(KSAUTOMATION_TABLE));
+
+                            /* insert into node context*/
+                            NodeContext[DescriptorCount].Descriptor = CommonDescriptor;
+                            NodeContext[DescriptorCount].NodeCount = 1;
+                            NodeContext[DescriptorCount].Nodes[0] = FilterDescriptor->NodeDescriptorsCount;
+                            DescriptorCount++;
+
+                            FilterDescriptor->NodeDescriptorsCount++;
+                        }
                         else
                         {
                             DPRINT1("Unexpected input terminal type %x\n", InputTerminalDescriptor->wTerminalType);
@@ -561,12 +575,25 @@ BuildUSBAudioFilterTopology(
 
                             FilterDescriptor->NodeDescriptorsCount++;
                         }
+                        else if ((InputTerminalDescriptor->wTerminalType & 0xFF00) == 0x400)
+                        {
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].Type = &KSNODETYPE_DAC;
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].Name = &KSNODETYPE_DAC;
+                            NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].AutomationTable = AllocFunction(sizeof(KSAUTOMATION_TABLE));
+
+                            /* insert into node context*/
+                            NodeContext[DescriptorCount].Descriptor = CommonDescriptor;
+                            NodeContext[DescriptorCount].NodeCount = 1;
+                            NodeContext[DescriptorCount].Nodes[0] = FilterDescriptor->NodeDescriptorsCount;
+                            DescriptorCount++;
+
+                            FilterDescriptor->NodeDescriptorsCount++;
+                        }
                         else
                         {
                             DPRINT1("Unexpected output terminal type %x\n", InputTerminalDescriptor->wTerminalType);
                         }
                     }
-
                     else if (InputTerminalDescriptor->bDescriptorSubtype == 0x06 /* FEATURE_UNIT*/)
                     {
                         FeatureUnitDescriptor = (PUSB_AUDIO_CONTROL_FEATURE_UNIT_DESCRIPTOR)CommonDescriptor;
@@ -1189,10 +1216,19 @@ UsbAudioGetDataRanges(
         }
     }
 
+    if (!DataRangeCount)
+    {
+        *OutDataRanges = NULL;
+        *OutDataRangesCount = 0;
+        return;
+    }
+
     DataRangeAudioArray = AllocFunction(sizeof(PVOID) * DataRangeCount);
     if (DataRangeAudioArray == NULL)
     {
         /* no memory */
+        *OutDataRanges = NULL;
+        *OutDataRangesCount = 0;
         return;
     }
 

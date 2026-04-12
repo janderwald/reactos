@@ -111,6 +111,8 @@ UsbAudioSetFormat(
 
     Status = USBAudioSelectAudioStreamingInterface(Pin, PinContext, FilterContext->DeviceExtension,
         FilterContext->DeviceExtension->ConfigurationDescriptor, FormatIndex);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     /* allocate sample rate buffer */
     SampleRateBuffer = AllocFunction(sizeof(ULONG));
@@ -246,6 +248,7 @@ USBAudioSelectAudioStreamingInterface(
      Status = SubmitUrbSync(DeviceExtension->LowerDevice, Urb);
 
      DPRINT1("USBAudioSelectAudioStreamingInterface Status %x UrbStatus %x InterfaceNumber %x AlternateSetting %x\n", Status, Urb->UrbSelectInterface.Hdr.Status, InterfaceDescriptor->bInterfaceNumber, InterfaceDescriptor->bAlternateSetting);
+     ASSERT(FALSE);
 
      /* did it succeeed */
      if (NT_SUCCESS(Status))
