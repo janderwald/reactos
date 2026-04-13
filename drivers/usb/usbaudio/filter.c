@@ -1344,7 +1344,7 @@ USBAudioPinBuildDescriptors(
                 Pins[Index].PinDescriptor.DataFlow = KSPIN_DATAFLOW_IN;
 
                 /* pin flags */
-                Pins[Index].Flags = KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY | KSPIN_FLAG_GENERATE_EOS_EVENTS;
+                Pins[Index].Flags = KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY | KSPIN_FLAG_GENERATE_EOS_EVENTS | KSPIN_FLAG_INITIATE_PROCESSING_ON_EVERY_ARRIVAL;
             }
 
             /* data intersect handler */

@@ -62,6 +62,9 @@ DEFINE_KSPROPERTY_TABLE(TopologySet) {\
     DEFINE_KSPROPERTY_ITEM_AUDIO_MUTE(Handler)\
 }
 
+#define ROUND_DOWN(n, align) (((ULONG)n) & ~((align) - 1l))
+#define ROUND_UP(n, align) ROUND_DOWN(((ULONG)n) + (align) - 1, (align))
+
 #include <pshpack1.h>
 
 typedef struct
