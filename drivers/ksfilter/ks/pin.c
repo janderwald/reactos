@@ -30,6 +30,7 @@ typedef struct _KSISTREAM_POINTER
     KTIMER Timer;
     KDPC TimerDpc;
     struct _KSISTREAM_POINTER *Next;
+    struct _KSISTREAM_POINTER *Ref;
     PKSPIN Pin;
     PVOID Data;
     KSSTREAM_HEADER Header;
@@ -1377,10 +1378,6 @@ IKsPin_CompleteStreamHeader(
         return;
     }
 
-    /* fixme handle clones */
-    ASSERT(Pointer->Type != KSSTREAM_POINTER_TYPE_CLONE);
-    ASSERT(Pointer->RefCount == 1);
-
     /* clear ref */
     Pointer->Irp = NULL;
 
@@ -1715,7 +1712,6 @@ KsStreamPointerDelete(
     PKSISTREAM_POINTER Pointer = (PKSISTREAM_POINTER)CONTAINING_RECORD(StreamPointer, KSISTREAM_POINTER, StreamPointer);
 
     DPRINT("KsStreamPointerDelete %p\n", Pointer);
-    DbgBreakPoint();
     This = (IKsPinImpl*)CONTAINING_RECORD(Pointer->StreamPointer.Pin, IKsPinImpl, Pin);
 
     KeAcquireSpinLock(&This->StreamPointerLock, &OldLevel);
@@ -1750,6 +1746,13 @@ KsStreamPointerDelete(
 
     KeReleaseSpinLock(&This->StreamPointerLock, OldLevel);
 
+    if (Pointer->State == KSSTREAM_POINTER_STATE_LOCKED)
+    {
+        /* decrement ref count */
+        Pointer->Ref->RefCount--;
+        IKsPin_CompleteStreamHeader(This, Pointer);
+    }
+    
     /* FIXME make sure no timeouts are pending */
     FreeItem(Pointer);
 }
@@ -1792,12 +1795,23 @@ KsStreamPointerClone(
     /* copy stream pointer */
     RtlMoveMemory(NewFrame, CurFrame, sizeof(KSISTREAM_POINTER));
 
+    /* store reference */
+    NewFrame->Ref = CurFrame;
+
+    /* remove irp from cur frame */
+    CurFrame->Irp = NULL;
+
+    /* set it as unlocked */
+    CurFrame->State = KSSTREAM_POINTER_STATE_UNLOCKED;
+
     /* locate pin */
     This = (IKsPinImpl*)CONTAINING_RECORD(CurFrame->Pin, IKsPinImpl, Pin);
 
     if (ContextSize)
         NewFrame->StreamPointer.Context = (NewFrame + 1);
 
+    /* point to new header */
+    NewFrame->StreamPointer.StreamHeader = &NewFrame->Header;
 
     if (This->Pin.Descriptor->PinDescriptor.DataFlow == KSPIN_DATAFLOW_IN)
         NewFrame->StreamPointer.Offset = &NewFrame->StreamPointer.OffsetIn;
@@ -1813,7 +1827,7 @@ KsStreamPointerClone(
     /* store result */
     *CloneStreamPointer = &NewFrame->StreamPointer;
 
-    DPRINT("KsStreamPointerClone CloneStreamPointer %p\n", *CloneStreamPointer);
+    DPRINT1("KsStreamPointerClone CloneStreamPointer %p\n", *CloneStreamPointer);
 
     return STATUS_SUCCESS;
 }
