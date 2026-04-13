@@ -122,7 +122,6 @@ USBPORT_AllocateBandwidth(IN PDEVICE_OBJECT FdoDevice,
                 Period, USB2_FRAMES);
         return FALSE;
     }
-
     Factor = USB2_FRAMES / Period;
 
     for (Offset = 0; Offset < Period; Offset++)
@@ -177,7 +176,8 @@ USBPORT_AllocateBandwidth(IN PDEVICE_OBJECT FdoDevice,
         {
             if ((ScheduleOffset * Factor) < USB2_FRAMES)
             {
-                FdoExtension->Bandwidth[ScheduleOffset * Factor] -= EndpointBandwidth;
+                // FIXME disable bandwidth accounting temporary
+                //FdoExtension->Bandwidth[ScheduleOffset * Factor] -= EndpointBandwidth;
             }
         }
 
