@@ -60,15 +60,19 @@ typedef struct _UHCI_HCD_TD {
 #endif
   } DUMMYUNIONNAME;
   LIST_ENTRY TdLink;
+  PUHCI_ENDPOINT UhciEndpoint;
+  LIST_ENTRY ActiveITDEntry;
+  ULONG ScheduledFrame;
+  PUSBPORT_ISO_PACKET_DATA IsoPacket;
 #if !defined(_M_X64)
-  ULONG Padded[4];
+  UCHAR Padded[9];
 #else
-  ULONG Padded[15];
+  ULONG Padded[3];
 #endif
 } UHCI_HCD_TD, *PUHCI_HCD_TD;
 
 #if !defined(_M_X64)
-C_ASSERT(sizeof(UHCI_HCD_TD) == 0x40);
+C_ASSERT(sizeof(UHCI_HCD_TD) == 0x50);
 #else
 C_ASSERT(sizeof(UHCI_HCD_TD) == 0x80);
 #endif
@@ -118,6 +122,8 @@ typedef struct _UHCI_ENDPOINT {
   ULONG AllocTdCounter;
   LIST_ENTRY ListTDs;
   BOOL DataToggle;
+  ULONG FrameCount;
+  LIST_ENTRY ListTransfers;
 } UHCI_ENDPOINT, *PUHCI_ENDPOINT;
 
 /* UHCI Transfer follows USBPORT Transfer */
@@ -127,6 +133,8 @@ typedef struct _UHCI_TRANSFER {
   USBD_STATUS USBDStatus;
   ULONG PendingTds;
   SIZE_T TransferLen;
+  LIST_ENTRY ActiveITDs;
+  LIST_ENTRY EndpointEntry;
 } UHCI_TRANSFER, *PUHCI_TRANSFER;
 
 #define UHCI_FRAME_LIST_POINTER_VALID      (0 << 0)
@@ -172,8 +180,11 @@ typedef struct _UHCI_EXTENSION {
   LONG ExtensionLock;
   UHCI_USB_STATUS StatusMask;
   UHCI_USB_STATUS HcStatus;
+  RTL_BITMAP IsoBitmap;
+  PULONG IsoBitmapBuffer;
   UCHAR SOF_Modify;
   UCHAR Padded2[3];
+  ULONG PendingTransfers;
 } UHCI_EXTENSION, *PUHCI_EXTENSION;
 
 /* roothub.c */
