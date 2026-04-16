@@ -173,7 +173,7 @@ UHCI_ProcessCompletedITD(IN PUHCI_EXTENSION UhciExtension,
         RemoveEntryList(&UhciTransfer->EndpointEntry);
 
         UhciExtension->PendingTransfers--;
-        DPRINT1("UHCI_ProcessCompletedITD: Transfer fully completed, %d total bytes\n",
+        DPRINT("UHCI_ProcessCompletedITD: Transfer fully completed, %d total bytes\n",
                    UhciTransfer->TransferLen);
 
         RegPacket.UsbPortCompleteIsoTransfer(UhciExtension,
@@ -1930,7 +1930,7 @@ UhciIsochTransfer(IN PVOID uhciExtension,
         InsertTailList(&UhciEndpoint->ListTransfers, &UhciTransfer->EndpointEntry);
         //UHCI_EnablePeriodicList(UhciExtension);
 
-        DPRINT1("UHCI_SubmitIsoTransfer: Scheduled %lu iTDs for %lu packets\n",
+        DPRINT("UHCI_SubmitIsoTransfer: Scheduled %lu iTDs for %lu packets\n",
                ITDCount, IsoTransfer->TotalPackets);
     }
     return MP_STATUS_SUCCESS;

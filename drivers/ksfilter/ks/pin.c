@@ -1752,7 +1752,7 @@ KsStreamPointerDelete(
         Pointer->Ref->RefCount--;
         IKsPin_CompleteStreamHeader(This, Pointer);
     }
-    
+
     /* FIXME make sure no timeouts are pending */
     FreeItem(Pointer);
 }
@@ -1827,7 +1827,7 @@ KsStreamPointerClone(
     /* store result */
     *CloneStreamPointer = &NewFrame->StreamPointer;
 
-    DPRINT1("KsStreamPointerClone CloneStreamPointer %p\n", *CloneStreamPointer);
+    DPRINT("KsStreamPointerClone CloneStreamPointer %p\n", *CloneStreamPointer);
 
     return STATUS_SUCCESS;
 }
@@ -2948,8 +2948,6 @@ KspCreatePin(
             /* failed to add process pin */
             KsFreeObjectBag((KSOBJECT_BAG)This->Pin.Bag);
             KsFreeObjectHeader(&This->ObjectHeader);
-            FreeItem(This);
-            FreeItem(CreateItem);
             /* return failure code */
             return Status;
         }
@@ -2968,9 +2966,7 @@ KspCreatePin(
         {
             DPRINT("Failed to register Worker %lx\n", Status);
             KsFreeObjectBag((KSOBJECT_BAG)This->Pin.Bag);
-            KsFreeObjectHeader(&This->ObjectHeader);
-            FreeItem(This);
-            FreeItem(CreateItem);
+            KsFreeObjectHeader(This->ObjectHeader);
             return Status;
         }
         KeInitializeSpinLock(&This->StreamPointerLock);
@@ -2990,7 +2986,6 @@ KspCreatePin(
             IKsFilter_RemovePin(Filter->lpVtbl->GetStruct(Filter), &This->Pin);
             KsFreeObjectBag((KSOBJECT_BAG)This->Pin.Bag);
             KsFreeObjectHeader((KSOBJECT_HEADER)This->ObjectHeader);
-            FreeItem(This);
             return Status;
         }
     }
@@ -3011,8 +3006,6 @@ KspCreatePin(
         IKsFilter_RemovePin(Filter->lpVtbl->GetStruct(Filter), &This->Pin);
         KsFreeObjectBag((KSOBJECT_BAG)This->Pin.Bag);
         KsFreeObjectHeader((KSOBJECT_HEADER)This->ObjectHeader);
-        FreeItem(This);
-
         /* return failure code */
         return Status;
     }

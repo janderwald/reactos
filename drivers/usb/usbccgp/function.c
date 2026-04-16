@@ -255,7 +255,7 @@ USBCCGP_InitInterfaceListOfFunctionDescriptor(
 {
     PUSB_INTERFACE_DESCRIPTOR Descriptor;
     PUCHAR Offset, End;
-    ULONG Count = 0;
+    ULONG Count = 0, Index;
 
     //
     // init offsets
@@ -263,44 +263,26 @@ USBCCGP_InitInterfaceListOfFunctionDescriptor(
     Offset = (PUCHAR)AssociationDescriptor + AssociationDescriptor->bLength;
     End = (PUCHAR)ConfigurationDescriptor + ConfigurationDescriptor->wTotalLength;
 
-    while (Offset < End)
+    for(Index = 0; Index < FunctionDescriptor->NumberOfInterfaces; Index++)
     {
         //
-        // get association descriptor
+        // get interface descriptor
         //
-        Descriptor = (PUSB_INTERFACE_DESCRIPTOR)Offset;
-
-        if (Descriptor->bLength == sizeof(USB_INTERFACE_DESCRIPTOR) && Descriptor->bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE)
+        Descriptor = USBD_ParseConfigurationDescriptorEx(ConfigurationDescriptor, Offset, -1, 0, -1, -1, -1);
+        if (Descriptor)
         {
-            //
-            // store interface descriptor
-            //
             FunctionDescriptor->InterfaceDescriptorList[Count] = Descriptor;
             Count++;
-
-            if (Count == AssociationDescriptor->bInterfaceCount)
-            {
-                //
-                // got all interfaces
-                //
-                return STATUS_SUCCESS;
-            }
+            Offset = (PUCHAR)((ULONG_PTR)Descriptor + Descriptor->bLength);
         }
+    }
 
-        if (Descriptor->bLength == sizeof(USB_INTERFACE_ASSOCIATION_DESCRIPTOR) && Descriptor->bDescriptorType == USB_INTERFACE_ASSOCIATION_DESCRIPTOR_TYPE)
-        {
-            //
-            // WTF? a association descriptor which overlaps the next association descriptor
-            //
-            DPRINT1("Invalid association descriptor\n");
-            ASSERT(FALSE);
-            return STATUS_UNSUCCESSFUL;
-        }
-
-        //
-        // move to next descriptor
-        //
-        Offset += Descriptor->bLength;
+    if (Count == AssociationDescriptor->bInterfaceCount)
+    {
+       //
+       // got all interfaces
+       //
+       return STATUS_SUCCESS;
     }
 
     //

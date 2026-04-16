@@ -948,7 +948,7 @@ UsbAudioRenderComplete(
     NTSTATUS Status;
     PURB Urb;
 
-    DPRINT1("UsbAudioRenderComplete Irp %p\n", Irp);
+    DPRINT("UsbAudioRenderComplete Irp %p\n", Irp);
 
     /* get pin context */
     Pin = Context;
@@ -1212,7 +1212,7 @@ PinRenderProcess(
         Irp->Tail.Overlay.DriverContext[1] = CloneStreamPointer;
 
         /* render audio bytes */
-        DPRINT1("PinRenderProcess sending Irp %p PacketCount %u TotalPacketSize %u\n", Irp, PacketCount, TotalPacketSize);
+        DPRINT("PinRenderProcess sending Irp %p PacketCount %u TotalPacketSize %u\n", Irp, PacketCount, TotalPacketSize);
         Status = IoCallDriver(PinContext->LowerDevice, Irp);
 
     }
