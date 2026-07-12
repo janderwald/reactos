@@ -598,7 +598,7 @@ UINT WINAPI mixerGetLineInfoW(HMIXEROBJ hmix, LPMIXERLINEW lpmliW, DWORD fdwInfo
 
     if (lpmliW == NULL || lpmliW->cbStruct != sizeof(*lpmliW))
 	return MMSYSERR_INVALPARAM;
-	
+
     if ((uRet = MIXER_GetDev(hmix, fdwInfo, &lpwm)) != MMSYSERR_NOERROR)
 	return uRet;
 
@@ -2049,6 +2049,54 @@ MMRESULT WINAPI midiStreamStop(HMIDISTRM hMidiStrm)
     return ret;
 }
 
+static UINT WAVE_GetDefaultDevice(UINT uType)
+{
+    WCHAR DefaultDevice[MAX_PATH] = {0};
+    HKEY hKey;
+    DWORD dwSize = sizeof(DefaultDevice);
+    UINT DefaultIndex = 0, DevsNum, uIndex;
+    WAVEOUTCAPSW waveOutputPaps;
+    WAVEINCAPSW waveInputPaps;
+
+
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Multimedia\\Sound Mapper", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+    {
+        if (uType == MMDRV_WAVEOUT)
+            RegQueryValueExW(hKey, L"Playback", NULL, NULL, (LPBYTE)DefaultDevice, &dwSize);
+        else
+            RegQueryValueExW(hKey, L"Record", NULL, NULL, (LPBYTE)DefaultDevice, &dwSize);
+
+            DefaultDevice[_countof(DefaultDevice) - 1] = UNICODE_NULL;
+        RegCloseKey(hKey);
+    }
+
+    if (uType == MMDRV_WAVEOUT)
+    {
+        DevsNum = waveOutGetNumDevs();
+        for (uIndex = 0; uIndex < DevsNum; uIndex++)
+        {
+            if (waveOutGetDevCapsW(uIndex, &waveOutputPaps, sizeof(waveOutputPaps)))
+                continue;
+                if (!_wcsicmp(waveOutputPaps.szPname, DefaultDevice))
+                    return uIndex;
+        }
+    }
+    else if (uType == MMDRV_WAVEIN)
+    {
+        DevsNum = waveInGetNumDevs();
+        for (uIndex = 0; uIndex < DevsNum; uIndex++)
+        {
+            if (waveInGetDevCapsW(uIndex, &waveInputPaps, sizeof(waveInputPaps)))
+                continue;
+            if (!_wcsicmp(waveInputPaps.szPname, DefaultDevice))
+                return uIndex;
+        }
+    }
+
+    return (UINT)-1;
+}
+
+
 static UINT WAVE_Open(HANDLE* lphndl, UINT uDeviceID, UINT uType,
                       LPCWAVEFORMATEX lpFormat, DWORD_PTR dwCallback,
                       DWORD_PTR dwInstance, DWORD dwFlags)
@@ -2098,21 +2146,24 @@ static UINT WAVE_Open(HANDLE* lphndl, UINT uDeviceID, UINT uType,
     TRACE("cb=%08lx\n", wod.dwCallback);
 
     for (;;) {
-        if (dwFlags & WAVE_MAPPED) {
+       if (dwFlags == WAVE_MAPPED) {
+            uDeviceID = WAVE_GetDefaultDevice(uType);
+            wod.uMappedDeviceID = uDeviceID;
+        } else if (dwFlags & WAVE_MAPPED) {
             wod.uMappedDeviceID = uDeviceID;
             uDeviceID = WAVE_MAPPER;
         } else {
             wod.uMappedDeviceID = -1;
         }
         wmld->uDeviceID = uDeviceID;
-    
+
         dwRet = MMDRV_Open(wmld, (uType == MMDRV_WAVEOUT) ? WODM_OPEN : WIDM_OPEN,
                            (DWORD_PTR)&wod, dwFlags);
 
         TRACE("dwRet = %s\n", WINMM_ErrorToString(dwRet));
         if (dwRet != WAVERR_BADFORMAT ||
             ((dwFlags & (WAVE_MAPPED|WAVE_FORMAT_DIRECT)) != 0) || (uDeviceID == WAVE_MAPPER)) break;
-        /* if we ask for a format which isn't supported by the physical driver, 
+        /* if we ask for a format which isn't supported by the physical driver,
          * let's try to map it through the wave mapper (except, if we already tried
          * or user didn't allow us to use acm codecs or the device is already the mapper)
          */
@@ -2314,7 +2365,7 @@ UINT WINAPI waveOutUnprepareHeader(HWAVEOUT hWaveOut,
 
     if (lpWaveOutHdr == NULL || uSize < sizeof (WAVEHDR))
 	return MMSYSERR_INVALPARAM;
-    
+
     if (!(lpWaveOutHdr->dwFlags & WHDR_PREPARED)) {
 	return MMSYSERR_NOERROR;
     }
