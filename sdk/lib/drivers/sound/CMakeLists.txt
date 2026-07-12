@@ -1,5 +1,6 @@
 
 #add_subdirectory(legacy)
+add_subdirectory(libsoxr)
 add_subdirectory(mmebuddy)
 add_subdirectory(mment4)
 add_subdirectory(mmixer)

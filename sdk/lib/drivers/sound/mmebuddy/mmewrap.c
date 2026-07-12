@@ -62,6 +62,10 @@ MmeSetState(
         /* Store audio stream pause state */
         SoundDeviceInstance->bPaused = !bStart;
     }
+    if (bStart)
+    {
+        InitiateSoundStreaming(SoundDeviceInstance);
+    }
 
     return Result;
 }

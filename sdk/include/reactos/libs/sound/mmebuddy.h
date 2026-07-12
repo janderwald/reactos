@@ -125,6 +125,7 @@ typedef struct _SOUND_OVERLAPPED
 
     PVOID OriginalCompletionRoutine;
     PVOID CompletionContext;
+    ULONG Length;
 
 } SOUND_OVERLAPPED, *PSOUND_OVERLAPPED;
 
@@ -351,6 +352,15 @@ typedef struct _SOUND_DEVICE_INSTANCE
     LONG RTStreamingShadowBufferLength;
     volatile LONG RTStreamingShadowBufferOffset;
 
+    BOOL ResamplingActive;
+    PVOID hResampler;
+    PUCHAR ResamplerBuffer;
+    DWORD ResamplerBufferOffset;
+    DWORD ResamplerBufferSize;
+
+    WAVEFORMATEX InputFormat;
+    WAVEFORMATEX OutputFormat;
+    CRITICAL_SECTION ResamplerCriticalSection;
 
     BOOL ResetInProgress;
     BOOL bPaused;
