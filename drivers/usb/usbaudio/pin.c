@@ -1202,8 +1202,6 @@ PinRenderProcess(
 
     /* calculate packet count */
     PacketCount = (CloneStreamPointer->Offset->Remaining) / TotalPacketSize;
-    PacketCount = ROUND_DOWN(PacketCount, 8);
-    ASSERT(PacketCount);
 
     Status = RenderInitializeUrbAndIrp(Pin, PinContext, Irp, &TransferBuffer[Offset], PacketCount * TotalPacketSize, TotalPacketSize);
     if (NT_SUCCESS(Status))

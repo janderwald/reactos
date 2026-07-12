@@ -111,6 +111,7 @@ C_ASSERT(sizeof(UHCI_HCD_QH) == 0x40);
 /* UHCI Endpoint follows USBPORT Endpoint */
 typedef struct _UHCI_ENDPOINT {
   ULONG Flags;
+  ULONG EndpointState;
   LONG EndpointLock;
   USBPORT_ENDPOINT_PROPERTIES EndpointProperties;
   PUHCI_HCD_QH QH;

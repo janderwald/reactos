@@ -2091,8 +2091,10 @@ NTAPI
 UhciGetEndpointState(IN PVOID uhciExtension,
                      IN PVOID uhciEndpoint)
 {
-    DPRINT_IMPL("UhciGetEndpointState: UNIMPLEMENTED. FIXME\n");
-    return 0;
+    PUHCI_ENDPOINT UhciEndpoint;
+
+    UhciEndpoint = uhciEndpoint;
+    return UhciEndpoint->EndpointState;
 }
 
 VOID
@@ -2203,7 +2205,26 @@ UhciSetEndpointState(IN PVOID uhciExtension,
            TransferType);
 
     if (TransferType == USBPORT_TRANSFER_TYPE_ISOCHRONOUS)
+    {
+        switch (EndpointState)
+        {
+            case USBPORT_ENDPOINT_ACTIVE:
+                /* Nothing special needed - transfers will be scheduled as they come in */
+                break;
+
+            case USBPORT_ENDPOINT_PAUSED:
+                /* Deactivate all allocated iTDs/siTDs */
+                DPRINT1("USBUHCI need to pause endpoint\n");
+                break;
+
+            case USBPORT_ENDPOINT_REMOVE:
+                /* Unlink all allocated iTDs/siTDs from the periodic frame list */
+                DPRINT1("USBUHCI need to remove endpoint\n");
+                break;
+        }
+        UhciEndpoint->EndpointState = EndpointState;
         return;
+    }
 
     if (TransferType != USBPORT_TRANSFER_TYPE_CONTROL &&
         TransferType != USBPORT_TRANSFER_TYPE_BULK &&
@@ -2258,6 +2279,7 @@ UhciSetEndpointState(IN PVOID uhciExtension,
             ASSERT(FALSE);
             break;
     }
+    UhciEndpoint->EndpointState = EndpointState;
 }
 
 ULONG
