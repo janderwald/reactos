@@ -1486,7 +1486,6 @@ USBPORT_InvalidateEndpointHandler(IN PDEVICE_OBJECT FdoDevice,
 
     switch (Type)
     {
-        case INVALIDATE_ENDPOINT_ONLY:
         case INVALIDATE_ENDPOINT_WORKER_THREAD:
             USBPORT_SignalWorkerThread(FdoDevice);
             break;

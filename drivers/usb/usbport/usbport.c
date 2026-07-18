@@ -2693,21 +2693,17 @@ USBPORT_AllocateTransfer(IN PDEVICE_OBJECT FdoDevice,
 
     if (TransferLength)
     {
-        if (Urb->UrbHeader.Function == URB_FUNCTION_CONTROL_TRANSFER)
+        if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
         {
-            Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
+            Mdl = Urb->UrbIsochronousTransfer.TransferBufferMDL;
             VirtualAddr = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
 
             PagesNeed = ADDRESS_AND_SIZE_TO_SPAN_PAGES(VirtualAddr,
                                                    TransferLength);
-            if (PagesNeed > 0)
-            {
-                PagesNeed--;
-            }
         }
-        else if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+        else
         {
-            Mdl = Urb->UrbIsochronousTransfer.TransferBufferMDL;
+            Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
             VirtualAddr = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
 
             PagesNeed = ADDRESS_AND_SIZE_TO_SPAN_PAGES(VirtualAddr,

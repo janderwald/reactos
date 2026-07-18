@@ -1737,7 +1737,7 @@ EHCI_MapAsyncTransferToTd(IN PEHCI_EXTENSION EhciExtension,
 
         LengthThisTD = EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE -
                        (TD->HwTD.Buffer[0] & (PAGE_SIZE - 1));
-
+ 
         for (ix = 1; ix < EHCI_MAX_QTD_BUFFER_PAGES; ix++)
         {
             TD->HwTD.Buffer[ix] = SgList->SgElement[SgIdx + ix].SgPhysicalAddress.LowPart;

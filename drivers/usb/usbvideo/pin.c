@@ -172,7 +172,16 @@ USBVideoSetStreamingDefaults(
         DeviceExtension->BulkTransferSize = 32 * 1024;
         DeviceExtension->FrameContextCount = 1;
         DeviceExtension->UrbPoolCount = 4;
-        DeviceExtension->FrameContextSize = Format->VideoInfoHeader.dwBitRate;
+        if (Format->VideoInfoHeader.dwBitRate == 0)
+        {
+            DeviceExtension->FrameContextSize = 512 * 1024;
+            DPRINT1("[USBVIDEO] received dwBitRate 0\n");
+        }
+        else
+        {
+            DeviceExtension->FrameContextSize = min(Format->VideoInfoHeader.dwBitRate, 512 * 1024);
+        }
+
         DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
         DPRINT1("BulkTransferSize %u\n", DeviceExtension->BulkTransferSize);

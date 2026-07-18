@@ -1222,6 +1222,8 @@ OHCI_MapTransferToTD(IN POHCI_EXTENSION OhciExtension,
     {
         SgElement = &SGList->SgElement[SgIdx];
 
+        DPRINT_OHCI("SgElement %u SgOffset %u SgTransferLength %u\n", SgIdx, SgElement->SgOffset, SgElement->SgTransferLength);
+
         if (TransferedLen >= SgElement->SgOffset &&
             TransferedLen < SgElement->SgOffset + SgElement->SgTransferLength)
         {
@@ -1657,13 +1659,13 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
     // Validate ISO transfer parameters
     if (IsoUrb->NumberOfPackets == 0 || IsoUrb->NumberOfPackets > 255)
     {
-        DPRINT1("OHCI_SubmitIsoTransfer: Invalid NumberOfPackets: %lu\n", 
+        DPRINT1("OHCI_SubmitIsoTransfer: Invalid NumberOfPackets: %lu\n",
                 IsoUrb->NumberOfPackets);
         return MP_STATUS_FAILURE;
     }
 
     PacketCount = IsoUrb->NumberOfPackets;
-    
+
     // Check if we have enough TDs for the ISO transfer
     MaxTDs = OHCI_RemainTDs(OhciExtension, OhciEndpoint);
     if (PacketCount > MaxTDs)
@@ -1694,7 +1696,7 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
     for (ix = 0; ix < PacketCount; ix++)
     {
         PacketDescriptor = &IsoUrb->IsoPacket[ix];
-        
+
         // Allocate a new TD
         TD = OHCI_AllocateTD(OhciExtension, OhciEndpoint);
         if (!TD)
@@ -1705,12 +1707,12 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
 
         // Clear the TD
         RtlZeroMemory(&TD->HwTD, sizeof(TD->HwTD));
-        
+
         // Set up the ISO Transfer Descriptor
         TD->HwTD.iTD.Control.StartingFrame = (StartingFrame + ix) & 0xFFFF;
         TD->HwTD.iTD.Control.FrameCount = 0; // Single frame per TD
-        TD->HwTD.iTD.Control.DelayInterrupt = (ix == PacketCount - 1) ? 
-                                              OHCI_TD_INTERRUPT_IMMEDIATE : 
+        TD->HwTD.iTD.Control.DelayInterrupt = (ix == PacketCount - 1) ?
+                                              OHCI_TD_INTERRUPT_IMMEDIATE :
                                               OHCI_TD_INTERRUPT_NONE;
         TD->HwTD.iTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
 
@@ -1719,12 +1721,12 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
         {
             // Calculate buffer address - simplified approach for now
             ULONG BufferAddress = (ULONG_PTR)PacketDescriptor->Offset;
-            
+
             TD->HwTD.iTD.BufferPage0 = BufferAddress & ~(PAGE_SIZE - 1);
             TD->HwTD.iTD.BufferEnd = BufferAddress + PacketDescriptor->Length - 1;
-            
+
             // Set up offset for this packet (only using first offset entry for simplicity)
-            TD->HwTD.iTD.Offset[0] = (USHORT)(BufferAddress & (PAGE_SIZE - 1)) | 
+            TD->HwTD.iTD.Offset[0] = (USHORT)(BufferAddress & (PAGE_SIZE - 1)) |
                                      (PacketDescriptor->Length << 16);
         }
         else
@@ -1754,7 +1756,7 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
         TD->Flags |= OHCI_HCD_TD_FLAG_PROCESSED;
         TD->OhciTransfer = OhciTransfer;
         TD->TransferLen = PacketDescriptor->Length;
-        
+
         OhciTransfer->PendingTDs++;
         PrevTD = TD;
     }
@@ -1766,7 +1768,7 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
         PrevTD->HwTD.iTD.NextTD = TD->PhysicalAddress;
         PrevTD->NextTDVa = TD;
         TD->NextTDVa = NULL;
-        
+
         OhciTransfer->NextTD = TD;
         OhciEndpoint->HcdTailP = TD;
         OhciEndpoint->HcdED->HwED.TailPointer = TD->PhysicalAddress;
@@ -1775,9 +1777,9 @@ OHCI_SubmitIsoTransfer(IN PVOID ohciExtension,
     // Enable isochronous processing
     OHCI_EnableList(OhciExtension, OhciEndpoint);
 
-    DPRINT("OHCI_SubmitIsoTransfer: Scheduled %lu ISO packets starting at frame %lu\n", 
+    DPRINT("OHCI_SubmitIsoTransfer: Scheduled %lu ISO packets starting at frame %lu\n",
            PacketCount, StartingFrame);
-    
+
     return MP_STATUS_SUCCESS;
 }
 
@@ -1877,7 +1879,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
 
     OhciEndpoint = OhciTransfer->OhciEndpoint;
     IsoUrb = OhciTransfer->IsoUrb;
-    
+
     if (!IsoUrb)
     {
         DPRINT1("OHCI_ProcessDoneIsoTD: No ISO URB associated with transfer\n");
@@ -1888,7 +1890,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
 
     // Extract completion information from the ITD
     FrameNumber = TD->HwTD.iTD.Control.StartingFrame;
-    
+
     // Find the corresponding packet descriptor
     // This is a simplified approach
     // TODO: we need to track which TD corresponds to which packet
@@ -1908,7 +1910,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
         if (TD->HwTD.iTD.Control.ConditionCode == OHCI_TD_CONDITION_NO_ERROR)
         {
             PacketDescriptor->Status = USBD_STATUS_SUCCESS;
-            
+
             // Calculate actual transferred length
             if (TD->HwTD.iTD.Offset[0] & 0x8000)
             {
@@ -1931,7 +1933,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
                     }
                 }
             }
-            
+
             OhciTransfer->TransferLen += TransferredLength;
         }
         else
@@ -1976,7 +1978,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
                     PacketDescriptor->Status = USBD_STATUS_ISO_TD_ERROR;
                     break;
             }
-            
+
             OhciTransfer->USBDStatus = PacketDescriptor->Status;
         }
     }
@@ -1993,11 +1995,11 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
     {
         DPRINT("OHCI_ProcessDoneIsoTD: Completing ISO transfer with %lu bytes transferred\n",
                OhciTransfer->TransferLen);
-               
+
         RegPacket.UsbPortCompleteTransfer(OhciExtension,
                                           OhciEndpoint,
                                           OhciTransfer->TransferParameters,
-                                          (OhciTransfer->USBDStatus != 0) ? 
+                                          (OhciTransfer->USBDStatus != 0) ?
                                              OhciTransfer->USBDStatus : USBD_STATUS_SUCCESS,
                                           OhciTransfer->TransferLen);
     }
@@ -2455,28 +2457,28 @@ OHCI_PollIsoEndpoint(IN POHCI_EXTENSION OhciExtension,
     while (TD && TD != NextTD)
     {
         POHCI_HCD_TD NextTDToProcess = TD->NextTDVa;
-        
+
         // Check if this ISO TD has completed
-        if (TD->OhciTransfer && 
+        if (TD->OhciTransfer &&
             (TD->HwTD.iTD.Control.ConditionCode != OHCI_TD_CONDITION_NOT_ACCESSED))
         {
             DPRINT_OHCI("OHCI_PollIsoEndpoint: Processing completed ISO TD - %p\n", TD);
-            
+
             // Remove from active list and add to done list
             if (IsListEmpty(&OhciEndpoint->TDList))
             {
                 InitializeListHead(&OhciEndpoint->TDList);
             }
-            
+
             InsertTailList(&OhciEndpoint->TDList, &TD->DoneLink);
         }
         // Check if TD has missed its frame window
-        else if (TD->OhciTransfer && 
+        else if (TD->OhciTransfer &&
                  ((CurrentFrame - TD->HwTD.iTD.Control.StartingFrame) & 0xFFFF) > 16)
         {
             DPRINT1("OHCI_PollIsoEndpoint: ISO TD missed frame window - TD frame %lu, current %lu\n",
                     TD->HwTD.iTD.Control.StartingFrame, CurrentFrame);
-            
+
             // Mark as missed and add to done list
             TD->HwTD.iTD.Control.ConditionCode = OHCI_TD_CONDITION_NOT_ACCESSED;
             InsertTailList(&OhciEndpoint->TDList, &TD->DoneLink);
