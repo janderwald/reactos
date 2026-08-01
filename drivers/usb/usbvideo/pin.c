@@ -221,9 +221,9 @@ USBVideoSetStreamingDefaults(
             TransferSize = DeviceExtension->dwMaxPayloadTransferSize * PacketCount;
 
             DeviceExtension->IsoTransferSize = TransferSize;
-            DeviceExtension->FrameContextCount = 1;
+            DeviceExtension->FrameContextCount = 3;
             DeviceExtension->FrameContextSize = TransferSize * 2;
-            DeviceExtension->UrbPoolCount = 1;
+            DeviceExtension->UrbPoolCount = 3;
             DeviceExtension->IsoPacketCount = PacketCount;
             DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
