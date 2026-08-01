@@ -216,6 +216,10 @@ typedef struct
     KEVENT StoppedStreamingEvent;                                  /* stopped streaming event */
     ULONG MaximumPacketSize;                                       /* max packet size */
     ULONG DataPacketLength;                                        /* max packet data length */
+    ULONG CaptureBufferOffset;
+    ULONG CaptureBufferLength;
+    PUCHAR CaptureBuffer;
+
 }PIN_CONTEXT, *PPIN_CONTEXT;
 
 /* filter.c */

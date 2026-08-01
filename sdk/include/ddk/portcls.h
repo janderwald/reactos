@@ -1943,6 +1943,8 @@ DECLARE_INTERFACE_(IMiniportWaveRTStreamNotification, IMiniportWaveRTStream)
     )   PURE;
 };
 
+typedef IMiniportWaveRTStreamNotification *PMINIPORTWAVERTSTREAMNOTIFICATION;
+
 #define IMP_IMiniportWaveRTStreamNotification\
     IMP_IMiniportWaveRTStream;\
     STDMETHODIMP_(NTSTATUS) AllocateBufferWithNotification\
@@ -2315,7 +2317,7 @@ DECLARE_INTERFACE_(IPreFetchOffset, IUnknown)
 
 #define IMP_IPreFetchOffset \
     STDMETHODIMP_(DWORD) SetPreFetchOffset(IN ULONG PreFetchOffset);
-    
+
 typedef IPreFetchOffset *PPREFETCHOFFSET;
 
 /* ===============================================================
