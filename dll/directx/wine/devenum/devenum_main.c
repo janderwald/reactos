@@ -196,6 +196,10 @@ HRESULT WINAPI DllRegisterServer(void)
         IFilterMapper2_CreateCategory(pMapper, &CLSID_MidiRendererCategory, MERIT_NORMAL, friendlymidirend);
         IFilterMapper2_CreateCategory(pMapper, &CLSID_TransmitCategory, MERIT_DO_NOT_USE, friendlyextrend);
         IFilterMapper2_CreateCategory(pMapper, &CLSID_DeviceControlCategory, MERIT_DO_NOT_USE, friendlydevctrl);
+        IFilterMapper2_CreateCategory(pMapper, &AM_KSCATEGORY_CAPTURE, MERIT_DO_NOT_USE, L"ReactOS Streaming Capture Devices");
+        IFilterMapper2_CreateCategory(pMapper, &AM_KSCATEGORY_RENDER, MERIT_DO_NOT_USE, L"ReactOS Streaming Render Devices");
+        IFilterMapper2_CreateCategory(pMapper, &AM_KSCATEGORY_VIDEO, MERIT_DO_NOT_USE, L"ReactOS Video Capture Source");
+        IFilterMapper2_CreateCategory(pMapper, &AM_KSCATEGORY_AUDIO, MERIT_DO_NOT_USE, L"ReactOS Audio Capture Source");
 
         IFilterMapper2_Release(pMapper);
     }

@@ -51,6 +51,7 @@ static inline void DEVENUM_UnlockModule(void) { InterlockedDecrement(&dll_refs);
 
 enum device_type
 {
+    DEVICE_PNP,
     DEVICE_FILTER,
     DEVICE_CODEC,
     DEVICE_DMO,
@@ -63,11 +64,9 @@ typedef struct
     CLSID class;
     BOOL has_class;
     enum device_type type;
-    union
-    {
-        WCHAR *name;    /* for filters and codecs */
-        CLSID clsid;    /* for DMOs */
-    };
+    WCHAR *name;    /* for filters and codecs */
+    CLSID clsid;    /* for DMOs */
+    WCHAR * devicePath;
 } MediaCatMoniker;
 
 MediaCatMoniker * DEVENUM_IMediaCatMoniker_Construct(void) DECLSPEC_HIDDEN;
