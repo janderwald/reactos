@@ -14,6 +14,7 @@
 const GUID CLSID_KsClockForwarder              = {0x877e4351, 0x6fea, 0x11d0, {0xb8, 0x63, 0x00, 0xaa, 0x00, 0xa2, 0x16, 0xa1}};
 const GUID CLSID_KsQualityForwarder            = {0xe05592e4, 0xc0b5, 0x11d0, {0xa4, 0x39, 0x00, 0xa0, 0xc9, 0x22, 0x31, 0x96}};
 const GUID CLSID_KsIBasicAudioInterfaceHandler = {0xb9f8ac3e, 0x0f71, 0x11d2, {0xb7, 0x2c, 0x00, 0xc0, 0x4f, 0xb6, 0xbd, 0x3d}};
+const GUID gKSDATAFORMAT_TYPE_VIDEO = { STATIC_KSDATAFORMAT_TYPE_VIDEO};
 
 static INTERFACE_TABLE InterfaceTable[] =
 {
@@ -257,6 +258,10 @@ KsGetMediaType(
     PKSMULTIPLE_ITEM ItemList;
     int i = 0;
     PKSDATAFORMAT DataFormat;
+#ifdef KSPROXY_TRACE
+    WCHAR Buffer[200];
+#endif
+
 
     if (Position < 0)
         return E_INVALIDARG;
@@ -277,6 +282,10 @@ KsGetMediaType(
     {
         // out of bounds
         CoTaskMemFree(ItemList);
+#ifdef KSPROXY_TRACE
+    _swprintf(Buffer, L"KsGetMediaType out of bounds %u Count %u\n", Position, ItemList->Count);
+    OutputDebugStringW(Buffer);
+#endif
         return MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, ERROR_NO_MORE_ITEMS);
     }
 
@@ -286,7 +295,7 @@ KsGetMediaType(
     while(i != Position)
     {
         // goto next format;
-        DataFormat = (PKSDATAFORMAT)(ULONG_PTR)(DataFormat + DataFormat->FormatSize);
+        DataFormat = (PKSDATAFORMAT)((ULONG_PTR)DataFormat + DataFormat->FormatSize);
         i++;
     }
 
@@ -294,17 +303,50 @@ KsGetMediaType(
     DataFormat->FormatSize -= sizeof(KSDATAFORMAT);
     if (DataFormat->FormatSize)
     {
+        ULONG FormatSize;
+        PVOID Format;
+        if (IsEqualGUID(DataFormat->MajorFormat, gKSDATAFORMAT_TYPE_VIDEO))
+        {
+            PKS_DATARANGE_VIDEO DataRangeVideo = (PKS_DATARANGE_VIDEO)DataFormat;
+            FormatSize = sizeof(VIDEOINFOHEADER);
+            Format = (PVOID)&DataRangeVideo->VideoInfoHeader;
+
+            CopyMemory(&AmMediaType->formattype, &FORMAT_VideoInfo, sizeof(GUID));
+            CopyMemory(&AmMediaType->subtype, &DataFormat->SubFormat, sizeof(GUID));
+            CopyMemory(&AmMediaType->majortype, &DataFormat->MajorFormat, sizeof(GUID));
+        }
+        else
+        {
+#ifdef KSPROXY_TRACE
+            _swprintf(Buffer, L"KsGetMediaType unknown extension\n");
+            OutputDebugStringW(Buffer);
+#endif
+            FormatSize = DataFormat->FormatSize;
+            Format = (PVOID) (DataFormat + 1);
+
+            // copy type info
+            CopyMemory(&AmMediaType->majortype, &DataFormat->MajorFormat, sizeof(GUID));
+            CopyMemory(&AmMediaType->subtype, &DataFormat->SubFormat, sizeof(GUID));
+            CopyMemory(&AmMediaType->formattype, &DataFormat->Specifier, sizeof(GUID));
+
+
+        }
          // copy extra format buffer
-        AmMediaType->pbFormat = (BYTE*)CoTaskMemAlloc(DataFormat->FormatSize);
+        AmMediaType->pbFormat = (BYTE*)CoTaskMemAlloc(FormatSize);
         if (!AmMediaType->pbFormat)
         {
             // not enough memory
             CoTaskMemFree(ItemList);
             return E_OUTOFMEMORY;
         }
+#ifdef KSPROXY_TRACE
+        _swprintf(Buffer, L"KsGetMediaType copy format buffer\n");
+        OutputDebugStringW(Buffer);
+#endif
+
         // copy format buffer
-        CopyMemory(AmMediaType->pbFormat, (DataFormat + 1), DataFormat->FormatSize);
-        AmMediaType->cbFormat = DataFormat->FormatSize;
+        CopyMemory(AmMediaType->pbFormat, Format, FormatSize);
+        AmMediaType->cbFormat = FormatSize;
     }
     else
     {
@@ -312,11 +354,6 @@ KsGetMediaType(
         AmMediaType->pbFormat = NULL;
         AmMediaType->cbFormat = 0;
     }
-
-    // copy type info
-    CopyMemory(&AmMediaType->majortype, &DataFormat->MajorFormat, sizeof(GUID));
-    CopyMemory(&AmMediaType->subtype, &DataFormat->SubFormat, sizeof(GUID));
-    CopyMemory(&AmMediaType->formattype, &DataFormat->Specifier, sizeof(GUID));
     AmMediaType->bTemporalCompression = FALSE; //FIXME verify
     AmMediaType->pUnk = NULL; //FIXME
     AmMediaType->lSampleSize = DataFormat->SampleSize;
@@ -324,7 +361,10 @@ KsGetMediaType(
 
     // free dataformat list
     CoTaskMemFree(ItemList);
-
+#ifdef KSPROXY_TRACE
+        _swprintf(Buffer, L"KsGetMediaType done\n");
+        OutputDebugStringW(Buffer);
+#endif
     return NOERROR;
 }
 

@@ -83,6 +83,10 @@ CEnumPins::Next(
 {
     ULONG i = 0;
 
+#ifdef KSPROXY_TRACE
+    OutputDebugStringW(L"CEnumPins::Next\n");
+#endif
+
     if (!ppPins)
         return E_POINTER;
 
@@ -117,6 +121,9 @@ STDMETHODCALLTYPE
 CEnumPins::Skip(
     ULONG cPins)
 {
+#ifdef KSPROXY_TRACE
+    OutputDebugStringW(L"CEnumPins::Skip\n");
+#endif
     if (cPins + m_Index >= m_Pins.size())
     {
         return S_FALSE;
@@ -130,6 +137,9 @@ HRESULT
 STDMETHODCALLTYPE
 CEnumPins::Reset()
 {
+#ifdef KSPROXY_TRACE
+    OutputDebugStringW(L"CEnumPins::Reset\n");
+#endif
     m_Index = 0;
     return S_OK;
 }
@@ -162,6 +172,9 @@ CEnumPins_fnConstructor(
     {
         /* not supported */
         delete handler;
+#ifdef KSPROXY_TRACE
+    OutputDebugStringW(L"CEnumPins_fnConstructor::no interface\n");
+#endif
         return E_NOINTERFACE;
     }
 

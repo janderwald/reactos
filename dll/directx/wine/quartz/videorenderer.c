@@ -37,6 +37,8 @@
 #include <assert.h>
 #include "wine/unicode.h"
 #include "wine/debug.h"
+#include <reactos/libs/libjpeg/jpeglib.h>
+#include <reactos/libs/libjpeg/jerror.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
@@ -98,7 +100,7 @@ static inline VideoRendererImpl *impl_from_IBasicVideo(IBasicVideo *iface)
 static DWORD WINAPI MessageLoop(LPVOID lpParameter)
 {
     VideoRendererImpl* This = lpParameter;
-    MSG msg; 
+    MSG msg;
     BOOL fGotMessage;
 
     TRACE("Starting message loop\n");
@@ -115,7 +117,7 @@ static DWORD WINAPI MessageLoop(LPVOID lpParameter)
 
     while ((fGotMessage = GetMessageW(&msg, NULL, 0, 0)) != 0 && fGotMessage != -1)
     {
-        TranslateMessage(&msg); 
+        TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
 
@@ -202,6 +204,214 @@ static void VideoRenderer_AutoShowWindow(VideoRendererImpl *This)
         ShowWindow(This->baseControlWindow.baseWindow.hWnd, SW_SHOW);
 }
 
+/* Memory data source for libjpeg */
+typedef struct
+{
+    struct jpeg_source_mgr pub;
+    const BYTE* data;
+    size_t size;
+    size_t pos;
+} mem_source_mgr;
+
+// ── Custom error handler that uses longjmp instead of exit() ──────────────
+struct JpegErrorMgr {
+    struct jpeg_error_mgr  pub;        // must be first
+    jmp_buf         setjmpBuf;
+    char            msg[JMSG_LENGTH_MAX];
+};
+
+static void init_source(j_decompress_ptr cinfo)
+{
+    mem_source_mgr* src = (mem_source_mgr*)cinfo->src;
+    src->pos = 0;
+}
+
+static boolean fill_input_buffer(j_decompress_ptr cinfo)
+{
+    mem_source_mgr* src = (mem_source_mgr*)cinfo->src;
+    if (src->pos >= src->size)
+        return FALSE;
+    src->pub.next_input_byte = src->data + src->pos;
+    src->pub.bytes_in_buffer = src->size - src->pos;
+    src->pos = src->size;
+    return TRUE;
+}
+
+static void skip_input_data(j_decompress_ptr cinfo, long num_bytes)
+{
+    mem_source_mgr* src = (mem_source_mgr*)cinfo->src;
+    if (num_bytes > 0)
+    {
+        src->pub.next_input_byte += num_bytes;
+        src->pub.bytes_in_buffer -= num_bytes;
+    }
+}
+
+static void term_source(j_decompress_ptr cinfo)
+{
+}
+
+
+static void JpegErrorExit(j_common_ptr cinfo)
+{
+    struct JpegErrorMgr * myErr = (struct JpegErrorMgr*)(cinfo->err);
+    // Format the error message
+    (*cinfo->err->format_message)(cinfo, myErr->msg);
+    // Jump back to the setjmp point
+    longjmp(myErr->setjmpBuf, 1);
+}
+
+static HRESULT jpeg_to_bgra32(VideoRendererImpl* This, const BYTE* jpegData, DWORD jpegSize, int w, int h)
+{
+    char            msg[JMSG_LENGTH_MAX];
+    mem_source_mgr src;
+    JSAMPARRAY buffer;
+    int row_stride;
+    int x, y;
+    BYTE* dst;
+    BYTE* bgra32;
+    BITMAPINFO bmi;
+    RECT rc;
+
+    // HACK
+    w = 640;
+    h = 480;
+
+
+    TRACE("Decoding JPEG: %u bytes, target %dx%d", jpegSize, w, h);
+    // ── Set up libjpeg decompressor ────────────────────────────────────────
+    struct jpeg_decompress_struct cinfo = {0};
+    struct JpegErrorMgr           errMgr = {0};
+
+    cinfo.err = jpeg_std_error(&errMgr.pub);
+    errMgr.pub.error_exit = JpegErrorExit;
+
+    // If libjpeg calls error_exit, we land here
+    if (setjmp(errMgr.setjmpBuf)) {
+        jpeg_destroy_decompress(&cinfo);
+        strcpy(msg, errMgr.msg);
+        TRACE("Decoding JPEG:failed with %s\n", msg);
+        return S_FALSE;
+    }
+
+    /* Allocate display buffer (BGRA32) */
+    bgra32 = CoTaskMemAlloc(w * h * 4);
+    if (!bgra32)
+    {
+        TRACE("failed to allocate buffer\n");
+        return S_FALSE;
+    }
+    /* Initialize BITMAPINFO for display */
+    ZeroMemory(&bmi, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = 640;
+    bmi.bmiHeader.biHeight = -480;  /* Negative for top-down */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    /* Create decompressor */
+    jpeg_create_decompress(&cinfo);
+
+    /* Set up memory source */
+    ZeroMemory(&src, sizeof(src));
+    src.pub.init_source = init_source;
+    src.pub.fill_input_buffer = fill_input_buffer;
+    src.pub.skip_input_data = skip_input_data;
+    src.pub.resync_to_restart = jpeg_resync_to_restart;
+    src.pub.term_source = term_source;
+    src.pub.next_input_byte = jpegData;
+    src.pub.bytes_in_buffer = jpegSize;
+    src.data = jpegData;
+    src.size = jpegSize;
+    src.pos = 0;
+
+    cinfo.src = (struct jpeg_source_mgr *)&src;
+
+    /* Read header */
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&cinfo);
+        TRACE("JPEG header read failed");
+        return FALSE;
+    }
+
+    /* Set output format to RGB */
+    cinfo.out_color_space = JCS_RGB;
+
+    /* Start decompression */
+    jpeg_start_decompress(&cinfo);
+
+    TRACE("[APP] JPEG image: %u x %u, components: %u\n",
+               cinfo.output_width, cinfo.output_height, cinfo.output_components);
+
+    /* Allocate scanline buffer */
+    row_stride = cinfo.output_width * cinfo.output_components;
+    buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr)&cinfo, JPOOL_IMAGE, row_stride, 1);
+
+    dst = bgra32;
+
+    /* Read and convert scanlines */
+    while (cinfo.output_scanline < cinfo.output_height && cinfo.output_scanline < (UINT)h)
+    {
+        BYTE *src_row;
+        int x;
+
+        jpeg_read_scanlines(&cinfo, buffer, 1);
+        src_row = buffer[0];
+
+        /* Convert RGB to BGRA32 */
+        for (x = 0; x < w && x < (int)cinfo.output_width; x++)
+        {
+            BYTE r = src_row[x * 3 + 0];
+            BYTE g = src_row[x * 3 + 1];
+            BYTE b = src_row[x * 3 + 2];
+
+            *dst++ = b;  /* B */
+            *dst++ = g;  /* G */
+            *dst++ = r;  /* R */
+            *dst++ = 0xFF;  /* A */
+        }
+
+        /* Pad remaining columns with black */
+        for (; x < w; x++)
+        {
+            *dst++ = 0;
+            *dst++ = 0;
+            *dst++ = 0;
+            *dst++ = 0xFF;
+        }
+    }
+
+    /* Fill remaining rows with black */
+    for (y = cinfo.output_scanline; y < h; y++)
+    {
+        for (x = 0; x < w; x++)
+        {
+            *dst++ = 0;
+            *dst++ = 0;
+            *dst++ = 0;
+            *dst++ = 0xFF;
+        }
+    }
+
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+
+    TRACE("Src Rect: %s\n", wine_dbgstr_rect(&This->SourceRect));
+    TRACE("Dst Rect: %s\n", wine_dbgstr_rect(&This->DestRect));
+
+    GetClientRect(This->baseControlWindow.baseWindow.hWnd, &rc);
+
+    /* Display decoded video frame (both MJPEG and YUY2 are in BGRA32 format) */
+    StretchDIBits(This->baseControlWindow.baseWindow.hDC,  0, 0, rc.right - rc.left, rc.bottom - rc.top,
+                             0, 0, w, h,
+                             bgra32, &bmi, DIB_RGB_COLORS, SRCCOPY);
+
+
+    return S_OK;
+}
+
+
 static DWORD VideoRenderer_SendSampleData(VideoRendererImpl* This, LPBYTE data, DWORD size)
 {
     AM_MEDIA_TYPE amt;
@@ -228,6 +438,11 @@ static DWORD VideoRenderer_SendSampleData(VideoRendererImpl* This, LPBYTE data, 
     {
         FIXME("Unknown type %s\n", debugstr_guid(&amt.subtype));
         return VFW_E_RUNTIME_ERROR;
+    }
+
+    if (IsEqualIID(&amt.subtype, &MEDIASUBTYPE_MJPG))
+    {
+        return jpeg_to_bgra32(This, data, size, bmiHeader->biWidth, bmiHeader->biHeight);
     }
 
     TRACE("biSize = %d\n", bmiHeader->biSize);
@@ -320,12 +535,16 @@ static HRESULT WINAPI VideoRenderer_CheckMediaType(BaseRenderer *iface, const AM
     VideoRendererImpl *This = impl_from_BaseRenderer(iface);
 
     if (!IsEqualIID(&pmt->majortype, &MEDIATYPE_Video))
+    {
+        WARN("Major type %s not supported\n", debugstr_guid(&pmt->majortype));
         return S_FALSE;
+    }
 
     if (IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_RGB32) ||
         IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_RGB24) ||
         IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_RGB565) ||
-        IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_RGB8))
+        IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_RGB8) ||
+        IsEqualIID(&pmt->subtype, &MEDIASUBTYPE_MJPG))
     {
         LONG height;
 
@@ -360,6 +579,11 @@ static HRESULT WINAPI VideoRenderer_CheckMediaType(BaseRenderer *iface, const AM
             return S_FALSE;
         }
         return S_OK;
+    }
+    else
+    {
+        WARN("subtype %s not supported\n", debugstr_guid(&pmt->subtype));
+        return S_FALSE;
     }
     return S_FALSE;
 }

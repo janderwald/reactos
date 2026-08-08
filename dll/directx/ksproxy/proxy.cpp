@@ -196,6 +196,7 @@ protected:
     CLSID m_DeviceInterfaceGUID;
     HANDLE m_hClock;
     CRITICAL_SECTION m_Lock;
+    FILTER_INFO filterInfo;
 };
 
 CKsProxy::CKsProxy() : m_Ref(0),
@@ -267,9 +268,9 @@ CKsProxy::QueryInterface(
     {
         if (!m_hClock)
         {
-            HRESULT hr = CreateClockInstance();
-            if (FAILED(hr))
-                return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"Warning: CKsProxy::QueryInterface no clock\n");
+#endif
         }
 
         *Output = (IReferenceClock*)(this);
@@ -316,9 +317,10 @@ CKsProxy::QueryInterface(
     {
         if (!m_hClock)
         {
-            HRESULT hr = CreateClockInstance();
-            if (FAILED(hr))
-                return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::QueryInterface no clock\n");
+#endif
+            return S_FALSE;
         }
 
         *Output = (IKsClockPropertySet*)(this);
@@ -399,6 +401,11 @@ CKsProxy::CreateClockInstance()
     IKsObject *pObject;
     KSCLOCK_CREATE ClockCreate;
 
+#ifdef KSPROXY_TRACE
+    OutputDebugStringW(L"CKsProxy::CreateClockInstance\n");
+#endif
+
+
     // find output pin and handle
     for(Index = 0; Index < m_Pins.size(); Index++)
     {
@@ -431,7 +438,10 @@ CKsProxy::CreateClockInstance()
     if (hPin == INVALID_HANDLE_VALUE)
     {
         // clock can only be instantiated on a pin handle
-        return E_NOTIMPL;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::CreateClockInstance no pin instantiated\n");
+#endif
+        return S_OK;
     }
 
     if (m_hClock)
@@ -445,12 +455,17 @@ CKsProxy::CreateClockInstance()
 
     // setup clock create request
     hr = KsCreateClock(hPin, &ClockCreate, &m_hClock); // FIXME KsCreateClock returns NTSTATUS
-    if (SUCCEEDED(hr))
+    if (!SUCCEEDED(hr))
     {
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::CreateClockInstance failed to create clock\n");
+#endif
         // failed to create clock
         return MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, GetLastError());
     }
-
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::CreateClockInstance clock created\n");
+#endif
     return S_OK;
 }
 
@@ -468,10 +483,10 @@ CKsProxy::PerformClockProperty(
 
     if (!m_hClock)
     {
-        // create clock
-        hr = CreateClockInstance();
-        if (FAILED(hr))
-            return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::PerformClockProperty no pin clock\n");
+#endif
+        return S_FALSE;
     }
 
     // setup request
@@ -625,10 +640,10 @@ CKsProxy::GetTime(
 
     if (!m_hClock)
     {
-        // create clock
-        hr = CreateClockInstance();
-        if (FAILED(hr))
-            return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::GetTime no clock\n");
+#endif
+        return S_FALSE;
     }
 
     // setup request
@@ -672,10 +687,10 @@ CKsProxy::AdviseTime(
 
     if (!m_hClock)
     {
-        // create clock
-        hr = CreateClockInstance();
-        if (FAILED(hr))
-            return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::AdviseTime no clock\n");
+#endif
+        return S_FALSE;
     }
 
     // allocate event entry
@@ -740,10 +755,10 @@ CKsProxy::AdvisePeriodic(
 
     if (!m_hClock)
     {
-        // create clock
-        hr = CreateClockInstance();
-        if (FAILED(hr))
-            return hr;
+#ifdef KSPROXY_TRACE
+        OutputDebugStringW(L"CKsProxy::AdvisePeriodic no clock\n");
+#endif
+        return S_FALSE;
     }
 
     // allocate event entry
@@ -1691,6 +1706,10 @@ CKsProxy::GetMiscFlags()
             }
         }
     }
+
+    // HACK
+    Flags |= AM_FILTER_MISC_FLAGS_IS_SOURCE;
+
 
 #ifdef KSPROXY_TRACE
     WCHAR Buffer[100];
@@ -2813,6 +2832,12 @@ CKsProxy::SetPinState(
     KSPROPERTY Property;
     PIN_INFO PinInfo;
 
+#ifdef KSPROXY_TRACE
+        WCHAR Buffer[100];
+        _swprintf(Buffer, L"CKsProxy::SetPinState entered with State %u\n", State);
+        OutputDebugStringW(Buffer);
+#endif
+
     Property.Set = KSPROPSETID_Connection;
     Property.Id = KSPROPERTY_CONNECTION_STATE;
     Property.Flags = KSPROPERTY_TYPE_SET;
@@ -2854,24 +2879,26 @@ CKsProxy::SetPinState(
 
         //query IKsObject interface
         hr = Pin->QueryInterface(IID_IKsObject, (void**)&pObject);
+        if (SUCCEEDED(hr))
+        {
+            // get pin handle
+            HANDLE hPin = pObject->KsGetObjectHandle();
 
-        // get pin handle
-        HANDLE hPin = pObject->KsGetObjectHandle();
+            // sanity check
+            assert(hPin && hPin != INVALID_HANDLE_VALUE);
 
-        // sanity check
-        assert(hPin && hPin != INVALID_HANDLE_VALUE);
-
-        // now set state
-        hr = KsSynchronousDeviceControl(hPin, IOCTL_KS_PROPERTY, (PVOID)&Property, sizeof(KSPROPERTY), (PVOID)&State, sizeof(KSSTATE), &BytesReturned);
+            // now set state
+            hr = KsSynchronousDeviceControl(hPin, IOCTL_KS_PROPERTY, (PVOID)&Property, sizeof(KSPROPERTY), (PVOID)&State, sizeof(KSSTATE), &BytesReturned);
 
 #ifdef KSPROXY_TRACE
-        WCHAR Buffer[100];
-        _swprintf(Buffer, L"CKsProxy::SetPinState Index %u State %u hr %lx\n", Index, State, hr);
-        OutputDebugStringW(Buffer);
+            _swprintf(Buffer, L"CKsProxy::SetPinState Index %u State %u hr %lx\n", Index, State, hr);
+            OutputDebugStringW(Buffer);
 #endif
-
-        if (FAILED(hr))
-            return hr;
+            if (FAILED(hr))
+            {
+                return hr;
+            }
+        }
     }
     return hr;
 }
@@ -2916,9 +2943,17 @@ CKsProxy::SetSyncSource(
         hr = pClock->QueryInterface(IID_IKsClock, (void**)&pKsClock);
         if (FAILED(hr))
         {
-            hr = m_ReferenceClock->QueryInterface(IID_IKsClock, (void**)&pKsClock);
+            if (m_ReferenceClock)
+            {
+                hr = m_ReferenceClock->QueryInterface(IID_IKsClock, (void**)&pKsClock);
+            }
             if (FAILED(hr))
-                return hr;
+            {
+                // fake success
+                OutputDebugStringW(L"CksProxy::SetSyncSource fake success\n");
+                return S_OK;
+            }
+
         }
 
         // get clock handle
@@ -3082,7 +3117,7 @@ CKsProxy::QueryFilterInfo(
     OutputDebugStringW(L"CKsProxy::QueryFilterInfo\n");
 #endif
 
-    pInfo->achName[0] = L'\0';
+    wcscpy(pInfo->achName, filterInfo.achName);
     pInfo->pGraph = m_pGraph;
 
     if (m_pGraph)
@@ -3113,6 +3148,11 @@ CKsProxy::JoinFilterGraph(
         // leaving graph
         m_pGraph = 0;
     }
+    if (pName)
+       wcscpy(filterInfo.achName, pName);
+    else
+       filterInfo.achName[0] = '\0';
+
 
     return S_OK;
 }

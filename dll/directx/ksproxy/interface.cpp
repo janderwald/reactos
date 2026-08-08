@@ -171,7 +171,7 @@ CKsInterfaceHandler::KsProcessMediaSamples(
     ZeroMemory(StreamSegment, sizeof(KSSTREAM_SEGMENT_EXT));
 
     //allocate event
-    StreamSegment->StreamSegment.CompletionEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    StreamSegment->StreamSegment.CompletionEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     if (!StreamSegment->StreamSegment.CompletionEvent)
     {
@@ -190,7 +190,7 @@ CKsInterfaceHandler::KsProcessMediaSamples(
     StreamSegment->Overlapped.hEvent = StreamSegment->StreamSegment.CompletionEvent;
 
 
-    // ge extension size
+    // get extension size
     ExtendedSize = 0;
     if (KsDataTypeHandler)
     {
@@ -334,7 +334,7 @@ CKsInterfaceHandler::KsProcessMediaSamples(
         if (GetLastError() == ERROR_IO_PENDING)
         {
             *OutStreamSegment = (PKSSTREAM_SEGMENT)StreamSegment;
-            hr = S_OK;
+            hr = S_FALSE;
         }
     }
     return hr;
@@ -359,7 +359,7 @@ CKsInterfaceHandler::KsCompleteIo(
     StreamSegment = (PKSSTREAM_SEGMENT_EXT)InStreamSegment;
 
     // get result
-    bOverlapped = GetOverlappedResult(m_Handle, &StreamSegment->Overlapped, &BytesReturned, FALSE);
+    bOverlapped = GetOverlappedResult(m_Handle, &StreamSegment->Overlapped, &BytesReturned, TRUE);
     dwError = GetLastError();
 
     CurStreamHeader = StreamSegment->StreamHeader;

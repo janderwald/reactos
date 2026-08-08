@@ -347,7 +347,9 @@ CMediaSample_Constructor(
     LPVOID * ppv)
 {
 #ifdef KSPROXY_TRACE
-    OutputDebugStringW(L"CMediaSample_Constructor\n");
+    WCHAR Buffer[200];
+    _swprintf(Buffer, L"CMediaSample_Constructor Allocator %p BufferSize %u Buffer %p\n", Allocator, BufferSize, pBuffer);
+    OutputDebugStringW(Buffer);
 #endif
 
     CMediaSample * handler = new CMediaSample(Allocator, pBuffer, BufferSize);
