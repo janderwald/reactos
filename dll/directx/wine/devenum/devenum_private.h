@@ -88,5 +88,6 @@ static const WCHAR wszActiveMovieKey[] = {'S','o','f','t','w','a','r','e','\\',
                                           'd','e','v','e','n','u','m','\\',0};
 static const WCHAR deviceW[] = {'@','d','e','v','i','c','e',':',0};
 static const WCHAR dmoW[] = {'d','m','o',':',0};
+static const WCHAR pnpW[] = {'p','n','p',':',0};
 static const WCHAR swW[] = {'s','w',':',0};
 static const WCHAR cmW[] = {'c','m',':',0};

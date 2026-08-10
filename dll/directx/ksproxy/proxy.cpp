@@ -1467,7 +1467,15 @@ CKsProxy::SetPositions(
 
     Positions.Current = *pCurrent;
     Positions.CurrentFlags = (KS_SEEKING_FLAGS)dwCurrentFlags;
-    Positions.Stop = *pStop;
+    if (pStop)
+    {
+        Positions.Stop = *pStop;
+    }
+    else
+    {
+        Positions.Stop = 0;
+    }
+
     Positions.StopFlags = (KS_SEEKING_FLAGS)dwStopFlags;
 
 #ifdef KSPROXY_TRACE

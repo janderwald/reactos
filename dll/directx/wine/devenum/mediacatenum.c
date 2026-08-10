@@ -298,6 +298,12 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Write(
     if (This->type == DEVICE_DMO)
         return E_ACCESSDENIED;
 
+    if (This->type == DEVICE_PNP)
+    {
+        TRACE("pszPropName %s ignored for device pnp\n", debugstr_w(pszPropName));
+        return S_OK;
+    }
+
     switch (V_VT(pVar))
     {
     case VT_BSTR:
@@ -746,6 +752,16 @@ static HRESULT WINAPI DEVENUM_IMediaCatMoniker_GetDisplayName(IMoniker *iface, I
         StringFromGUID2(&This->clsid, buffer + lstrlenW(buffer), CHARS_IN_GUID);
         StringFromGUID2(&This->class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
     }
+    else if (This->type == DEVICE_PNP)
+    {
+        buffer = CoTaskMemAlloc((lstrlenW(deviceW) + 3 + lstrlenW(pnpW) +
+                                 + lstrlenW(This->devicePath) + 1) * sizeof(WCHAR));
+        if (!buffer) return E_OUTOFMEMORY;
+
+        lstrcpyW(buffer, deviceW);
+        lstrcatW(buffer, pnpW);
+        lstrcatW(buffer, This->devicePath);
+    }
     else
     {
         buffer = CoTaskMemAlloc((lstrlenW(deviceW) + 3 + (This->has_class ? CHARS_IN_GUID : 0)
@@ -915,7 +931,8 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
         ifData.cbSize = sizeof(ifData);
         if (SetupDiEnumDeviceInterfaces(This->hDI, NULL, &This->class, This->pnp_index, &ifData))
         {
-            WCHAR friendlyName[256] = L"Unknown Device";
+            HKEY hKey, hInterfaceKey, refKey, parametersKey, globalKey;
+            WCHAR friendlyName[256] = {0};
             This->pnp_index++;
             required = 0;
             SetupDiGetDeviceInterfaceDetailW(This->hDI, &ifData, NULL, 0, &required, NULL);
@@ -938,17 +955,8 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
             }
 
             lstrcpyW(pMoniker->devicePath, detail->DevicePath);
-
-            SetupDiGetDeviceRegistryPropertyW(This->hDI, &devInfo, SPDRP_FRIENDLYNAME, NULL, (PBYTE)friendlyName, sizeof(friendlyName), NULL);
-            if (!(pMoniker->name = CoTaskMemAlloc((lstrlenW(friendlyName) + 1) * sizeof(WCHAR))))
-            {
-                IMoniker_Release(&pMoniker->IMoniker_iface);
-                return E_OUTOFMEMORY;
-            }
-            lstrcpyW(pMoniker->name, friendlyName);
             lstrcpyW(InstanceBuffer, detail->DevicePath);
             CoTaskMemFree(detail);
-            HKEY hKey, hInterfaceKey, refKey, parametersKey, globalkey;
 
             if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\DeviceClasses", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
             {
@@ -971,18 +979,34 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
                     if (RegOpenKeyExW(hInterfaceKey, InstanceBuffer, 0, KEY_READ, &refKey) == ERROR_SUCCESS)
                     {
                         *p = L'#';
-                        if (RegOpenKeyExW(refKey, p, 0, KEY_READ, &globalkey) == ERROR_SUCCESS)
+                        if (RegOpenKeyExW(refKey, p, 0, KEY_READ, &globalKey) == ERROR_SUCCESS)
                         {
-                            if (RegOpenKeyExW(globalkey, L"Device Parameters", 0, KEY_READ, &parametersKey) == ERROR_SUCCESS)
+                            if (RegOpenKeyExW(globalKey, L"Device Parameters", 0, KEY_READ, &parametersKey) == ERROR_SUCCESS)
                             {
-                                 if ((RegQueryValueExW(parametersKey, L"CLSID", NULL, NULL, (LPBYTE)buffer, &required)) == ERROR_SUCCESS)
-                                 {
+                                required = sizeof(buffer);
+                                if ((RegQueryValueExW(parametersKey, L"CLSID", NULL, NULL, (LPBYTE)buffer, &required)) == ERROR_SUCCESS)
+                                {
                                     CLSIDFromString(buffer, &pMoniker->clsid);
-                                 }
+                                }
+                                required = sizeof(friendlyName);
+                                if (RegQueryValueExW(parametersKey, L"FriendlyName", NULL, NULL, (LPBYTE)friendlyName, &required) == ERROR_SUCCESS)
+                                {
+                                    if (!(pMoniker->name = CoTaskMemAlloc((lstrlenW(friendlyName) + 1) * sizeof(WCHAR))))
+                                    {
+                                        IMoniker_Release(&pMoniker->IMoniker_iface);
+                                        return E_OUTOFMEMORY;
+                                    }
+                                    lstrcpyW(pMoniker->name, friendlyName);
+                                }
+                                RegCloseKey(parametersKey);
                             }
+                            RegCloseKey(globalKey);
                         }
+                        RegCloseKey(refKey);
                     }
+                    RegCloseKey(hInterfaceKey);
                 }
+                RegCloseKey(hKey);
             }
             TRACE("path %s name %s\n", debugstr_w(pMoniker->devicePath), debugstr_w(pMoniker->name));
         }
@@ -1133,17 +1157,19 @@ HRESULT create_EnumMoniker(REFCLSID class, IEnumMoniker **ppEnumMoniker)
     EnumMonikerImpl * pEnumMoniker = CoTaskMemAlloc(sizeof(EnumMonikerImpl));
     WCHAR buffer[78];
     HRESULT hr;
+    HDEVINFO hDI;
 
     if (!pEnumMoniker)
         return E_OUTOFMEMORY;
 
+    TRACE("create_EnumMoniker class %s\n", debugstr_guid(class));
     pEnumMoniker->IEnumMoniker_iface.lpVtbl = &IEnumMoniker_Vtbl;
     pEnumMoniker->ref = 1;
-    pEnumMoniker->hDI = SetupDiGetClassDevsW(class, NULL, NULL , DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+
     pEnumMoniker->pnp_index = 0;
     pEnumMoniker->sw_index = 0;
     pEnumMoniker->cm_index = 0;
-    pEnumMoniker->class = *class;
+
 
     lstrcpyW(buffer, clsidW);
     lstrcatW(buffer, backslashW);
@@ -1163,6 +1189,21 @@ HRESULT create_EnumMoniker(REFCLSID class, IEnumMoniker **ppEnumMoniker)
         IEnumMoniker_Release(&pEnumMoniker->IEnumMoniker_iface);
         return hr;
     }
+
+    if (IsEqualCLSID(class, &CLSID_VideoInputDeviceCategory))
+    {
+        hDI = SetupDiGetClassDevsW(&AM_KSCATEGORY_VIDEO, NULL, NULL , DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        pEnumMoniker->class = AM_KSCATEGORY_VIDEO;
+        OutputDebugStringW(L"create_EnumMoniker CLSID_VideoInputDeviceCategory");
+    }
+    else
+    {
+        hDI = SetupDiGetClassDevsW(class, NULL, NULL , DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        pEnumMoniker->class = *class;
+    }
+
+    pEnumMoniker->hDI = hDI;
+
 
     *ppEnumMoniker = &pEnumMoniker->IEnumMoniker_iface;
 

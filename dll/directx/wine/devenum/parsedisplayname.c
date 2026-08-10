@@ -106,6 +106,11 @@ static HRESULT WINAPI DEVENUM_IParseDisplayName_ParseDisplayName(IParseDisplayNa
         type = DEVICE_DMO;
         name += 4;
     }
+    else if (!wcsncmp(name, pnpW, 4))
+    {
+        type = DEVICE_PNP;
+        name += 4;
+    }
     else
     {
         FIXME("unhandled device type %s\n", debugstr_w(name));
@@ -130,6 +135,16 @@ static HRESULT WINAPI DEVENUM_IParseDisplayName_ParseDisplayName(IParseDisplayNa
             IMoniker_Release(&mon->IMoniker_iface);
             return MK_E_SYNTAX;
         }
+    }
+    else if (type == DEVICE_PNP)
+    {
+        mon->devicePath = CoTaskMemAlloc((lstrlenW(name) + 1) * sizeof(WCHAR));
+        if (!mon->devicePath)
+        {
+            IMoniker_Release(&mon->IMoniker_iface);
+            return E_OUTOFMEMORY;
+        }
+         lstrcpyW(mon->devicePath, name);
     }
     else
     {
