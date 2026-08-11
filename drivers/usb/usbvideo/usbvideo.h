@@ -29,7 +29,7 @@ typedef struct _VS_PROBE_COMMIT_CONTROL
     ULONG   dwMaxVideoFrameSize;
     ULONG   dwMaxPayloadTransferSize;
     // UVC 1.1+
-    DWORD  dwClockFrequency;
+    ULONG   dwClockFrequency;
     UCHAR   bmFramingInfo;
     UCHAR   bPreferedVersion;
     UCHAR   bMinVersion;

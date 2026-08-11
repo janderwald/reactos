@@ -41,6 +41,7 @@ USBVideoPinSetDeviceState(
 {
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     ULONG Index;
+    PFRAME_CONTEXT FrameContext;
 
     /* get device extension */
     DeviceExtension = Pin->Context;
@@ -53,6 +54,12 @@ USBVideoPinSetDeviceState(
         {
             if (DeviceExtension->PipeType == UsbdPipeTypeIsochronous)
             {
+                if (DeviceExtension->UrbPoolCount == DeviceExtension->FrameContextCount)
+                    FrameContext = &DeviceExtension->FrameCtx[Index];
+                else
+                    FrameContext = &DeviceExtension->FrameCtx[0];
+
+
                 USBVideoQueueIsoRead(
                     Pin,
                     DeviceExtension->hPipe,
@@ -60,7 +67,8 @@ USBVideoPinSetDeviceState(
                     DeviceExtension->IsoTransferSize,
                     DeviceExtension->Irp[Index],
                     DeviceExtension->Urb[Index],
-                    &DeviceExtension->FrameCtx[Index]);
+                    FrameContext
+                );
             }
             else
             {
@@ -221,9 +229,9 @@ USBVideoSetStreamingDefaults(
             TransferSize = DeviceExtension->dwMaxPayloadTransferSize * PacketCount;
 
             DeviceExtension->IsoTransferSize = TransferSize;
-            DeviceExtension->FrameContextCount = 3;
+            DeviceExtension->FrameContextCount = 1;
             DeviceExtension->FrameContextSize = TransferSize * 2;
-            DeviceExtension->UrbPoolCount = 3;
+            DeviceExtension->UrbPoolCount = 2;
             DeviceExtension->IsoPacketCount = PacketCount;
             DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
@@ -253,7 +261,7 @@ USBVideoSetStreamingFormat(
     ULONG Length;
     UCHAR InterfaceNumber;
     UCHAR AlternateSetting;
-    VS_PROBE_COMMIT_CONTROL ProbeCommit = {0};
+    VS_PROBE_COMMIT_CONTROL ProbeCommit, ProbeMin, ProbeMax;
 
     Status = USBVideoGetDataRangeIndexForFormat(
         Pin,
@@ -303,8 +311,7 @@ USBVideoSetStreamingFormat(
     ProbeCommit.bFormatIndex    = FormatIndex;
     ProbeCommit.bFrameIndex     = FrameIndex;
     ProbeCommit.dwFrameInterval = dwFrameInterval;
-    ProbeCommit.wCompQuality = 10000;
-    ProbeCommit.bmFramingInfo = 0x3;
+    ProbeCommit.bmFramingInfo = 0x7;
 
     UCHAR ProbeControl = 0x01;
     USHORT ProbeValue = 0x100;
@@ -314,6 +321,30 @@ USBVideoSetStreamingFormat(
         DPRINT1("USBVideoSetFormat Probe failed with %x\n", Status);
         return Status;
     }
+
+    /* get current min */
+    RtlZeroMemory(&ProbeMin, sizeof(VS_PROBE_COMMIT_CONTROL));
+    UCHAR GetMin = 0x82;
+    USHORT MinFormatValue = 0x100;
+    Status = USBVideoTransferControlPacket(Pin, &ProbeMin, Length, USBD_TRANSFER_DIRECTION_IN, GetMin, MinFormatValue, InterfaceNumber);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("USBVideoSetFormat GetMin failed with %x\n", Status);
+        return Status;
+    }
+
+    /* get max */
+    RtlZeroMemory(&ProbeMax, sizeof(VS_PROBE_COMMIT_CONTROL));
+    UCHAR GetMax = 0x83;
+    USHORT MaxFormatValue = 0x100;
+    Status = USBVideoTransferControlPacket(Pin, &ProbeMax, Length, USBD_TRANSFER_DIRECTION_IN, GetMax, MaxFormatValue, InterfaceNumber);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("USBVideoSetFormat GetMax failed with %x\n", Status);
+        return Status;
+    }
+
+
     /* get current format */
     UCHAR GetCurFormat = 0x81;
     USHORT CurFormatValue = 0x100;
@@ -337,6 +368,11 @@ USBVideoSetStreamingFormat(
     DPRINT1("dwMaxPayloadTransferSize %u\n", ProbeCommit.dwMaxPayloadTransferSize);
     DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
     DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
+
+    ProbeCommit.wKeyFrameRate = ProbeMin.wKeyFrameRate;
+    ProbeCommit.wPFrameRate = ProbeMin.wPFrameRate;
+    ProbeCommit.wCompQuality = ProbeMax.wCompQuality;
+    ProbeCommit.wCompWindowSize = ProbeMin.wCompWindowSize;
 
     /* set format */
     UCHAR SetFormat = 0x01;

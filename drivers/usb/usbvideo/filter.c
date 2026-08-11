@@ -10,6 +10,12 @@
 
 static LPWSTR ReferenceString = L"global";
 GUID GUID_KSCATEGORY_VIDEO = { STATIC_KSCATEGORY_VIDEO };
+GUID GUID_KSCATEGORY_CAPTURE = { STATIC_KSCATEGORY_CAPTURE};
+
+GUID Categories[] = {
+    {STATIC_KSCATEGORY_VIDEO},
+    {STATIC_KSCATEGORY_CAPTURE}
+};
 
 static KSFILTER_DISPATCH USBVideoFilterDispatch =
 {
@@ -97,8 +103,8 @@ USBVideoCreateFilterContext(
     FilterDescriptor->Flags = 0;
     FilterDescriptor->ReferenceGuid = &KSNAME_Filter;
     FilterDescriptor->Dispatch = &USBVideoFilterDispatch;
-    FilterDescriptor->CategoriesCount = 1;
-    FilterDescriptor->Categories = &GUID_KSCATEGORY_VIDEO;
+    FilterDescriptor->CategoriesCount = 2;
+    FilterDescriptor->Categories = Categories;
 
     /* build topology */
     Status = BuildUSBVideoFilterTopology(Device, FilterDescriptor);
