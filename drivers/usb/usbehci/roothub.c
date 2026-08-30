@@ -623,7 +623,7 @@ EHCI_RH_ClearFeaturePortResetChange(IN PVOID ehciExtension,
 {
     PEHCI_EXTENSION EhciExtension = ehciExtension;
 
-    DPRINT("EHCI_RH_ClearFeaturePortConnectChange: Port - %x\n", Port);
+    DPRINT("EHCI_RH_ClearFeaturePortResetChange: Port - %x\n", Port);
     ASSERT(Port != 0);
 
     EhciExtension->FinishResetPortBits &= ~(1 << (Port - 1));

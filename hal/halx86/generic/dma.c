@@ -1579,6 +1579,7 @@ HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
     }
     else
     {
+        ASSERT(AdapterObject->NeedsMapRegisters == FALSE);
         AdapterObject->MapRegisterBase = NULL;
         AdapterObject->NumberOfMapRegisters = 0;
     }
@@ -2000,13 +2001,17 @@ IoFlushAdapterBuffers(IN PADAPTER_OBJECT AdapterObject,
             PhysicalAddress.QuadPart += BYTE_OFFSET(CurrentVa);
 
             HighestAcceptableAddress = HalpGetAdapterMaximumPhysicalAddress(AdapterObject);
-            if ((PhysicalAddress.QuadPart + Length) > HighestAcceptableAddress.QuadPart)
+            if ((PhysicalAddress.QuadPart + Length) < HighestAcceptableAddress.QuadPart)
             {
                 HalpCopyBufferMap(Mdl,
                                   RealMapRegisterBase,
                                   CurrentVa,
                                   Length,
                                   FALSE);
+            }
+            else
+            {
+                ASSERT(FALSE);
             }
         }
     }

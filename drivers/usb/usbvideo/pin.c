@@ -42,6 +42,8 @@ USBVideoPinSetDeviceState(
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     ULONG Index;
     PFRAME_CONTEXT FrameContext;
+    NTSTATUS Status;
+    PURB pIsoFrameNumber;
 
     /* get device extension */
     DeviceExtension = Pin->Context;
@@ -59,6 +61,12 @@ USBVideoPinSetDeviceState(
                 else
                     FrameContext = &DeviceExtension->FrameCtx[0];
 
+                pIsoFrameNumber = AllocFunction(sizeof(struct _URB_GET_CURRENT_FRAME_NUMBER));
+                ASSERT(pIsoFrameNumber);
+                pIsoFrameNumber->UrbHeader.Function = URB_FUNCTION_GET_CURRENT_FRAME_NUMBER;
+                pIsoFrameNumber->UrbHeader.Length = sizeof(struct _URB_GET_CURRENT_FRAME_NUMBER);
+                Status = SubmitUrbSync(DeviceExtension->LowerDevice, pIsoFrameNumber);
+                ASSERT(NT_SUCCESS(Status));
 
                 USBVideoQueueIsoRead(
                     Pin,
@@ -67,6 +75,7 @@ USBVideoPinSetDeviceState(
                     DeviceExtension->IsoTransferSize,
                     DeviceExtension->Irp[Index],
                     DeviceExtension->Urb[Index],
+                    pIsoFrameNumber->UrbGetCurrentFrameNumber.FrameNumber,
                     FrameContext
                 );
             }
@@ -83,6 +92,11 @@ USBVideoPinSetDeviceState(
             }
 
         }
+        IoStartTimer(DeviceExtension->FunctionalDeviceObject);
+    } else if (ToState == KSSTATE_PAUSE)
+    {
+        DeviceExtension->ErrorControlActive = FALSE;
+        IoStopTimer(DeviceExtension->FunctionalDeviceObject);
     }
     return STATUS_SUCCESS;
 }
@@ -96,12 +110,14 @@ USBVideoGetDataRangeIndexForFormatStillImage(
     IN ULONG DataRangesCount,
     OUT UCHAR * FormatIndex,
     OUT UCHAR * FrameIndex,
-    OUT ULONG * dwFrameInterval)
+    OUT ULONG * dwFrameInterval,
+    OUT PKS_DATARANGE_VIDEO *DataRange)
 {
     UNIMPLEMENTED;
     *FormatIndex = 1;
     *FrameIndex = 1;
     *dwFrameInterval = 3333333;
+    *DataRange = (PKS_DATARANGE_VIDEO)DataRanges[0];
     return STATUS_SUCCESS;
 }
 
@@ -113,12 +129,13 @@ USBVideoGetDataRangeIndexForFormat(
     IN ULONG DataRangesCount,
     OUT UCHAR * FormatIndex,
     OUT UCHAR * FrameIndex,
-    OUT ULONG * dwFrameInterval)
+    OUT ULONG * dwFrameInterval,
+    OUT PKS_DATARANGE_VIDEO *DataRange)
 {
     ULONG DataRangeIndex;
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
-    PKS_DATAFORMAT_VIDEOINFOHEADER CurrentDataRange, RequestedFormat;
-
+    PKS_DATAFORMAT_VIDEOINFOHEADER RequestedFormat;
+    PKS_DATARANGE_VIDEO CurrentDataRange;
     /* get device extension */
     DeviceExtension = Pin->Context;
 
@@ -127,13 +144,13 @@ USBVideoGetDataRangeIndexForFormat(
         if (DataRanges[DataRangeIndex] == NULL)
             continue;
 
-        CurrentDataRange = (PKS_DATAFORMAT_VIDEOINFOHEADER)DataRanges[DataRangeIndex];
+        CurrentDataRange = (PKS_DATARANGE_VIDEO)DataRanges[DataRangeIndex];
         RequestedFormat = (PKS_DATAFORMAT_VIDEOINFOHEADER)ConnectionFormat;
 
          /* compare guids */
-         if (!IsEqualGUIDAligned(&CurrentDataRange->DataFormat.MajorFormat, &ConnectionFormat->MajorFormat) ||
-             !IsEqualGUIDAligned(&CurrentDataRange->DataFormat.SubFormat, &ConnectionFormat->SubFormat) ||
-             !IsEqualGUIDAligned(&CurrentDataRange->DataFormat.Specifier, &ConnectionFormat->Specifier))
+         if (!IsEqualGUIDAligned(&CurrentDataRange->DataRange.MajorFormat, &ConnectionFormat->MajorFormat) ||
+             !IsEqualGUIDAligned(&CurrentDataRange->DataRange.SubFormat, &ConnectionFormat->SubFormat) ||
+             !IsEqualGUIDAligned(&CurrentDataRange->DataRange.Specifier, &ConnectionFormat->Specifier))
          {
              /* no match */
              continue;
@@ -149,6 +166,7 @@ USBVideoGetDataRangeIndexForFormat(
             *FormatIndex = DeviceExtension->VideoFormatInfo[DataRangeIndex].bFormatIndex;
             *FrameIndex = DeviceExtension->VideoFormatInfo[DataRangeIndex].bFrameIndex;
             *dwFrameInterval = DeviceExtension->VideoFormatInfo[DataRangeIndex].dwFrameInterval;
+            *DataRange = CurrentDataRange;
             return STATUS_SUCCESS;
          }
 
@@ -163,16 +181,12 @@ USBVideoGetDataRangeIndexForFormat(
 VOID
 USBVideoSetStreamingDefaults(
     IN PKSPIN Pin,
-    IN PKSDATAFORMAT ConnectionFormat)
+    IN PKS_DATARANGE_VIDEO DataRange)
 {
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
-    PKS_DATARANGE_VIDEO Format;
 
     /* get device extension */
     DeviceExtension = Pin->Context;
-
-    /* get video format */
-    Format = (PKS_DATARANGE_VIDEO)ConnectionFormat;
 
     if (DeviceExtension->PipeType == UsbdPipeTypeBulk)
     {
@@ -180,17 +194,17 @@ USBVideoSetStreamingDefaults(
         DeviceExtension->BulkTransferSize = 32 * 1024;
         DeviceExtension->FrameContextCount = 1;
         DeviceExtension->UrbPoolCount = 4;
-        if (Format->VideoInfoHeader.dwBitRate == 0)
+        if (DataRange->VideoInfoHeader.dwBitRate == 0)
         {
             DeviceExtension->FrameContextSize = 512 * 1024;
             DPRINT1("[USBVIDEO] received dwBitRate 0\n");
         }
         else
         {
-            DeviceExtension->FrameContextSize = min(Format->VideoInfoHeader.dwBitRate, 512 * 1024);
+            DeviceExtension->FrameContextSize = min(DataRange->VideoInfoHeader.dwBitRate, 512 * 1024);
         }
 
-        DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
+        DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&DataRange->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
         DPRINT1("BulkTransferSize %u\n", DeviceExtension->BulkTransferSize);
         DPRINT1("FrameContextCount %u\n", DeviceExtension->FrameContextCount);
@@ -202,17 +216,28 @@ USBVideoSetStreamingDefaults(
     else
     {
         ASSERT(DeviceExtension->PipeType == UsbdPipeTypeIsochronous);
-        if (Format->bFixedSizeSamples)
+        if (DataRange->bFixedSizeSamples)
         {
             /* uncompressed format have fixed samples */
-            ULONG Count = Format->VideoInfoHeader.dwBitRate / DeviceExtension->dwMaxPayloadTransferSize;
-            if (Format->VideoInfoHeader.dwBitRate % DeviceExtension->dwMaxPayloadTransferSize != 0)
-                Count++;
-            DeviceExtension->IsoTransferSize = Count * DeviceExtension->dwMaxPayloadTransferSize;
+            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize;
+            ULONG Payload = DeviceExtension->dwMaxPayloadTransferSize;
+            ULONG PacketCount = TransferSize / Payload;
+            ULONG Rest = TransferSize % Payload;
+            ULONG UrbPoolCount;
+            if (Rest != 0)
+            {
+                PacketCount++;
+            }
+            PacketCount = ROUND_UP(PacketCount, 8);
+            UrbPoolCount = 1; //max(PacketCount / 64, 1);
+            //PacketCount = min(PacketCount, 64);
+
+            TransferSize = PacketCount * Payload;
+            DeviceExtension->IsoTransferSize = TransferSize;
             DeviceExtension->FrameContextCount = 1;
-            DeviceExtension->FrameContextSize = DeviceExtension->IsoTransferSize;
-            DeviceExtension->UrbPoolCount = 1;
-            DeviceExtension->IsoPacketCount = Count;
+            DeviceExtension->FrameContextSize = DeviceExtension->dwMaxVideoFrameSize * 2;
+            DeviceExtension->UrbPoolCount = UrbPoolCount;
+            DeviceExtension->IsoPacketCount = PacketCount;
             DeviceExtension->IsMjpegFormat = FALSE;
         }
         else
@@ -226,17 +251,18 @@ USBVideoSetStreamingDefaults(
                 PacketCount++;
             }
             PacketCount = ROUND_UP(PacketCount, 8);
+            PacketCount = min(PacketCount, 64);
             TransferSize = DeviceExtension->dwMaxPayloadTransferSize * PacketCount;
 
             DeviceExtension->IsoTransferSize = TransferSize;
             DeviceExtension->FrameContextCount = 1;
-            DeviceExtension->FrameContextSize = TransferSize * 2;
-            DeviceExtension->UrbPoolCount = 2;
+            DeviceExtension->FrameContextSize = TransferSize * 12;
+            DeviceExtension->UrbPoolCount = 4;
             DeviceExtension->IsoPacketCount = PacketCount;
-            DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&Format->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
+            DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&DataRange->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
         }
-        DPRINT1("bFixedSizeSamples %u\n", Format->bFixedSizeSamples);
+        DPRINT1("bFixedSizeSamples %u\n", DataRange->bFixedSizeSamples);
         DPRINT1("dwMaxVideoFrameSize %u\n", DeviceExtension->dwMaxVideoFrameSize);
         DPRINT1("IsoTransferSize %u\n", DeviceExtension->IsoTransferSize);
         DPRINT1("FrameContextCount %u\n", DeviceExtension->FrameContextCount);
@@ -253,6 +279,7 @@ USBVideoSetStreamingFormat(
     PKSPIN Pin,
     PKSDATAFORMAT ConnectionFormat)
 {
+    PKS_DATARANGE_VIDEO DataRange;
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     UCHAR FormatIndex, FrameIndex;
     ULONG dwFrameInterval;
@@ -261,7 +288,8 @@ USBVideoSetStreamingFormat(
     ULONG Length;
     UCHAR InterfaceNumber;
     UCHAR AlternateSetting;
-    VS_PROBE_COMMIT_CONTROL ProbeCommit, ProbeMin, ProbeMax;
+    VS_PROBE_COMMIT_CONTROL ProbeCommit;
+    ULONG wCompQuality;
 
     Status = USBVideoGetDataRangeIndexForFormat(
         Pin,
@@ -270,22 +298,23 @@ USBVideoSetStreamingFormat(
         Pin->Descriptor->PinDescriptor.DataRangesCount,
         &FormatIndex,
         &FrameIndex,
-        &dwFrameInterval
+        &dwFrameInterval,
+        &DataRange
     );
 
     if (!NT_SUCCESS(Status))
         return Status;
 
-    Status = USBVideoGetInterfaceDescriptorForStreaming(Pin, &InterfaceNumber);
+    /* get device extension */
+    DeviceExtension = Pin->Context;
+
+    Status = USBVideoGetInterfaceDescriptorForStreaming(DeviceExtension, &InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         // failed to retrieve interface number
         DPRINT1("USBVideoGetInterfaceDescriptorForStreaming failed\n");
         return Status;
     }
-
-    /* get device extension */
-    DeviceExtension = Pin->Context;
 
     ASSERT(DeviceExtension);
     ASSERT(DeviceExtension->InterfaceHeaderDescriptor);
@@ -306,83 +335,93 @@ USBVideoSetStreamingFormat(
             Length = 26;
             break;
     }
-    RtlZeroMemory(&ProbeCommit, sizeof(VS_PROBE_COMMIT_CONTROL));
-    ProbeCommit.bmHint = 0x01;
-    ProbeCommit.bFormatIndex    = FormatIndex;
-    ProbeCommit.bFrameIndex     = FrameIndex;
-    ProbeCommit.dwFrameInterval = dwFrameInterval;
-    ProbeCommit.bmFramingInfo = 0x7;
 
-    UCHAR ProbeControl = 0x01;
-    USHORT ProbeValue = 0x100;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_OUT, ProbeControl, ProbeValue, InterfaceNumber);
-    if (!NT_SUCCESS(Status))
+    wCompQuality = 10000; // Max Quality
+    //dwFrameInterval = 0x001E8480;
+    do
     {
-        DPRINT1("USBVideoSetFormat Probe failed with %x\n", Status);
-        return Status;
-    }
+        RtlZeroMemory(&ProbeCommit, sizeof(VS_PROBE_COMMIT_CONTROL));
+        ProbeCommit.bmHint = 0x00;
+        ProbeCommit.bFormatIndex    = FormatIndex;
+        ProbeCommit.bFrameIndex     = FrameIndex;
+        ProbeCommit.dwFrameInterval = dwFrameInterval;
+        ProbeCommit.wCompQuality = wCompQuality;
 
-    /* get current min */
-    RtlZeroMemory(&ProbeMin, sizeof(VS_PROBE_COMMIT_CONTROL));
-    UCHAR GetMin = 0x82;
-    USHORT MinFormatValue = 0x100;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeMin, Length, USBD_TRANSFER_DIRECTION_IN, GetMin, MinFormatValue, InterfaceNumber);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("USBVideoSetFormat GetMin failed with %x\n", Status);
-        return Status;
-    }
+        DPRINT1("[USBVIDEO] Probeing with bFormatIndex %u bFrameIndex %u dwFrameFrameInterval %u wCompQuality %u\n", FormatIndex, FrameIndex, dwFrameInterval, wCompQuality);
 
-    /* get max */
-    RtlZeroMemory(&ProbeMax, sizeof(VS_PROBE_COMMIT_CONTROL));
-    UCHAR GetMax = 0x83;
-    USHORT MaxFormatValue = 0x100;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeMax, Length, USBD_TRANSFER_DIRECTION_IN, GetMax, MaxFormatValue, InterfaceNumber);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("USBVideoSetFormat GetMax failed with %x\n", Status);
-        return Status;
-    }
+        UCHAR ProbeControl = 0x01;
+        USHORT ProbeValue = 0x100;
+        Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_OUT, ProbeControl, ProbeValue, InterfaceNumber);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("USBVideoSetFormat Probe failed with %x\n", Status);
+            if (wCompQuality > 1600)
+            {
+                wCompQuality -= 1600;
+                continue;
+            }
+            return Status;
+        }
 
+        /* get current format */
+        UCHAR GetCurFormat = 0x81;
+        USHORT CurFormatValue = 0x100;
+        Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_IN, GetCurFormat, CurFormatValue, InterfaceNumber);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("USBVideoSetFormat GetCur failed with %x\n", Status);
+            if (wCompQuality > 1600)
+            {
+                wCompQuality -= 1600;
+                continue;
+            }
+            DPRINT1("[USBVIDEO] Failed to find a valid quality setting\n");
+            return Status;
+        }
+        if (ProbeCommit.dwMaxVideoFrameSize == 0 || ProbeCommit.dwMaxPayloadTransferSize == 0)
+        {
+            DPRINT1("USBVideoSetFormat dwMaxVideoFrameSize %u dwMaxPayloadTransferSize %u is invalid\n",
+                ProbeCommit.dwMaxVideoFrameSize, ProbeCommit.dwMaxPayloadTransferSize);
 
-    /* get current format */
-    UCHAR GetCurFormat = 0x81;
-    USHORT CurFormatValue = 0x100;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_IN, GetCurFormat, CurFormatValue, InterfaceNumber);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("USBVideoSetFormat GetCur failed with %x\n", Status);
-        return Status;
-    }
-    /* todo check if format matches request */
-    DPRINT1("bmHint %x\n", ProbeCommit.bmHint);
-    DPRINT1("bFormatIndex %x\n", ProbeCommit.bFormatIndex);
-    DPRINT1("bFrameIndex %x\n", ProbeCommit.bFrameIndex);
-    DPRINT1("dwFrameInterval %x\n", ProbeCommit.dwFrameInterval);
-    DPRINT1("wKeyFrameRate %x\n", ProbeCommit.wKeyFrameRate);
-    DPRINT1("wPFrameRate %x\n", ProbeCommit.wPFrameRate);
-    DPRINT1("wCompQuality %x\n", ProbeCommit.wCompQuality);
-    DPRINT1("wCompWindowSize %x\n", ProbeCommit.wCompWindowSize);
-    DPRINT1("wDelay %x\n", ProbeCommit.wDelay);
-    DPRINT1("dwMaxVideoFrameSize %u\n", ProbeCommit.dwMaxVideoFrameSize);
-    DPRINT1("dwMaxPayloadTransferSize %u\n", ProbeCommit.dwMaxPayloadTransferSize);
-    DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
-    DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
+            if (wCompQuality > 1600)
+            {
+                wCompQuality -= 1600;
+                continue;
+            }
+            DPRINT1("[USBVIDEO] Failed to find a valid quality setting\n");
+            return STATUS_UNSUCCESSFUL;
+        }
 
-    ProbeCommit.wKeyFrameRate = ProbeMin.wKeyFrameRate;
-    ProbeCommit.wPFrameRate = ProbeMin.wPFrameRate;
-    ProbeCommit.wCompQuality = ProbeMax.wCompQuality;
-    ProbeCommit.wCompWindowSize = ProbeMin.wCompWindowSize;
+        /* set format */
+        UCHAR SetFormat = 0x01;
+        USHORT CommitControl = 0x200;
+        Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_OUT, SetFormat, CommitControl, InterfaceNumber);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("USBVideoSetFormat SetCur failed with %x\n", Status);
+            if (wCompQuality > 1600)
+            {
+                wCompQuality -= 1600;
+                continue;
+            }
+            return Status;
+        }
 
-    /* set format */
-    UCHAR SetFormat = 0x01;
-    USHORT CommitControl = 0x200;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, Length, USBD_TRANSFER_DIRECTION_OUT, SetFormat, CommitControl, InterfaceNumber);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("USBVideoSetFormat SetCur failed with %x\n", Status);
-        return Status;
-    }
+        DPRINT1("bmHint %x\n", ProbeCommit.bmHint);
+        DPRINT1("bFormatIndex %x\n", ProbeCommit.bFormatIndex);
+        DPRINT1("bFrameIndex %x\n", ProbeCommit.bFrameIndex);
+        DPRINT1("dwFrameInterval %x\n", ProbeCommit.dwFrameInterval);
+        DPRINT1("wKeyFrameRate %x\n", ProbeCommit.wKeyFrameRate);
+        DPRINT1("wPFrameRate %x\n", ProbeCommit.wPFrameRate);
+        DPRINT1("wCompQuality %u\n", ProbeCommit.wCompQuality);
+        DPRINT1("wCompWindowSize %u\n", ProbeCommit.wCompWindowSize);
+        DPRINT1("wDelay %x\n", ProbeCommit.wDelay);
+        DPRINT1("dwMaxVideoFrameSize %u\n", ProbeCommit.dwMaxVideoFrameSize);
+        DPRINT1("dwMaxPayloadTransferSize %u\n", ProbeCommit.dwMaxPayloadTransferSize);
+        DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
+        DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
+        break;
+    } while (TRUE);
 
     Urb = (PURB)AllocFunction(GET_SELECT_INTERFACE_REQUEST_SIZE(1));
     if (!Urb)
@@ -391,7 +430,7 @@ USBVideoSetStreamingFormat(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = USBVideoFindStreamingInterfaceDescriptor(Pin, ProbeCommit.dwMaxPayloadTransferSize, InterfaceNumber, &AlternateSetting);
+    Status = USBVideoFindStreamingInterfaceDescriptor(Pin, ProbeCommit.dwMaxPayloadTransferSize, InterfaceNumber, &AlternateSetting, &DeviceExtension->dwMaxPayloadTransferSize);
     if (!NT_SUCCESS(Status))
     {
         // failed to retrieve interface number
@@ -419,7 +458,7 @@ USBVideoSetStreamingFormat(
     DeviceExtension->hPipe = Urb->UrbSelectInterface.Interface.Pipes[0].PipeHandle;
     DeviceExtension->MaximumPacketSize = Urb->UrbSelectInterface.Interface.Pipes[0].MaximumPacketSize;
     DPRINT1("MaximumPacketSize %u\n", DeviceExtension->MaximumPacketSize);
-    USBVideoSetStreamingDefaults(Pin, ConnectionFormat);
+    USBVideoSetStreamingDefaults(Pin, DataRange);
     DPRINT1("USBVideoSetFormat success\n");
     return Status;
 }
@@ -430,6 +469,7 @@ USBVideoSetStillImageFormat(
     PKSPIN Pin,
     PKSDATAFORMAT ConnectionFormat)
 {
+    PKS_DATARANGE_VIDEO DataRange;
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     UCHAR FormatIndex, FrameIndex;
     ULONG dwFrameInterval;
@@ -445,21 +485,23 @@ USBVideoSetStillImageFormat(
         Pin->Descriptor->PinDescriptor.DataRangesCount,
         &FormatIndex,
         &FrameIndex,
-        &dwFrameInterval
+        &dwFrameInterval,
+        &DataRange
     );
 
     if (!NT_SUCCESS(Status))
         return Status;
 
-    Status = USBVideoGetInterfaceDescriptorForStreaming(Pin, &InterfaceNumber);
+    /* get device extension */
+    DeviceExtension = Pin->Context;
+
+    Status = USBVideoGetInterfaceDescriptorForStreaming(DeviceExtension, &InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         // failed to retrieve interface number
         DPRINT1("USBVideoGetInterfaceDescriptorForStreaming failed\n");
         return Status;
     }
-    /* get device extension */
-    DeviceExtension = Pin->Context;
 
     ASSERT(DeviceExtension);
     ASSERT(DeviceExtension->InterfaceHeaderDescriptor);
@@ -473,7 +515,7 @@ USBVideoSetStillImageFormat(
     USHORT ProbeValue = 0x300;
     //ProbeControl = 0x3;
 
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_OUT, ProbeControl, ProbeValue, InterfaceNumber);
+    Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_OUT, ProbeControl, ProbeValue, InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("USBVideoSetFormat Probe failed with %x\n", Status);
@@ -482,7 +524,7 @@ USBVideoSetStillImageFormat(
     /* get current format */
     UCHAR GetCurFormat = 0x81;
     USHORT CurFormatValue = 0x300;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_IN, GetCurFormat, CurFormatValue, InterfaceNumber);
+    Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_IN, GetCurFormat, CurFormatValue, InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("USBVideoSetFormat GetCur failed with %x\n", Status);
@@ -495,7 +537,7 @@ USBVideoSetStillImageFormat(
     /* set format */
     UCHAR SetFormat = 0x01;
     USHORT CommitControl = 0x400;
-    Status = USBVideoTransferControlPacket(Pin, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_OUT, SetFormat, CommitControl, InterfaceNumber);
+    Status = USBVideoTransferControlPacket(DeviceExtension, &ProbeCommit, sizeof(ProbeCommit), USBD_TRANSFER_DIRECTION_OUT, SetFormat, CommitControl, InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("USBVideoSetFormat SetCur failed with %x\n", Status);
@@ -503,7 +545,7 @@ USBVideoSetStillImageFormat(
     }
     /* set format */
     UCHAR KeyFrame = 1;
-    Status = USBVideoTransferControlPacket(Pin, &KeyFrame, sizeof(UCHAR), USBD_TRANSFER_DIRECTION_OUT, 0x01, 0x0500, InterfaceNumber);
+    Status = USBVideoTransferControlPacket(DeviceExtension, &KeyFrame, sizeof(UCHAR), USBD_TRANSFER_DIRECTION_OUT, 0x01, 0x0500, InterfaceNumber);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("USBVideoSetFormat set keyframe failed with %x\n", Status);
@@ -516,7 +558,10 @@ USBVideoSetStillImageFormat(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = USBVideoFindStreamingInterfaceDescriptor(Pin, ProbeCommit.dwMaxPayloadTransferSize, InterfaceNumber, &AlternateSetting);
+    DeviceExtension->dwMaxVideoFrameSize = ProbeCommit.dwMaxVideoFrameSize;
+    DeviceExtension->dwMaxPayloadTransferSize = ProbeCommit.dwMaxPayloadTransferSize;
+
+    Status = USBVideoFindStreamingInterfaceDescriptor(Pin, ProbeCommit.dwMaxPayloadTransferSize, InterfaceNumber, &AlternateSetting, &DeviceExtension->dwMaxPayloadTransferSize);
     if (!NT_SUCCESS(Status))
     {
         // failed to retrieve interface number
@@ -543,6 +588,7 @@ USBVideoSetStillImageFormat(
     DeviceExtension->PipeType = Urb->UrbSelectInterface.Interface.Pipes[0].PipeType;
     DeviceExtension->hPipe = Urb->UrbSelectInterface.Interface.Pipes[0].PipeHandle;
     DeviceExtension->MaximumPacketSize = Urb->UrbSelectInterface.Interface.Pipes[0].MaximumPacketSize;
+    USBVideoSetStreamingDefaults(Pin, DataRange);
     DPRINT1("USBVideoSetStillImageFormat success\n");
     return Status;
 }
@@ -582,8 +628,14 @@ USBVideoSetFormat(
     DeviceExtension->Pin = Pin;
     DeviceExtension->StopStreaming = FALSE;
 
-    //USBVideoSetStillImageFormat(Pin, ConnectionFormat);
-    return USBVideoSetStreamingFormat(Pin, ConnectionFormat);
+    if (Pin->Id == 0)
+    {
+        return USBVideoSetStreamingFormat(Pin, ConnectionFormat);
+    }
+    else
+    {
+        return USBVideoSetStillImageFormat(Pin, ConnectionFormat);
+    }
 }
 
 NTSTATUS
@@ -751,7 +803,7 @@ USBVideoPinClose(
         return Status;
     }
 
-    Status = USBVideoGetInterfaceDescriptorForStreaming(Pin, &InterfaceIndex);
+    Status = USBVideoGetInterfaceDescriptorForStreaming(DeviceExtension, &InterfaceIndex);
     ASSERT(NT_SUCCESS(Status));
     UsbBuildSelectInterfaceRequest(Urb,
         GET_SELECT_INTERFACE_REQUEST_SIZE(1),
@@ -783,6 +835,9 @@ USBVideoPinClose(
     DeviceExtension->Urb = NULL;
     DeviceExtension->Irp = NULL;
     DeviceExtension->Buffer = NULL;
+
+    DeviceExtension->ErrorControlActive = FALSE;
+    IoStopTimer(DeviceExtension->FunctionalDeviceObject);
 
     Irp->IoStatus.Status = Status;
     return Status;

@@ -221,12 +221,42 @@ extern POBJECT_TYPE NTSYSAPI PsJobType;
 #define JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE      0x2000
 
 //
+// Job UI Restriction Flags
+//
+#define JOB_OBJECT_UILIMIT_NONE                 0x0000
+#define JOB_OBJECT_UILIMIT_HANDLES              0x0001
+#define JOB_OBJECT_UILIMIT_READCLIPBOARD        0x0002
+#define JOB_OBJECT_UILIMIT_WRITECLIPBOARD       0x0004
+#define JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS     0x0008
+#define JOB_OBJECT_UILIMIT_DISPLAYSETTINGS      0x0010
+#define JOB_OBJECT_UILIMIT_GLOBALATOMS          0x0020
+#define JOB_OBJECT_UILIMIT_DESKTOP              0x0040
+#define JOB_OBJECT_UILIMIT_EXITWINDOWS          0x0080
+#define JOB_OBJECT_UILIMIT_ALL                  0x00FF
+#define JOB_OBJECT_UILIMIT_VALID_FLAGS          0x00FF
+
+//
 // Job Security Limit Flags
 //
 #define JOB_OBJECT_SECURITY_NO_ADMIN            0x0001
 #define JOB_OBJECT_SECURITY_RESTRICTED_TOKEN    0x0002
 #define JOB_OBJECT_SECURITY_ONLY_TOKEN          0x0004
 #define JOB_OBJECT_SECURITY_FILTER_TOKENS       0x0008
+
+//
+// Job Messages
+//
+#define JOB_OBJECT_MSG_END_OF_JOB_TIME          1
+#define JOB_OBJECT_MSG_END_OF_PROCESS_TIME      2
+#define JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT     3
+#define JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO      4
+#define JOB_OBJECT_MSG_NEW_PROCESS              6
+#define JOB_OBJECT_MSG_EXIT_PROCESS             7
+#define JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS    8
+#define JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT     9
+#define JOB_OBJECT_MSG_JOB_MEMORY_LIMIT         10
+#define JOB_OBJECT_MSG_NOTIFICATION_LIMIT       11
+#define JOB_OBJECT_MSG_JOB_CYCLE_TIME_LIMIT     12
 
 //
 // Cross Thread Flags
@@ -1352,6 +1382,13 @@ typedef struct _ETHREAD
     PUNICODE_STRING ThreadName;
     // TODO: Missing Win10+ members
 #endif
+#if defined(__REACTOS__)
+    // Temp HACK until we switch to NTDDI_VISTA, when these move to KTHREAD
+    volatile ULONGLONG CycleTime;
+#ifndef _WIN64
+    volatile ULONG CycleTimeHigh;
+#endif
+#endif
 } ETHREAD;
 
 //
@@ -1552,6 +1589,10 @@ typedef struct _EPROCESS
     UCHAR PriorityClass;
     MM_AVL_TABLE VadRoot;
     ULONG Cookie;
+#if defined(__REACTOS__)
+    // Temp HACK until we switch to NTDDI_VISTA, when this moves to KPROCESS
+    ULONGLONG CycleTime;
+#endif // ]
 } EPROCESS;
 
 //

@@ -472,10 +472,7 @@ USBPORT_SetEndpointState(IN PUSBPORT_ENDPOINT Endpoint,
         }
 
         KeReleaseSpinLock(&FdoExtension->EpStateChangeSpinLock, StateChangeOldIrql);
-
-        KeAcquireSpinLock(&FdoExtension->MiniportSpinLock, &OldIrql);
         Packet->InterruptNextSOF(FdoExtension->MiniPortExt);
-        KeReleaseSpinLock(&FdoExtension->MiniportSpinLock, OldIrql);
     }
     else
     {
@@ -1175,9 +1172,7 @@ USBPORT_OpenPipe(IN PDEVICE_OBJECT FdoDevice,
                     }
                     if (RetryCount > 0 && (RetryCount % 10) == 0)
                     {
-                        KeAcquireSpinLock(&FdoExtension->MiniportSpinLock, &OldIrql);
                         Packet->InterruptNextSOF(FdoExtension->MiniPortExt);
-                        KeReleaseSpinLock(&FdoExtension->MiniportSpinLock, OldIrql);
                     }
 
                     USBPORT_Wait(FdoDevice, 1); // 1 msec.
@@ -1495,9 +1490,7 @@ USBPORT_InvalidateEndpointHandler(IN PDEVICE_OBJECT FdoDevice,
             break;
 
         case INVALIDATE_ENDPOINT_INT_NEXT_SOF:
-            KeAcquireSpinLock(&FdoExtension->MiniportSpinLock, &OldIrql);
             Packet->InterruptNextSOF(FdoExtension->MiniPortExt);
-            KeReleaseSpinLock(&FdoExtension->MiniportSpinLock, OldIrql);
             break;
     }
 }
@@ -1706,8 +1699,8 @@ USBPORT_DmaEndpointWorker(IN PUSBPORT_ENDPOINT Endpoint)
     else
     {
 #ifndef NDEBUG_USBPORT_CORE
-        DPRINT1("USBPORT_DmaEndpointWorker: DbgBreakPoint. EndpointState - %x\n",
-                EndpointState);
+        DPRINT1("USBPORT_DmaEndpointWorker: DbgBreakPoint. Endpoint - %p\n",
+                Endpoint);
         DbgBreakPoint();
 #endif
         EndpointState = USBPORT_ENDPOINT_UNKNOWN;

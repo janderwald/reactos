@@ -98,15 +98,15 @@ IopArbPortInitialize(VOID)
     IopRootPortArbiter.UnpackResource = IopPortMemUnpackResource;
     IopRootPortArbiter.ScoreRequirement = IopPortMemScoreRequirement;
 
-    Status = ArbInitializeArbiterInstance(&IopRootPortArbiter,
+    Status = ArbiterLibInitializeInstance(&IopRootPortArbiter,
                                           NULL,
-                                          CmResourceTypeBusNumber,
+                                          CmResourceTypePort,
                                           IopRootPortArbiter.Name,
                                           L"Root",
                                           NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("IopArbDmaInitialize: Failed with %X", Status);
+        DPRINT1("IopArbPortInitialize: Failed with %X", Status);
     }
 
     return Status;

@@ -2326,7 +2326,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
     else
     {
         Transfer = Urb->UrbControlTransfer.hca.Reserved8[0];
-        TransferLength = Urb->UrbControlTransfer.TransferBufferLength;
+        TransferLength = Transfer->CompletedTransferLen; //Urb->UrbControlTransfer.TransferBufferLength;
         Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
         Urb->UrbControlTransfer.TransferBufferLength = Transfer->CompletedTransferLen;
     }
@@ -2343,20 +2343,22 @@ USBPORT_CompleteTransfer(IN PURB Urb,
 
         WriteToDevice = Transfer->Direction == USBPORT_DMA_DIRECTION_TO_DEVICE;
         CurrentVa = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
-
-        IsFlushSuccess = DmaOperations->FlushAdapterBuffers(FdoExtension->DmaAdapter,
-                                                            Mdl,
-                                                            Transfer->MapRegisterBase,
-                                                            (PVOID)CurrentVa,
-                                                            TransferLength,
-                                                            WriteToDevice);
-
-        if (!IsFlushSuccess)
+        do
         {
-            DPRINT("USBPORT_CompleteTransfer: no FlushAdapterBuffers !!!\n");
-            ASSERT(FALSE);
-        }
+            DPRINT_CORE("USBPORT_CompleteTransfer TransferLength %x WriteToDevice %x\n", TransferLength, WriteToDevice);
+            IsFlushSuccess = DmaOperations->FlushAdapterBuffers(FdoExtension->DmaAdapter,
+                                                                Mdl,
+                                                                Transfer->MapRegisterBase,
+                                                                (PVOID)CurrentVa,
+                                                                TransferLength,
+                                                                WriteToDevice);
 
+            if (!IsFlushSuccess)
+            {
+                DPRINT("USBPORT_CompleteTransfer: no FlushAdapterBuffers !!!\n");
+                ASSERT(FALSE);
+            }
+        }while(FALSE);
         KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
 
         DmaOperations->FreeMapRegisters(FdoExtension->DmaAdapter,
@@ -2491,10 +2493,12 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
                                                &TransferLength,
                                                WriteToDevice);
 
-        DPRINT_CORE("USBPORT_MapTransfer: PhAddress.LowPart - %p, PhAddress.HighPart - %x, TransferLength - %x\n",
+        DPRINT_CORE("USBPORT_MapTransfer: PhAddress.LowPart - %p, PhAddress.HighPart - %x, TransferLength - %x Urb %p Urb TransferLength %x\n",
                PhAddress.LowPart,
                PhAddress.HighPart,
-               TransferLength);
+               TransferLength,
+               Urb,
+               Urb->UrbIsochronousTransfer.TransferBufferLength);
 
         PhAddress.HighPart = 0;
         SgCurrentLength = TransferLength;

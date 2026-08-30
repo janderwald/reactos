@@ -17,17 +17,17 @@
 
 typedef struct _VS_PROBE_COMMIT_CONTROL
 {
-    USHORT  bmHint;
-    UCHAR   bFormatIndex;
-    UCHAR   bFrameIndex;
-    ULONG   dwFrameInterval;
-    USHORT  wKeyFrameRate;
-    USHORT  wPFrameRate;
-    USHORT  wCompQuality;
-    USHORT  wCompWindowSize;
-    USHORT  wDelay;
-    ULONG   dwMaxVideoFrameSize;
-    ULONG   dwMaxPayloadTransferSize;
+    USHORT  bmHint;                               //{0x00, 0x00
+    UCHAR   bFormatIndex;                         // ,0x02
+    UCHAR   bFrameIndex;                          // 0x01
+    ULONG   dwFrameInterval;                      // 0x15,0x16,0x05,0x00
+    USHORT  wKeyFrameRate;                        // 0x00,0x00
+    USHORT  wPFrameRate;                          // 0x00,0x00
+    USHORT  wCompQuality;                         // 0xD0,0x07
+    USHORT  wCompWindowSize;                      // 0x00,0x00
+    USHORT  wDelay;                               // 0x00,0x00
+    ULONG   dwMaxVideoFrameSize;                  //0x00,0x90,0x01,0x00
+    ULONG   dwMaxPayloadTransferSize;             // 0x80,0x01,0x00,0x00
     // UVC 1.1+
     ULONG   dwClockFrequency;
     UCHAR   bmFramingInfo;
@@ -52,6 +52,7 @@ typedef struct _FRAME_CONTEXT {
     ULONG   MaxFrameSize;
     UCHAR   LastFid;
     BOOLEAN FrameStarted;
+    ULONG dwPresentationTimestamp;
 } FRAME_CONTEXT, *PFRAME_CONTEXT;
 
 typedef struct
@@ -70,6 +71,9 @@ typedef struct
             UCHAR EOH  : 1;
         };
     };
+    ULONG dwPresentationTime;
+    ULONG dwClockFrequency;
+    USHORT SOFTokenCount;
 } UVC_PAYLOAD_HEADER, *PUVC_PAYLOAD_HEADER;
 
 typedef struct
@@ -300,6 +304,7 @@ typedef struct
 typedef struct
 {
     PDEVICE_OBJECT LowerDevice;                                  /* lower device*/
+    PDEVICE_OBJECT FunctionalDeviceObject;
     PUSB_CONFIGURATION_DESCRIPTOR ConfigurationDescriptor;       /* usb configuration descriptor */
     PUSB_DEVICE_DESCRIPTOR DeviceDescriptor;                     /* usb device descriptor */
     PUSBD_INTERFACE_INFORMATION InterfaceInfo;                   /* interface information */
@@ -323,6 +328,13 @@ typedef struct
     ULONG StoppedStreamingIrps;                                   /* stopped streaming irp count */
     KEVENT StoppedStreamingEvent;                                  /* stopped streaming event */
     KSPIN_LOCK StreamingLock;
+    KSPIN_LOCK IsoIrpCompletionLock;
+    LIST_ENTRY IsoIrpCompletionList;
+    ULONG UsbFrameNumber;
+    KEVENT UsbFrameNumberUpdated;
+    PKSWORKER ErrorWorker;
+    WORK_QUEUE_ITEM ErrorWorkItem;
+    ULONG IsoIrpCompletionCount;
     ULONG BulkTransferSize;
     ULONG IsoTransferSize;
     ULONG FrameContextCount;
@@ -330,6 +342,8 @@ typedef struct
     ULONG UrbPoolCount;
     ULONG IsoPacketCount;
     BOOLEAN IsMjpegFormat;
+    HANDLE ErrorControlThread;
+    ULONG ErrorControlActive;
 } USB_VIDEO_DEVICE_EXTENSION, *PUSB_VIDEO_DEVICE_EXTENSION;
 
 
@@ -365,23 +379,29 @@ USBVideoFindStreamingInterfaceDescriptor(
     IN PKSPIN Pin,
     IN ULONG dwMaxPayloadTransferSize,
     IN UCHAR InterfaceNumber,
-    OUT PUCHAR AlternateSetting);
+    OUT PUCHAR AlternateSetting,
+    OUT PULONG pMaxPayloadTransferSize);
 
 
 NTSTATUS
 USBVideoGetInterfaceDescriptorForStreaming(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     OUT PUCHAR InterfaceNumber);
 
 NTSTATUS
 USBVideoTransferControlPacket(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     IN PVOID TransferBuffer,
     IN ULONG TransferBufferLength,
     IN ULONG TransferFlags,
     IN UCHAR           bRequest,
     IN USHORT          wValue,
     IN USHORT          wIndex);
+
+NTSTATUS
+USBVideoReadErrorControl(
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension
+);
 
 NTSTATUS
 SubmitUrbSync(
@@ -607,6 +627,7 @@ USBVideoQueueIsoRead(
     IN ULONG TransferLength,
     IN PIRP Irp,
     IN PURB Urb,
+    IN ULONG FrameNumber,
     IN PFRAME_CONTEXT FrameCtx);
 
 /* uvc.c */

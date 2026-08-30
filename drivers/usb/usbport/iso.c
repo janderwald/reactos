@@ -158,7 +158,7 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
          */
         if (PktBytes > 0 && SgTable->SgElementCount > 0)
         {
-            PHYSICAL_ADDRESS HeadPhys;
+            PHYSICAL_ADDRESS HeadPhys, EndPhys;
             ULONG HeadEntry, TailEntry;
 
             HeadPhys = USBPORT_LookupSgPhysicalAddr(SgTable,
@@ -171,7 +171,7 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
             /* Does this packet span into another SG entry? */
             if (PktBytes > 1)
             {
-                USBPORT_LookupSgPhysicalAddr(SgTable,
+                EndPhys = USBPORT_LookupSgPhysicalAddr(SgTable,
                                               UrbPkt->Offset + PktBytes - 1,
                                               &TailEntry);
 
@@ -183,6 +183,7 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
                     PktData->Segment1Addr = SgTable->SgElement[TailEntry].SgPhysicalAddress;
                     PktData->Segment1Length = PktBytes - BytesToPageEnd;
                     PktData->SegmentCount = 2;
+                    ASSERT(PktData->Segment1Addr.QuadPart == SgTable->SgElement[TailEntry].SgPhysicalAddress.QuadPart);
                 }
             }
         }

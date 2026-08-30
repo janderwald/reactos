@@ -1257,14 +1257,14 @@ KsGetPinFromIrp(
     Pin = (PKSPIN)ObjectHeader->ObjectType;
     Header = (PKSBASIC_HEADER)((ULONG_PTR)Pin - sizeof(KSBASIC_HEADER));
 
-    /* sanity check */
-    ASSERT(Header->Type == KsObjectTypePin);
-
-    /* return object type */
-    return Pin;
+    if (Header->Type == KsObjectTypePin)
+    {
+        /* return object type */
+        return Pin;
+    }
+    /* not a pin */
+    return NULL;
 }
-
-
 
 /*
     @unimplemented

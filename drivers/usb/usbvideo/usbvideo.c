@@ -33,6 +33,63 @@ static KSDEVICE_DESCRIPTOR KsDeviceDescriptor = {
     0
 };
 
+
+
+VOID
+NTAPI
+ErrorControlRoutine(
+    IN PVOID Context
+)
+{
+    PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension = (PUSB_VIDEO_DEVICE_EXTENSION)Context;
+    do
+    {
+        USBVideoReadErrorControl(DeviceExtension);
+    }while(DeviceExtension->ErrorControlActive);
+
+    ZwClose(DeviceExtension->ErrorControlThread);
+    DeviceExtension->ErrorControlThread = NULL;
+}
+
+VOID
+NTAPI
+ErrorWorkItemRoutine(
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension
+)
+{
+    OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+
+    DPRINT1("ErrorWorkItemRoutine\n");
+    InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    DeviceExtension->ErrorControlActive = 1;
+
+    Status = PsCreateSystemThread(&DeviceExtension->ErrorControlThread, 0, &oa, NULL, NULL, ErrorControlRoutine, DeviceExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("PsCreateSystemThread returned %08lx\n", Status);
+    }
+    KsDecrementCountedWorker(DeviceExtension->ErrorWorker);
+}
+
+VOID
+NTAPI
+TimerRoutine(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN PVOID Context
+)
+{
+    PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension = (PUSB_VIDEO_DEVICE_EXTENSION)Context;
+
+    DPRINT1("TimerRoutine\n");
+    if (!DeviceExtension->ErrorControlActive)
+    {
+        KsIncrementCountedWorker(DeviceExtension->ErrorWorker);
+    }
+}
+
+
 NTSTATUS
 NTAPI
 USBVideoSelectConfiguration(
@@ -280,6 +337,16 @@ USBVideoPnPStart(
         DeviceExtension->LowerDevice = Device->NextDeviceObject;
         KeInitializeEvent(&DeviceExtension->StoppedStreamingEvent, NotificationEvent, FALSE);
         KeInitializeSpinLock(&DeviceExtension->StreamingLock);
+        KeInitializeSpinLock(&DeviceExtension->IsoIrpCompletionLock);
+        InitializeListHead(&DeviceExtension->IsoIrpCompletionList);
+        KeInitializeEvent(&DeviceExtension->UsbFrameNumberUpdated, SynchronizationEvent, FALSE);
+
+        ASSERT(Device->FunctionalDeviceObject);
+        DeviceExtension->FunctionalDeviceObject = Device->FunctionalDeviceObject;
+        IoInitializeTimer(Device->FunctionalDeviceObject, TimerRoutine, (PVOID)DeviceExtension);
+
+        ExInitializeWorkItem(&DeviceExtension->ErrorWorkItem, ErrorWorkItemRoutine, (PVOID)DeviceExtension);
+        KsRegisterCountedWorker(DelayedWorkQueue, &DeviceExtension->ErrorWorkItem, &DeviceExtension->ErrorWorker);
 
         /* add to object bag*/
         KsAddItemToObjectBag(Device->Bag, Device->Context, ExFreePool);

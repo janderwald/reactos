@@ -19,7 +19,7 @@
 
 UNICODE_STRING SmpSystemRoot;
 ULONG AttachedSessionId = -1;
-BOOLEAN SmpDebug, SmpEnableDots;
+BOOLEAN SmpDebug;
 HANDLE SmApiPort;
 HANDLE SmpInitialCommandProcessId;
 
@@ -157,9 +157,6 @@ SmpInvokeAutoChk(IN PUNICODE_STRING FileName,
     WCHAR Buffer[1024];
     BOOLEAN BootState, BootOkay, ShutdownOkay;
 
-    /* Check if autochk should show dots (if the user booted with /SOS) */
-    if (SmpQueryRegistrySosOption()) SmpEnableDots = FALSE;
-
     /* Make sure autochk was actually found */
     if (Flags & SMP_INVALID_PATH)
     {
@@ -227,7 +224,7 @@ SmpExecuteCommand(IN PUNICODE_STRING CommandLine,
     if (!NT_SUCCESS(Status))
     {
         /* Fail if we couldn't do that */
-        DPRINT1("SMSS: SmpParseCommandLine( %wZ ) failed - Status == %lx\n",
+        DPRINT1("SMSS: SmpParseCommandLine(%wZ) failed - Status == %lx\n",
                 CommandLine, Status);
         return Status;
     }
@@ -319,7 +316,7 @@ SmpExecuteInitialCommand(IN ULONG MuSessionId,
     /* And fail if any other reason is also true */
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("SMSS: SmpParseCommandLine( %wZ ) failed - Status == %lx\n",
+        DPRINT1("SMSS: SmpParseCommandLine(%wZ) failed - Status == %lx\n",
                 InitialCommand, Status);
         return Status;
     }

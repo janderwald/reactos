@@ -83,9 +83,12 @@ typedef struct {
     DWORD dwDisplayBufSize;
     BITMAPINFO bmi;
     BOOL bFrameReady;
+    BOOL doStreaming;
 } APP_STATE;
 
 APP_STATE g_AppState = { 0 };
+static CRITICAL_SECTION g_frameLock;              // guards DIB access
+
 
 /* Forward declarations */
 LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -259,7 +262,30 @@ static BOOL pick_video_format_from_dataranges(const BYTE* Buf, DWORD Cb, GUID* O
     if (mi->Size < sizeof(KSMULTIPLE_ITEM) || mi->Size > Cb)
         return FALSE;
 
-    /* FIRST PASS: Fall back to MJPG if YUY2 not available */
+    p = Buf + sizeof(KSMULTIPLE_ITEM);
+
+    /* FIRST PASS: Prefer YUY2 specifically (best for raw pixel access) */
+    for (i = 0; i < mi->Count; ++i)
+    {
+        const KSDATARANGE* dr = (const KSDATARANGE*)p;
+        if ((DWORD)(p - Buf) + sizeof(KSDATARANGE) > Cb)
+            break;
+        if (dr->FormatSize < sizeof(KSDATARANGE) || (DWORD)(p - Buf) + dr->FormatSize > Cb)
+            break;
+        if (guid_is_equal(&dr->MajorFormat, &KSDATAFORMAT_TYPE_VIDEO))
+        {
+            if (guid_is_equal(&dr->SubFormat, &MEDIASUBTYPE_YUY2))
+            {
+                DEBUG_PRINT("[DEBUG] Found YUY2 format (preferred) at %u\n", i);
+                *OutSubtype = dr->SubFormat;
+                *OutSpecifier = dr->Specifier;
+                return TRUE;
+            }
+        }
+        p += dr->FormatSize;
+    }
+
+    /* SECOND PASS: Fall back to MJPG if YUY2 not available */
     p = Buf + sizeof(KSMULTIPLE_ITEM);
     for (i = 0; i < mi->Count; ++i)
     {
@@ -283,30 +309,6 @@ static BOOL pick_video_format_from_dataranges(const BYTE* Buf, DWORD Cb, GUID* O
         }
         p += dr->FormatSize;
     }
-
-    p = Buf + sizeof(KSMULTIPLE_ITEM);
-
-    /* SECOND PASS: Prefer YUY2 specifically (best for raw pixel access) */
-    for (i = 0; i < mi->Count; ++i)
-    {
-        const KSDATARANGE* dr = (const KSDATARANGE*)p;
-        if ((DWORD)(p - Buf) + sizeof(KSDATARANGE) > Cb)
-            break;
-        if (dr->FormatSize < sizeof(KSDATARANGE) || (DWORD)(p - Buf) + dr->FormatSize > Cb)
-            break;
-        if (guid_is_equal(&dr->MajorFormat, &KSDATAFORMAT_TYPE_VIDEO))
-        {
-            if (guid_is_equal(&dr->SubFormat, &MEDIASUBTYPE_YUY2))
-            {
-                DEBUG_PRINT("[DEBUG] Found YUY2 format (preferred) at %u\n", i);
-                *OutSubtype = dr->SubFormat;
-                *OutSpecifier = dr->Specifier;
-                return TRUE;
-            }
-        }
-        p += dr->FormatSize;
-    }
-
 
     /* THIRD PASS: Take any video format as last resort */
     p = Buf + sizeof(KSMULTIPLE_ITEM);
@@ -383,37 +385,37 @@ static BOOL build_pin_format_from_dataranges(const BYTE* Buf, DWORD Cb, const GU
             /* Copy from device's template */
             fmt->DataFormat.FormatSize = sizeof(*fmt);
             fmt->DataFormat.Flags = 0;
-            fmt->DataFormat.MajorFormat = drv->DataRange.MajorFormat;
-            fmt->DataFormat.SubFormat = *ioSubtype;
-            fmt->DataFormat.Specifier = spec;
-            fmt->DataFormat.SampleSize = 0;
+            fmt->DataFormat.MajorFormat = KSDATAFORMAT_TYPE_VIDEO;
+            fmt->DataFormat.SubFormat = MEDIASUBTYPE_YUY2;
+            fmt->DataFormat.Specifier =  KSDATAFORMAT_SPECIFIER_VIDEOINFO2;
+            fmt->DataFormat.SampleSize = Width * Height * 3;
 
             /* Copy video info header template from device */
             fmt->VideoInfoHeader = drv->VideoInfoHeader;
 
-            /* Override with requested parameters */
-            fmt->VideoInfoHeader.bmiHeader.biWidth = Width;
-            fmt->VideoInfoHeader.bmiHeader.biHeight = Height;
-            fmt->VideoInfoHeader.bmiHeader.biPlanes = 1;
-            fmt->VideoInfoHeader.rcSource.right = Width;
-            fmt->VideoInfoHeader.rcSource.bottom = Height;
-            fmt->VideoInfoHeader.rcTarget = fmt->VideoInfoHeader.rcSource;
-            fmt->VideoInfoHeader.AvgTimePerFrame = 10000000 / (Fps > 0 ? Fps : 30);
+            // /* Override with requested parameters */
+             fmt->VideoInfoHeader.bmiHeader.biWidth = Width;
+             fmt->VideoInfoHeader.bmiHeader.biHeight = Height;
+             fmt->VideoInfoHeader.bmiHeader.biPlanes = 1;
+             fmt->VideoInfoHeader.rcSource.right = Width;
+             fmt->VideoInfoHeader.rcSource.bottom = Height;
+             fmt->VideoInfoHeader.rcTarget = fmt->VideoInfoHeader.rcSource;
+             fmt->VideoInfoHeader.AvgTimePerFrame = 10000000 / (Fps > 0 ? Fps : 30);
 
-            if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_YUY2))
-            {
-                fmt->VideoInfoHeader.bmiHeader.biCompression = 0x32595559;
-                fmt->VideoInfoHeader.bmiHeader.biBitCount = 16;
-                fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 2;
-                fmt->DataFormat.SampleSize = Width * Height * 2;
+             if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_YUY2))
+             {
+                 fmt->VideoInfoHeader.bmiHeader.biCompression = 0x32595559;
+                 fmt->VideoInfoHeader.bmiHeader.biBitCount = 16;
+                 fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 2;
+                 fmt->DataFormat.SampleSize = Width * Height * 2;
             }
-            else if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_MJPG))
-            {
-                fmt->VideoInfoHeader.bmiHeader.biCompression = MAKEFOURCC('M','J','P','G');
-                fmt->VideoInfoHeader.bmiHeader.biBitCount = 24;
-                fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 3;
-                fmt->DataFormat.SampleSize = Width * Height * 2;
-            }
+            // // else if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_MJPG))
+            // // {
+            // //     fmt->VideoInfoHeader.bmiHeader.biCompression = MAKEFOURCC('M','J','P','G');
+            // //     fmt->VideoInfoHeader.bmiHeader.biBitCount = 24;
+            // //     fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 3;
+            // //     fmt->DataFormat.SampleSize = Width * Height * 2;
+            // // }
 
             DEBUG_PRINT("[DEBUG] Using VIDEOINFO2 template: width=%lu, height=%lu",
                        (unsigned long)fmt->VideoInfoHeader.bmiHeader.biWidth,
@@ -435,10 +437,10 @@ static BOOL build_pin_format_from_dataranges(const BYTE* Buf, DWORD Cb, const GU
             /* Copy from device's template */
             fmt->DataFormat.FormatSize = sizeof(*fmt);
             fmt->DataFormat.Flags = 0;
-            fmt->DataFormat.MajorFormat = drv->DataRange.MajorFormat;
-            fmt->DataFormat.SubFormat = *ioSubtype;
-            fmt->DataFormat.Specifier = spec;
-            fmt->DataFormat.SampleSize = 0;
+            fmt->DataFormat.MajorFormat = KSDATAFORMAT_TYPE_VIDEO;
+            fmt->DataFormat.SubFormat = MEDIASUBTYPE_YUY2;
+            fmt->DataFormat.Specifier =  KSDATAFORMAT_SPECIFIER_VIDEOINFO;
+            fmt->DataFormat.SampleSize = Width * Height * 3;
 
             /* Copy video info header template from device */
             fmt->VideoInfoHeader = drv->VideoInfoHeader;
@@ -454,18 +456,18 @@ static BOOL build_pin_format_from_dataranges(const BYTE* Buf, DWORD Cb, const GU
 
             if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_YUY2))
             {
-                fmt->VideoInfoHeader.bmiHeader.biCompression = 0x32595559;
-                fmt->VideoInfoHeader.bmiHeader.biBitCount = 16;
-                fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 2;
-                fmt->DataFormat.SampleSize = Width * Height * 2;
+                 fmt->VideoInfoHeader.bmiHeader.biCompression = 0x32595559;
+                 fmt->VideoInfoHeader.bmiHeader.biBitCount = 16;
+                 fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 2;
+                 fmt->DataFormat.SampleSize = Width * Height * 2;
             }
-            else if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_MJPG))
-            {
-                fmt->VideoInfoHeader.bmiHeader.biCompression = MAKEFOURCC('M','J','P','G');
-                fmt->VideoInfoHeader.bmiHeader.biBitCount = 24;
-                fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 3;
-                fmt->DataFormat.SampleSize = Width * Height * 2;
-            }
+            // else if (guid_is_equal(ioSubtype, &MEDIASUBTYPE_MJPG))
+            // {
+            //     fmt->VideoInfoHeader.bmiHeader.biCompression = MAKEFOURCC('M','J','P','G');
+            //     fmt->VideoInfoHeader.bmiHeader.biBitCount = 24;
+            //     fmt->VideoInfoHeader.bmiHeader.biSizeImage = Width * Height * 3;
+            //     fmt->DataFormat.SampleSize = Width * Height * 2;
+            // }
             DEBUG_PRINT("[DEBUG] Using VIDEOINFO template: width=%lu, height=%lu",
                        (unsigned long)fmt->VideoInfoHeader.bmiHeader.biWidth,
                        (unsigned long)fmt->VideoInfoHeader.bmiHeader.biHeight);
@@ -716,7 +718,7 @@ BOOL OpenDevice(int iDeviceIndex)
         DWORD ifCb = 0;
         BYTE* medBuf = NULL;
         DWORD medCb = 0;
-        GUID subtype = MEDIASUBTYPE_MJPG;
+        GUID subtype = MEDIASUBTYPE_YUY2;
         GUID specifier = {0};
 
         DEBUG_PRINT("[DEBUG] Checking pin %lu", pinId);
@@ -805,7 +807,7 @@ BOOL OpenDevice(int iDeviceIndex)
                         }
 
                         /* Allocate frame buffer for streaming */
-                        g_AppState.dwFrameBufSize = 640 * 480 * 2 + 1024;
+                        g_AppState.dwFrameBufSize = 640 * 480 * 2;
                         g_AppState.pFrameBuf = (BYTE*)malloc(g_AppState.dwFrameBufSize);
                         if (!g_AppState.pFrameBuf)
                         {
@@ -889,6 +891,58 @@ VOID CloseDevice(void)
     }
 }
 
+VOID
+UvcConvertYuy2ToRgb(
+    const UCHAR* pYuy2,
+    UCHAR*       pRgb,    // BGR für GDI
+    ULONG        width,
+    ULONG        height)
+{
+    EnterCriticalSection(&g_frameLock);
+
+    for (ULONG y = 0; y < height; y++) {
+        for (ULONG x = 0; x < width; x += 2) {
+            ULONG yuyOff = (y * width + x) * 2;
+            ULONG rgbOff = (y * width + x) * 3;
+
+            int Y0 = pYuy2[yuyOff + 0];
+            int Cb = pYuy2[yuyOff + 1];
+            int Y1 = pYuy2[yuyOff + 2];
+            int Cr = pYuy2[yuyOff + 3];
+
+            // BT.601 Koeffizienten
+            int cb = Cb - 128;
+            int cr = Cr - 128;
+
+            // Pixel 0
+            int r0 = Y0 + 1.402f   * cr;
+            int g0 = Y0 - 0.34414f * cb - 0.71414f * cr;
+            int b0 = Y0 + 1.772f   * cb;
+
+            // Pixel 1
+            int r1 = Y1 + 1.402f   * cr;
+            int g1 = Y1 - 0.34414f * cb - 0.71414f * cr;
+            int b1 = Y1 + 1.772f   * cb;
+
+            // Clipping + BGR Reihenfolge für GDI
+            #define CLIP(x) ((x)<0?0:(x)>255?255:(x))
+            pRgb[rgbOff+0] = CLIP(b0);
+            pRgb[rgbOff+1] = CLIP(g0);
+            pRgb[rgbOff+2] = CLIP(r0);
+            pRgb[rgbOff+3] = 0xFF;
+            pRgb[rgbOff+4] = CLIP(b1);
+            pRgb[rgbOff+5] = CLIP(g1);
+            pRgb[rgbOff+6] = CLIP(r1);
+            pRgb[rgbOff+7] = 0xFF;
+
+            #undef CLIP
+        }
+    }
+    LeaveCriticalSection(&g_frameLock);
+
+}
+
+
 /* Simple YUY2 to BGR24 conversion */
 static void yuy2_to_rgb32(const BYTE* yuy2, int w, int h, BYTE* rgb32)
 {
@@ -896,6 +950,8 @@ static void yuy2_to_rgb32(const BYTE* yuy2, int w, int h, BYTE* rgb32)
     const BYTE* src = yuy2;
     BYTE* dst = rgb32;
 
+    EnterCriticalSection(&g_frameLock);
+    //DEBUG_PRINT("[DEBUG] YUY2 width %u height %u\n", w, h);
     for (i = 0; i < h; i++)
     {
         for (j = 0; j < w; j += 2)
@@ -939,6 +995,20 @@ static void yuy2_to_rgb32(const BYTE* yuy2, int w, int h, BYTE* rgb32)
             *dst++ = 0xFF;
         }
     }
+
+
+       static int Count = 0;
+
+        char FileBuffer[250];
+        sprintf(FileBuffer, "c:\\temp\\output%d.jpg", Count);
+        Count++;
+        ULONG BytesWritten = 0;
+        HANDLE hFile = CreateFileA(FileBuffer, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        WriteFile(hFile, yuy2, 640 * 480 * 2, &BytesWritten, NULL);
+        CloseHandle(hFile);
+
+
+    LeaveCriticalSection(&g_frameLock);
 }
 
 /* Decode JPEG to BGRA32 using IPicture interface */
@@ -1022,6 +1092,18 @@ static BOOL jpeg_to_bgra32(const BYTE* jpegData, DWORD jpegSize, BYTE* bgra32, i
     int x, y;
     BYTE* dst;
 
+       static int Count = 0;
+
+        char FileBuffer[250];
+        sprintf(FileBuffer, "c:\\temp\\output%d.jpg", Count);
+        Count++;
+        ULONG BytesWritten = 0;
+        HANDLE hFile = CreateFileA(FileBuffer, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        WriteFile(hFile, jpegData, jpegSize, &BytesWritten, NULL);
+        CloseHandle(hFile);
+
+
+
     DEBUG_PRINT("[APP] Decoding JPEG: %u bytes, target %dx%d", jpegSize, w, h);
     // ── Set up libjpeg decompressor ────────────────────────────────────────
     struct jpeg_decompress_struct cinfo = {0};
@@ -1077,6 +1159,8 @@ static BOOL jpeg_to_bgra32(const BYTE* jpegData, DWORD jpegSize, BYTE* bgra32, i
     row_stride = cinfo.output_width * cinfo.output_components;
     buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr)&cinfo, JPOOL_IMAGE, row_stride, 1);
 
+    EnterCriticalSection(&g_frameLock);
+
     dst = bgra32;
 
     /* Read and convert scanlines */
@@ -1126,6 +1210,8 @@ static BOOL jpeg_to_bgra32(const BYTE* jpegData, DWORD jpegSize, BYTE* bgra32, i
     jpeg_finish_decompress(&cinfo);
     jpeg_destroy_decompress(&cinfo);
 
+    LeaveCriticalSection(&g_frameLock);
+
     DEBUG_PRINT("[APP] JPEG decoded successfully");
     return TRUE;
 }
@@ -1141,7 +1227,7 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
             RECT rc;
             GetClientRect(hwnd, &rc);
-
+            EnterCriticalSection(&g_frameLock);
             /* Display the frame or show status */
             if (g_AppState.pDisplayBuf && g_AppState.bFrameReady && g_AppState.dwWidth > 0 && g_AppState.dwHeight > 0)
             {
@@ -1149,15 +1235,17 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 StretchDIBits(hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                              0, 0, g_AppState.dwWidth, g_AppState.dwHeight,
                              g_AppState.pDisplayBuf, &g_AppState.bmi, DIB_RGB_COLORS, SRCCOPY);
+                //DEBUG_PRINT("After StretchDIBits\n");
             }
             else
             {
+                //DEBUG_PRINT("Placeholder\n");
                 /* Show placeholder */
                 FillRect(hdc, &rc, (HBRUSH)(COLOR_WINDOW + 1));
                 SetTextColor(hdc, RGB(128, 128, 128));
                 DrawTextW(hdc, L"Waiting for video...", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
-
+            LeaveCriticalSection(&g_frameLock);
             EndPaint(hwnd, &ps);
             break;
         }
@@ -1170,6 +1258,94 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
     return 0;
 }
+
+DWORD
+WINAPI
+StreamingThread(
+    IN LPVOID Parameter)
+{
+    g_AppState.doStreaming = TRUE;
+    do
+    {
+                    /* Timer for frame capture */
+            if (g_AppState.hPin && g_AppState.hPin != INVALID_HANDLE_VALUE && g_AppState.pFrameBuf)
+            {
+                KSSTREAM_HEADER sh;
+                DWORD got = 0;
+
+                /* Set pin state to RUN if not already */
+                static BOOL bStreaming = FALSE;
+                if (!bStreaming)
+                {
+                    set_pin_state(g_AppState.hPin, KSSTATE_ACQUIRE);
+                    set_pin_state(g_AppState.hPin, KSSTATE_PAUSE);
+                    set_pin_state(g_AppState.hPin, KSSTATE_RUN);
+                    bStreaming = TRUE;
+                }
+
+                ZeroMemory(&sh, sizeof(sh));
+                sh.Size = sizeof(KSSTREAM_HEADER);
+                sh.TypeSpecificFlags = 0;
+                sh.FrameExtent = g_AppState.dwFrameBufSize;
+                sh.DataUsed = 0;
+                sh.Data = g_AppState.pFrameBuf;
+
+                if (DeviceIoControl(g_AppState.hPin, IOCTL_KS_READ_STREAM,
+                                   NULL, 0,
+                                   &sh, sizeof(sh),
+                                   &got, NULL))
+                {
+                    /* Check if frame was actually filled */
+                    if (sh.DataUsed > 0)
+                    {
+                        /* Check if this is JPEG data (ff d8 = JPEG SOI) */
+                        if (guid_is_equal(&g_AppState.dtSubtype, &MEDIASUBTYPE_MJPG))
+                        {
+                            /* MJPEG frame - decode to BGRA32 */
+                            if (g_AppState.pDisplayBuf)
+                            {
+                                if (jpeg_to_bgra32(g_AppState.pFrameBuf, sh.DataUsed, g_AppState.pDisplayBuf,
+                                                  g_AppState.dwWidth, g_AppState.dwHeight))
+                                {
+                                    g_AppState.bFrameReady = TRUE;
+                                    UpdateStatus("MJPEG: %lu bytes", sh.DataUsed);
+                                    InvalidateRect(g_AppState.hwndPreview, NULL, FALSE);
+                                }
+                                else
+                                {
+                                    UpdateStatus("MJPEG decode error");
+                                }
+                            }
+                        }
+                        else if (g_AppState.pDisplayBuf)
+                        {
+                            if (sh.DataUsed >= g_AppState.dwWidth * g_AppState.dwHeight * 2)
+                            {
+                                /* Convert YUY2 to BGRA32 */
+                                yuy2_to_rgb32(g_AppState.pFrameBuf, g_AppState.dwWidth, g_AppState.dwHeight, g_AppState.pDisplayBuf);
+                                //UvcConvertYuy2ToRgb(g_AppState.pFrameBuf, g_AppState.pDisplayBuf, g_AppState.dwWidth, g_AppState.dwHeight);
+
+                                g_AppState.bFrameReady = TRUE;
+                                UpdateStatus("YUY2: %lu bytes", sh.DataUsed);
+                                InvalidateRect(g_AppState.hwndPreview, NULL, FALSE);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    DWORD dwErr = GetLastError();
+                    if (dwErr != ERROR_TIMEOUT && dwErr != ERROR_INVALID_HANDLE)
+                    {
+                        UpdateStatus("Read failed: 0x%lx", dwErr);
+                    }
+                }
+            }
+            break;
+    }while(g_AppState.doStreaming);
+    return 0;
+}
+
 
 LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -1285,6 +1461,14 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             UpdateStatus("Device opened - streaming ready");
                             /* Start a timer to capture frames */
                             g_AppState.uTimerId = SetTimer(hwnd, 1, 100, NULL);
+                            CreateThread(
+                                NULL,
+                                0,
+                                StreamingThread,
+                                NULL,
+                                0,
+                                NULL
+                            );
                         }
                     }
                     break;
@@ -1293,6 +1477,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 case 103:  /* Close */
                     if (g_AppState.uTimerId)
                     {
+                        g_AppState.doStreaming = FALSE;
                         KillTimer(hwnd, (UINT_PTR)g_AppState.uTimerId);
                         g_AppState.uTimerId = 0;
                     }
@@ -1314,80 +1499,6 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         UpdateStatus("Please open a device first");
                     }
                     break;
-            }
-            break;
-        }
-
-        case WM_TIMER:
-        {
-            /* Timer for frame capture */
-            if (g_AppState.hPin && g_AppState.hPin != INVALID_HANDLE_VALUE && g_AppState.pFrameBuf)
-            {
-                KSSTREAM_HEADER sh;
-                DWORD got = 0;
-
-                /* Set pin state to RUN if not already */
-                static BOOL bStreaming = FALSE;
-                if (!bStreaming)
-                {
-                    set_pin_state(g_AppState.hPin, KSSTATE_ACQUIRE);
-                    set_pin_state(g_AppState.hPin, KSSTATE_PAUSE);
-                    set_pin_state(g_AppState.hPin, KSSTATE_RUN);
-                    bStreaming = TRUE;
-                }
-
-                ZeroMemory(&sh, sizeof(sh));
-                sh.Size = sizeof(KSSTREAM_HEADER);
-                sh.TypeSpecificFlags = 0;
-                sh.FrameExtent = g_AppState.dwFrameBufSize;
-                sh.DataUsed = 0;
-                sh.Data = g_AppState.pFrameBuf;
-
-                if (DeviceIoControl(g_AppState.hPin, IOCTL_KS_READ_STREAM,
-                                   NULL, 0,
-                                   &sh, sizeof(sh),
-                                   &got, NULL))
-                {
-                    /* Check if frame was actually filled */
-                    if (sh.DataUsed > 0)
-                    {
-                        /* Check if this is JPEG data (ff d8 = JPEG SOI) */
-                        if (guid_is_equal(&g_AppState.dtSubtype, &MEDIASUBTYPE_MJPG))
-                        {
-                            /* MJPEG frame - decode to BGRA32 */
-                            if (g_AppState.pDisplayBuf)
-                            {
-                                if (jpeg_to_bgra32(g_AppState.pFrameBuf, sh.DataUsed, g_AppState.pDisplayBuf,
-                                                  g_AppState.dwWidth, g_AppState.dwHeight))
-                                {
-                                    g_AppState.bFrameReady = TRUE;
-                                    UpdateStatus("MJPEG: %lu bytes", sh.DataUsed);
-                                    InvalidateRect(g_AppState.hwndPreview, NULL, FALSE);
-                                }
-                                else
-                                {
-                                    UpdateStatus("MJPEG decode error");
-                                }
-                            }
-                        }
-                        else if (g_AppState.pDisplayBuf)
-                        {
-                            /* Convert YUY2 to BGRA32 */
-                            yuy2_to_rgb32(g_AppState.pFrameBuf, g_AppState.dwWidth, g_AppState.dwHeight, g_AppState.pDisplayBuf);
-                            g_AppState.bFrameReady = TRUE;
-                            UpdateStatus("YUY2: %lu bytes", sh.DataUsed);
-                            InvalidateRect(g_AppState.hwndPreview, NULL, FALSE);
-                        }
-                    }
-                }
-                else
-                {
-                    DWORD dwErr = GetLastError();
-                    if (dwErr != ERROR_TIMEOUT && dwErr != ERROR_INVALID_HANDLE)
-                    {
-                        UpdateStatus("Read failed: 0x%lx", dwErr);
-                    }
-                }
             }
             break;
         }
@@ -1453,7 +1564,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     MSG msg;
 
     DEBUG_PRINT("[DEBUG] === ReactOS Webcam Viewer Started ===");
-
+    InitializeCriticalSection(&g_frameLock);
     InitCommonControls();
 
     wc.lpfnWndProc = MainWndProc;

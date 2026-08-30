@@ -98,15 +98,15 @@ IopArbMemInitialize(VOID)
     IopRootMemArbiter.UnpackResource = IopArbMemUnpackResource;
     IopRootMemArbiter.ScoreRequirement = IopArbMemScoreRequirement;
 
-    Status = ArbInitializeArbiterInstance(&IopRootMemArbiter,
+    Status = ArbiterLibInitializeInstance(&IopRootMemArbiter,
                                           NULL,
-                                          CmResourceTypeBusNumber,
+                                          CmResourceTypeMemory,
                                           IopRootMemArbiter.Name,
                                           L"Root",
                                           NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("IopArbDmaInitialize: Failed with %X", Status);
+        DPRINT1("IopArbMemInitialize: Failed with %X", Status);
     }
 
     return Status;

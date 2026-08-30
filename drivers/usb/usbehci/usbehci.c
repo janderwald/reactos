@@ -1256,6 +1256,10 @@ EHCI_TakeControlHC(IN PEHCI_EXTENSION EhciExtension)
     LARGE_INTEGER CurrentTime;
     EHCI_LEGACY_EXTENDED_CAPABILITY LegacyCapability;
     UCHAR OffsetEECP;
+    EHCI_HC_CAPABILITY_PARAMS CapParameters;
+
+    CapParameters = EhciExtension->CapabilityRegisters->CapParameters;
+    ASSERT(CapParameters.Addressing64bitCapability == 0);
 
     DPRINT("EHCI_TakeControlHC: EhciExtension - %p\n", EhciExtension);
 
@@ -1737,7 +1741,7 @@ EHCI_MapAsyncTransferToTd(IN PEHCI_EXTENSION EhciExtension,
 
         LengthThisTD = EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE -
                        (TD->HwTD.Buffer[0] & (PAGE_SIZE - 1));
- 
+
         for (ix = 1; ix < EHCI_MAX_QTD_BUFFER_PAGES; ix++)
         {
             TD->HwTD.Buffer[ix] = SgList->SgElement[SgIdx + ix].SgPhysicalAddress.LowPart;
@@ -1819,8 +1823,11 @@ EHCI_EnablePeriodicList(IN PEHCI_EXTENSION EhciExtension)
     OperationalRegs = EhciExtension->OperationalRegs;
 
     Command.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG);
-    Command.PeriodicEnable = 1;
-    WRITE_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG, Command.AsULONG);
+    if (Command.PeriodicEnable == 0)
+    {
+        Command.PeriodicEnable = 1;
+        WRITE_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG, Command.AsULONG);
+    }
 }
 
 VOID
@@ -2636,11 +2643,12 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
         ULONG PacketIndex = 0;
         ULONG ITDCount = 0;
         ULONG Count = 0;
+        ULONG MicroFrame;
         PEHCI_HCD_ITD ITD;
         PEHCI_HCD_ITD LastITD = NULL;
         PEHCI_HCD_ITD FirstITD = NULL;
         PEHCI_HC_RESOURCES HcResourcesVA;
-        ULONG CurrentFrame;
+        ULONG CurrentFrame, InitFrame;
         ULONG FrameIndex;
         EHCI_LINK_POINTER LinkPointer;
 
@@ -2657,24 +2665,22 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
         HcResourcesVA = EhciExtension->HcResourcesVA;
 
         /* Use the first packet's FrameNumber for scheduling */
-        CurrentFrame = IsoTransfer->Packets[0].FrameNumber % EHCI_FRAME_LIST_MAX_ENTRIES;
-        ASSERT(CurrentFrame % 8 == 0);
-        CurrentFrame = RtlFindClearBitsAndSet(&EhciExtension->IsoBitmap, NumITDs, CurrentFrame);
+        InitFrame = IsoTransfer->Packets[0].FrameNumber % EHCI_FRAME_LIST_MAX_ENTRIES;
+        CurrentFrame = RtlFindClearBitsAndSet(&EhciExtension->IsoBitmap, NumITDs, InitFrame);
         if (CurrentFrame == (ULONG)-1)
         {
             /* no consecutive found */
             DPRINT1("EHCI_SubmitIsoTransfer no consecutive gap found\n");
             return MP_STATUS_NO_RESOURCES;
         }
-        DPRINT("OriginalFrame %u New FrameNumber %u\n", IsoTransfer->Packets[0].FrameNumber, CurrentFrame);
-        EHCI_DisablePeriodicList(EhciExtension);
+        DPRINT("OriginalFrame %u New FrameNumber %u NumITDs %u\n", InitFrame, CurrentFrame, NumITDs);
+        //EHCI_DisablePeriodicList(EhciExtension);
 
         /* Allocate and program iTDs, one per frame */
         while (PacketIndex < IsoTransfer->TotalPackets)
         {
             PUSBPORT_ENDPOINT_PROPERTIES EndpointProperties;
             ULONG DeviceAddress, EndpointNumber, Direction;
-            ULONG MicroFrame;
             ULONG BufferPageCount = 0;
             ULONG LastPage = 0xFFFFFFFF;
             ULONG PacketsThisITD;
@@ -2716,7 +2722,16 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
             /* Setup buffer page 2 with multi (transactions per microframe) */
             ITD->HwTD.Buffer[2].Multi = IsoTransfer->Packets[PacketIndex].PacketLength / EndpointProperties->MaxPacketSize;
-            ASSERT(IsoTransfer->Packets[PacketIndex].PacketLength % EndpointProperties->MaxPacketSize == 0);
+            if (IsoTransfer->Packets[PacketIndex].PacketLength > EndpointProperties->MaxPacketSize)
+            {
+                /* sanity check */
+                ASSERT(IsoTransfer->Packets[PacketIndex].PacketLength % EndpointProperties->MaxPacketSize == 0);
+            }
+            else
+            {
+                ITD->HwTD.Buffer[2].Multi = 1;
+            }
+
             ASSERT(ITD->HwTD.Buffer[2].Multi > 0);
             ASSERT(ITD->HwTD.Buffer[2].Multi <= 3);
 
@@ -2740,7 +2755,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
                 BufferPA = Packet->Segment0Addr.LowPart;
                 PageAddr = BufferPA >> 12;
-                Offset = BufferPA & 0xFFF;
+                Offset = Packet->Segment0Addr.LowPart & 0xFFF;
 
                 /* Find or add the page for this packet's buffer */
                 if (BufferPageCount == 0 || PageAddr != LastPage)
@@ -2763,14 +2778,20 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                     {
                         ITD->HwTD.Buffer[BufferPageCount].DataBuffer = PageAddr;
                     }
+                    else
+                    {
+                        ASSERT(0);
+                    }
                     LastPage = PageAddr;
                     BufferPageCount++;
                 }
                 else
                 {
                     /* Same page as previous packet */
+                    ASSERT(BufferPageCount > 0);
                     ThisPageSelect = BufferPageCount - 1;
                 }
+
 
                 /* Handle packets that cross a page boundary */
                 if (Packet->SegmentCount > 1 && BufferPageCount < 7)
@@ -2790,6 +2811,10 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                         else if (BufferPageCount < 7)
                         {
                             ITD->HwTD.Buffer[BufferPageCount].DataBuffer = Page1Addr;
+                        }
+                        else
+                        {
+                            ASSERT(FALSE);
                         }
                         LastPage = Page1Addr;
                         BufferPageCount++;
@@ -2812,11 +2837,55 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 ITD->PacketLength[MicroFrame] = Packet->PacketLength;
                 ITD->PacketStatus[MicroFrame] = 0;
             }
+#ifdef USBEHCI_TRACE
+            for(ULONG Index = 0; Index < 7; Index++)
+            {
+                if (Index == 0)
+                {
+                        DPRINT1("Index %u PageAddr %x\n", Index, ITD->HwTD.Buffer[0].DataBuffer0);
+                }
+                else if (Index == 1)
+                {
+                       DPRINT1("Index %u PageAddr %x\n", Index, ITD->HwTD.Buffer[1].DataBuffer1);
+                }
+                else if (Index == 2)
+                {
+                    DPRINT1("Index %u PageAddr %x\n", Index, ITD->HwTD.Buffer[Index].DataBuffer2);
+                }
+                else if (Index < 7)
+                {
+                    DPRINT1("Index %u PageAddr %x\n", Index, ITD->HwTD.Buffer[Index].DataBuffer);
+                }
+            }
+            for(ULONG Index = 0; Index < 8; Index++)
+            {
+                DPRINT1("Transaction Index %u xOffset %u PageSelect %u xLength %u Status %u Combined %x\n",
+                    Index,
+                    ITD->HwTD.Transaction[Index].xOffset,
+                    ITD->HwTD.Transaction[Index].PageSelect,
+                    ITD->HwTD.Transaction[Index].xLength,
+                    ITD->HwTD.Transaction[Index].Status,
+                    ITD->HwTD.Transaction[Index].AsULONG);
+            }
+            ASSERT(FALSE);
+#endif
 
             /* Schedule this iTD in the periodic frame list */
             FrameIndex = CurrentFrame % (EHCI_FRAME_LIST_MAX_ENTRIES);
 
             KeMemoryBarrier();
+
+            if (LastITD)
+            {
+                /* setup frame link */
+                LinkPointer.Address = (ITD->PhysicalAddress >> 5);
+                LinkPointer.Type = EHCI_LINK_TYPE_iTD;
+                LinkPointer.Terminate = 0;
+                LinkPointer.Reserved = 0;
+                LastITD->HwTD.NextLink = LinkPointer;
+            }
+            LastITD = ITD;
+
             /* link last ITD to dummy qh */
             LinkPointer.AsULONG = HcResourcesVA->PeriodicFrameList[FrameIndex];
             ITD->HwTD.NextLink = LinkPointer;
@@ -2840,7 +2909,6 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             CurrentFrame++;
             ITDCount++;
             InsertTailList(&EhciTransfer->ActiveITDs, &ITD->ActiveITDEntry);
-            //DPRINT1("Submitted ITD %p at Frame %u\n", ITD, ITD->ScheduledFrame);
         }
         EhciEndpoint->FrameCount += ITDCount;
         EhciTransfer->PendingTDs += ITDCount;
@@ -4428,12 +4496,23 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                 TotalBytesTransferred += Completed;
 
                 /* Check for errors (bit 2 = Transaction Error in 4-bit status) */
-                if (Status & 0x04)
+                if (Status & 0x01)
                 {
                     DPRINT1("EHCI_ProcessCompletedITD: Transaction %d error, status 0x%x\n",
                             TransactionIndex, Status);
-                    EhciTransfer->USBDStatus = USBD_STATUS_XACT_ERROR;
                     ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_XACT_ERROR;
+                }
+                else if (Status & 0x02)
+                {
+                    DPRINT1("EHCI_ProcessCompletedITD: Babble %d error, status 0x%x\n",
+                            TransactionIndex, Status);
+                    ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_BABBLE_DETECTED;
+                }
+                else if (Status & 0x04)
+                {
+                    DPRINT1("EHCI_ProcessCompletedITD: Data Buffer Error %d error, status 0x%x\n",
+                            TransactionIndex, Status);
+                    ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_DATA_BUFFER_ERROR;
                 }
                 else
                 {

@@ -1,11 +1,47 @@
 /*
- * PROJECT:     ReactOS Arbitrartion Library
+ * PROJECT:     ReactOS Arbitration Library
  * LICENSE:     MIT (https://spdx.org/licenses/MIT)
  * PURPOSE:     Generic Arbiter Library
  * COPYRIGHT:   Copyright 2026 Justin Miller <justin.miller@reactos.org>
  */
 
 #pragma once
+
+#define TAG_ARBITER  'ibrA'
+
+/*
+ * ARBITER_ALTERNATIVE.Priority:
+ * The arbiter allocation engine walks the alternatives in increasing priority.
+ * An ordinary alternative's priority is its ordering-list index biased by one
+ * (except for IO_RESOURCE_PREFERRED, so preferred ranges sort first).
+ * Once the orderings are exhausted it gets one final whole-window pass
+ * at (PREFERRED_)RESERVED before getting set to EXHAUSTED.
+ *
+ * Public as any driver can modify these of any range that's passed down.
+ */
+#define ARBITER_PRIORITY_NULL               0x00000000
+#define ARBITER_PRIORITY_PREFERRED_RESERVED 0x7FFFFFFD
+#define ARBITER_PRIORITY_RESERVED           0x7FFFFFFE
+#define ARBITER_PRIORITY_EXHAUSTED          0x7FFFFFFF
+
+/* ARBITER_ALTERNATIVE.Flags */
+#define ARBITER_ALTERNATIVE_FLAG_FIXED      0x00000001  // one placement only
+#define ARBITER_ALTERNATIVE_FLAG_SHARED     0x00000002  // CmResourceShareShared
+
+/*
+ * Range attribute bits
+ *
+ * ARBITER_RANGE_SHARED_DRIVER:
+ * Marks a range with a CmResourceShareDriverExclusive
+ *
+ * ARBITER_RANGE_BOOT_ALLOCATED:
+ * Marks a firmware boot configuration
+ */
+#define ARBITER_RANGE_SHARED_DRIVER         0x0
+#define ARBITER_RANGE_BOOT_ALLOCATED        0x04
+
+/* ARBITER_ALLOCATION_STATE.Flags */
+#define ARBITER_STATE_FLAG_NULL_CONFLICT_OK 0x0001  // a NULL-owner conflict is OK
 
 typedef struct _ARBITER_ALTERNATIVE
 {
@@ -294,11 +330,171 @@ typedef struct _ARBITER_INSTANCE
 CODE_SEG("PAGE")
 NTSTATUS
 NTAPI
-ArbInitializeArbiterInstance(
+ArbiterLibInitializeInstance(
     _Inout_ PARBITER_INSTANCE Arbiter,
     _In_ PDEVICE_OBJECT BusDeviceObject,
     _In_ CM_RESOURCE_TYPE ResourceType,
     _In_ PCWSTR ArbiterName,
     _In_ PCWSTR OrderName,
     _In_ PARB_TRANSLATE_ORDERING TranslateOrderingFunction
+);
+
+CODE_SEG("PAGE")
+VOID
+NTAPI
+ArbiterLibDeleteInstance(
+    _In_ PARBITER_INSTANCE Arbiter
+);
+
+CODE_SEG("PAGE")
+VOID
+NTAPI
+ArbiterLibFreeOrderingList(
+    _Inout_ PARBITER_ORDERING_LIST OrderingList
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibAddOrdering(
+    _Inout_ PARBITER_ORDERING_LIST OrderingList,
+    _In_ UINT64 Start,
+    _In_ UINT64 End
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibDefaultAssignmentOrdering(
+    _Inout_ PARBITER_INSTANCE Arbiter,
+    _In_ PCWSTR AllocationOrderName,
+    _In_ PCWSTR ReservedResourcesName,
+    _In_opt_ PARB_TRANSLATE_ORDERING TranslateOrderingFunction
+);
+
+/* The generic dispatch entry point (installed as ARBITER_INTERFACE.ArbiterHandler). */
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibHandler(
+    _In_ PVOID Context,
+    _In_ ARBITER_ACTION Action,
+    _Inout_ PARBITER_PARAMETERS Parameters
+);
+
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibTestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_TEST_ALLOCATION_PARAMETERS Parameters
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibRetestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_RETEST_ALLOCATION_PARAMETERS Parameters
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibBootAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_BOOT_ALLOCATION_PARAMETERS Parameters
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibQueryConflict(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_QUERY_CONFLICT_PARAMETERS Parameters
+);
+
+#else // (NTDDI_VERSION < NTDDI_VISTA)
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibTestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PLIST_ENTRY ArbitrationList
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibRetestAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PLIST_ENTRY ArbitrationList
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibBootAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PLIST_ENTRY ArbitrationList
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibQueryConflict(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _In_ PDEVICE_OBJECT PhysicalDeviceObject,
+    _In_ PIO_RESOURCE_DESCRIPTOR ConflictingResource,
+    _Out_ PULONG ConflictCount,
+    _Out_ PARBITER_CONFLICT_INFO *Conflicts
+);
+#endif // (NTDDI_VERSION >= NTDDI_VISTA)
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibCommitAllocation(
+    _In_ PARBITER_INSTANCE Arbiter
+);
+
+CODE_SEG("PAGE")
+NTSTATUS
+NTAPI
+ArbiterLibRollbackAllocation(
+    _In_ PARBITER_INSTANCE Arbiter
+);
+
+CODE_SEG("PAGE")
+BOOLEAN
+NTAPI
+ArbiterLibGetNextAllocationRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState
+);
+
+CODE_SEG("PAGE")
+BOOLEAN
+NTAPI
+ArbiterLibFindSuitableRange(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState
+);
+
+CODE_SEG("PAGE")
+VOID
+NTAPI
+ArbiterLibAddAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState
+);
+
+CODE_SEG("PAGE")
+VOID
+NTAPI
+ArbiterLibBacktrackAllocation(
+    _In_ PARBITER_INSTANCE Arbiter,
+    _Inout_ PARBITER_ALLOCATION_STATE ArbState
 );
