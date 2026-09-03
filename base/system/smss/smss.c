@@ -10,8 +10,6 @@
 
 #include "smss.h"
 
-#include <pseh/pseh2.h>
-
 #define NDEBUG
 #include <debug.h>
 
@@ -22,6 +20,9 @@ ULONG AttachedSessionId = -1;
 BOOLEAN SmpDebug;
 HANDLE SmApiPort;
 HANDLE SmpInitialCommandProcessId;
+
+#define DEFAULT_SUBSYSTEM_DESC          L"Windows SubSystem"
+#define DEFAULT_INITIAL_COMMAND_DESC    L"Windows Logon Process"
 
 /* FUNCTIONS ******************************************************************/
 
@@ -368,19 +369,20 @@ SmpExecuteInitialCommand(IN ULONG MuSessionId,
 
 NTSTATUS
 NTAPI
-SmpTerminate(IN PULONG_PTR Parameters,
-             IN ULONG ParameterMask,
-             IN ULONG ParameterCount)
+SmpTerminate(
+    _In_reads_(ParameterCount) PULONG_PTR Parameters,
+    _In_ ULONG ParameterMask,
+    _In_ ULONG ParameterCount)
 {
     NTSTATUS Status;
-    BOOLEAN Old;
     ULONG Response;
+    BOOLEAN Old;
 
     /* Give the shutdown privilege to the thread */
-    if (RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, TRUE, TRUE, &Old) ==
-        STATUS_NO_TOKEN)
+    Status = RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, TRUE, TRUE, &Old);
+    if (Status == STATUS_NO_TOKEN)
     {
-        /* Thread doesn't have a token, give it to the entire process */
+        /* The thread doesn't have a token, give it to the entire process */
         RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, TRUE, FALSE, &Old);
     }
 
@@ -392,12 +394,18 @@ SmpTerminate(IN PULONG_PTR Parameters,
                               OptionShutdownSystem,
                               &Response);
 
-    /* Terminate the process if the hard error didn't already */
+    /* Terminate the process if the hard error didn't already.
+     * In case the Parameters array has at least 2 elements,
+     * use Parameters[1] that contains the actual failure code,
+     * instead of what NtRaiseHardError() returned. */
+    if (ParameterCount >= 2) Status = Parameters[1];
     return NtTerminateProcess(NtCurrentProcess(), Status);
 }
 
 LONG
-SmpUnhandledExceptionFilter(IN PEXCEPTION_POINTERS ExceptionInfo)
+NTAPI
+SmpUnhandledExceptionFilter(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo)
 {
     PEXCEPTION_RECORD ExceptionRecord = ExceptionInfo->ExceptionRecord;
     ULONG_PTR Parameters[4];
@@ -530,7 +538,7 @@ _main(IN INT argc,
         }
         SmpReleasePrivilege(State);
 
-        /* Wait on either CSRSS or Winlogon to die */
+        /* Wait on either CSRSS or the initial command to die */
         Status = NtWaitForMultipleObjects(RTL_NUMBER_OF(Handles),
                                           Handles,
                                           WaitAny,
@@ -538,22 +546,23 @@ _main(IN INT argc,
                                           NULL);
         if (Status == STATUS_WAIT_0)
         {
-            /* CSRSS is dead, get exit code and prepare for the hard error */
-            RtlInitUnicodeString(&DbgString, L"Windows SubSystem");
+            /* CSRSS is dead, get its exit code */
+            RtlInitUnicodeString(&DbgString, DEFAULT_SUBSYSTEM_DESC);
             Status = NtQueryInformationProcess(Handles[0],
                                                ProcessBasicInformation,
                                                &ProcessInfo,
                                                sizeof(ProcessInfo),
                                                NULL);
-            DPRINT1("SMSS: Windows subsystem terminated when it wasn't supposed to.\n");
+            DPRINT1("SMSS: %S terminated when it wasn't supposed to.\n",
+                    DEFAULT_SUBSYSTEM_DESC);
         }
         else
         {
             /* The initial command is dead or we have another failure */
-            RtlInitUnicodeString(&DbgString, L"Windows Logon Process");
+            RtlInitUnicodeString(&DbgString, DEFAULT_INITIAL_COMMAND_DESC);
             if (Status == STATUS_WAIT_1)
             {
-                /* Winlogon.exe got terminated, get its exit code */
+                /* The initial command got terminated, get its exit code */
                 Status = NtQueryInformationProcess(Handles[1],
                                                    ProcessBasicInformation,
                                                    &ProcessInfo,
