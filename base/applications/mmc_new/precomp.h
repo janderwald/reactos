@@ -17,10 +17,10 @@
 #include <winuser.h>
 #include <commctrl.h>
 #include <commdlg.h>
-#include <tchar.h>
 #include <atlstr.h>
 #include <atlwin.h>
 #include <atlcom.h>
+#include <atlcoll.h>
 #include <atlsimpcoll.h>
 #include <ui/rosctrls.h>
 #include <shlwapi.h>
@@ -28,6 +28,7 @@
 #include <shlobj.h>
 #include <reactos/debug.h>
 #include <shellutils.h>
+#include <shellapi.h>
 #include <mmc.h>
 
 
@@ -37,11 +38,11 @@
 
 #include "resource.h"
 
-#include "CImageList.h"
+#include "CSnapinCacheEntry.h"
 #include "CSnapin.h"
 #include "CConsoleWnd.h"
-#include "CAddDialog.h"
 #include "CMainWnd.h"
+#include "CAddDialog.h"
 
 
 #endif /* _MMC_PCH_ */
