@@ -23,12 +23,12 @@ UsbVideoProcessStatusPacket(
     UCHAR bAttribute  = length > 4 ? pData[4] : 0;
 
     UCHAR originType  = bStatusType & 0x0F;
-    DPRINT1("bStatusType %x bOriginator %x bEvent %x bSelector %x bAttribute %x\n",
+    DPRINT("bStatusType %x bOriginator %x bEvent %x bSelector %x bAttribute %x\n",
         bStatusType, bOriginator, bEvent, bSelector, bAttribute);
 
     switch (originType) {
         case 0x01:  // VideoControl Interface
-            DPRINT1("UVC VC Status: Unit=%d Event=0x%02X "
+            DPRINT("UVC VC Status: Unit=%d Event=0x%02X "
                      "Selector=0x%02X Attr=0x%02X\n",
                      bOriginator, bEvent, bSelector, bAttribute);
 
@@ -48,12 +48,12 @@ UsbVideoProcessStatusPacket(
             break;
 
         case 0x02:  // VideoStreaming Interface
-            DbgPrint("UVC VS Status: Terminal=%d Event=0x%02X\n",
+            DPRINT("UVC VS Status: Terminal=%d Event=0x%02X\n",
                      bOriginator, bEvent);
             break;
 
         default:
-            DbgPrint("UVC Status unbekannt: Type=0x%02X\n",
+            DPRINT("UVC Status unbekannt: Type=0x%02X\n",
                      bStatusType);
             break;
     }
@@ -295,7 +295,7 @@ USBVideoIsoReadComplete(
         if (Urb->UrbIsochronousTransfer.IsoPacket[Index].Status != USBD_STATUS_SUCCESS)
         {
             DPRINT("Status %x failed for packet %u\n", Urb->UrbIsochronousTransfer.IsoPacket[Index].Status, Index);
-            break;
+            continue;
         }
         Offset = Urb->UrbIsochronousTransfer.IsoPacket[Index].Offset;
         BytesReceived = Urb->UrbIsochronousTransfer.IsoPacket[Index].Length;
@@ -303,7 +303,7 @@ USBVideoIsoReadComplete(
         HeaderLen = Hdr->bHeaderLength;
 
         /* validate header length */
-        if (HeaderLen < 2 || HeaderLen > 12 || HeaderLen > BytesReceived)
+        if (HeaderLen < 2 || HeaderLen > 12 || HeaderLen >= BytesReceived)
         {
             DPRINT("Invalid packet atIso Index %u Offset %u HeaderLen %u BytesReceived %u\n", Index,
                     Offset, HeaderLen, BytesReceived);
@@ -324,7 +324,7 @@ USBVideoIsoReadComplete(
         if (!DeviceExtension->IsMjpegFormat)
         {
             /* check FID */
-#if 0
+#if 1
             if (Frame->FrameStarted && Frame->FrameSize > 0 && (Hdr->FID != Frame->LastFid))
             {
                 USBVideoDeliverFrame(DeviceExtension,
@@ -379,6 +379,7 @@ USBVideoIsoReadComplete(
             if (PayloadDataLen > 0 && Frame->FrameSize + PayloadDataLen <= Frame->MaxFrameSize)
             {
                 DPRINT("Copying Bytes %u\n", PayloadDataLen);
+                PayloadDataLen &= ~(0x3); // YUY2 macropixel (Y0 U0 Y1 V0) is 4 bytes
                 RtlCopyMemory(
                     Frame->FrameBuffer + Frame->FrameSize,
                     Data + PayloadDataOffset,
@@ -432,7 +433,7 @@ USBVideoIsoReadComplete(
     }
     KeReleaseSpinLock(&DeviceExtension->StreamingLock, OldLevel);
 
-    RtlZeroMemory(Urb->UrbIsochronousTransfer.TransferBuffer, DeviceExtension->IsoTransferSize);
+    //RtlZeroMemory(Urb->UrbIsochronousTransfer.TransferBuffer, DeviceExtension->IsoTransferSize);
     //USBVideoGetCurrentFrameNumber(Pin);
     //DPRINT1("[USBVIDEO] UsbFrameNumber %u\n", DeviceExtension->UsbFrameNumber);
     /* requeue irp */

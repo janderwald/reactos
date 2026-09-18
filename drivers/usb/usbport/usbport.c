@@ -1823,7 +1823,10 @@ USBPORT_AllocateCommonBuffer(IN PDEVICE_OBJECT FdoDevice,
                                                             TRUE);
 
     if (!BaseVA)
-        goto Exit;
+    {
+        ExFreePoolWithTag(HeaderBuffer, USB_PORT_TAG);
+        return NULL;
+    }
     StartBufferVA = BaseVA & ~(PAGE_SIZE - 1);
 
     StartBufferPA = LogicalAddress.LowPart & ~(PAGE_SIZE - 1);
@@ -2306,7 +2309,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
     BOOLEAN WriteToDevice;
     BOOLEAN IsFlushSuccess;
     PMDL Mdl;
-    ULONG_PTR CurrentVa;
+    PVOID CurrentVa;
     SIZE_T TransferLength;
     PUSBPORT_ENDPOINT Endpoint;
     PDEVICE_OBJECT FdoDevice;
@@ -2342,7 +2345,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
         DmaOperations = FdoExtension->DmaAdapter->DmaOperations;
 
         WriteToDevice = Transfer->Direction == USBPORT_DMA_DIRECTION_TO_DEVICE;
-        CurrentVa = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
+        CurrentVa = MmGetMdlVirtualAddress(Mdl);
         do
         {
             DPRINT_CORE("USBPORT_CompleteTransfer TransferLength %x WriteToDevice %x\n", TransferLength, WriteToDevice);
@@ -2371,7 +2374,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
     if (Urb->UrbHeader.UsbdFlags & USBD_FLAG_ALLOCATED_MDL)
     {
         IoFreeMdl(Transfer->TransferBufferMDL);
-        Urb->UrbHeader.UsbdFlags |= ~USBD_FLAG_ALLOCATED_MDL;
+        Urb->UrbHeader.UsbdFlags &= ~USBD_FLAG_ALLOCATED_MDL;
     }
 
     if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
@@ -2383,7 +2386,7 @@ USBPORT_CompleteTransfer(IN PURB Urb,
         Urb->UrbControlTransfer.hca.Reserved8[0] = NULL;
     }
 
-    Urb->UrbHeader.UsbdFlags |= ~USBD_FLAG_ALLOCATED_TRANSFER;
+    Urb->UrbHeader.UsbdFlags &= ~USBD_FLAG_ALLOCATED_TRANSFER;
     Irp = Transfer->Irp;
 
     if (Irp)
@@ -2431,7 +2434,7 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
     PURB Urb;
     PUSBPORT_ENDPOINT Endpoint;
     PMDL Mdl;
-    ULONG_PTR CurrentVa;
+    PVOID CurrentVa;
     PUSBPORT_SCATTER_GATHER_LIST sgList;
     SIZE_T CurrentLength;
     ULONG ix;
@@ -2468,7 +2471,7 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
         Mdl = Urb->UrbControlTransfer.TransferBufferMDL;
     }
 
-    CurrentVa = (ULONG_PTR)MmGetMdlVirtualAddress(Mdl);
+    CurrentVa = MmGetMdlVirtualAddress(Mdl);
 
     sgList = &Transfer->SgList;
 
@@ -2502,7 +2505,11 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
 
         PhAddress.HighPart = 0;
         SgCurrentLength = TransferLength;
-
+        if (!TransferLength)
+        {
+            DPRINT1("MapTransfer returned zero length");
+            continue;
+        }
         do
         {
             ElementLength = PAGE_SIZE - (PhAddress.LowPart & (PAGE_SIZE - 1));
@@ -2536,7 +2543,7 @@ USBPORT_MapTransfer(IN PDEVICE_OBJECT FdoDevice,
         PhAddr = PhAddress;
 
         CurrentLength += TransferLength;
-        CurrentVa += TransferLength;
+        CurrentVa = (PVOID)((ULONG_PTR)CurrentVa + TransferLength);
 
         TransferLength = Transfer->TransferParameters.TransferBufferLength -
                          CurrentLength;

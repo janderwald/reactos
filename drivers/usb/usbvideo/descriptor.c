@@ -65,8 +65,11 @@ USBVideoFindStreamingInterfaceDescriptor(
     /* get device extension */
     DeviceExtension = Pin->Context;
 
-    /* init alt setting */
-    AltSetting = 1;
+    /* Scan from alt setting 0: isochronous devices keep the zero-bandwidth
+     * "off" setting at alt 0 (bNumEndpoints == 0, skipped below), but some
+     * UVC devices stream over a Bulk pipe instead and place that (only)
+     * endpoint directly at alt 0, with no separate off-setting at all. */
+    AltSetting = 0;
 
     /* find first descriptor */
     Descriptor = USBD_ParseConfigurationDescriptorEx(DeviceExtension->ConfigurationDescriptor, DeviceExtension->ConfigurationDescriptor,
@@ -78,20 +81,35 @@ USBVideoFindStreamingInterfaceDescriptor(
 
     while(Descriptor != NULL)
     {
-        EndpointDescriptor = (PUSB_ENDPOINT_DESCRIPTOR)((ULONG_PTR)Descriptor + Descriptor->bLength);
-        ASSERT(EndpointDescriptor->bDescriptorType == 0x05);
-        ASSERT(EndpointDescriptor->bLength == 0x07);
-        USHORT wMaxPacketSize = EndpointDescriptor->wMaxPacketSize;
-        ULONG MaxPacketSize = (wMaxPacketSize & 0x7FF) * (((wMaxPacketSize >> 11) & 3) + 1);
-
-        if (MaxPacketSize >= dwMaxPayloadTransferSize)
+        if (Descriptor->bNumEndpoints != 0)
         {
-            /* found alternate setting */
-            DPRINT1("wMaxPacketSize %x AltSetting %x\n", EndpointDescriptor->wMaxPacketSize, AltSetting);
-            *AlternateSetting = AltSetting;
-            *pMaxPayloadTransferSize = MaxPacketSize;
-            return STATUS_SUCCESS;
+            EndpointDescriptor = (PUSB_ENDPOINT_DESCRIPTOR)((ULONG_PTR)Descriptor + Descriptor->bLength);
+            ASSERT(EndpointDescriptor->bDescriptorType == 0x05);
+            ASSERT(EndpointDescriptor->bLength == 0x07);
+
+            if ((EndpointDescriptor->bmAttributes & 0x03) == USB_ENDPOINT_TYPE_BULK)
+            {
+                DPRINT1("Bulk streaming endpoint found at AltSetting %x\n", AltSetting);
+                *AlternateSetting = (UCHAR)AltSetting;
+                *pMaxPayloadTransferSize = dwMaxPayloadTransferSize;
+                return STATUS_SUCCESS;
+            }
+            else if ((EndpointDescriptor->bmAttributes & 0x03) == USB_ENDPOINT_TYPE_ISOCHRONOUS)
+            {
+                USHORT wMaxPacketSize = EndpointDescriptor->wMaxPacketSize;
+                ULONG MaxPacketSize = (wMaxPacketSize & 0x7FF) * (((wMaxPacketSize >> 11) & 3) + 1);
+
+                if (MaxPacketSize >= dwMaxPayloadTransferSize)
+                {
+                    /* found alternate setting */
+                    DPRINT1("wMaxPacketSize %x AltSetting %x\n", EndpointDescriptor->wMaxPacketSize, AltSetting);
+                    *AlternateSetting = (UCHAR)AltSetting;
+                    *pMaxPayloadTransferSize = MaxPacketSize;
+                    return STATUS_SUCCESS;
+                }
+            }
         }
+
         AltSetting++;
 
         /* find next descriptor */
@@ -101,10 +119,10 @@ USBVideoFindStreamingInterfaceDescriptor(
                                                         0x02, // INTERFACE_STREAMING_SUBCLASS
                                                         -1);
     }
-    /* falling back to bulk */
-    DPRINT1("Fallback to bulk\n");
-    *AlternateSetting = 0;
-    return STATUS_SUCCESS;
+
+    DPRINT1("USBVideoFindStreamingInterfaceDescriptor: no usable Bulk or Isochronous streaming endpoint for InterfaceNumber %x (needed %lu bytes)\n",
+            InterfaceNumber, dwMaxPayloadTransferSize);
+    return STATUS_NOT_SUPPORTED;
 }
 
 

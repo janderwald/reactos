@@ -118,6 +118,7 @@ EHCI_AllocTd(IN PEHCI_EXTENSION EhciExtension,
 {
     PEHCI_HCD_TD TD;
     ULONG ix;
+    ULONG Size;
 
     DPRINT_EHCI("EHCI_AllocTd: ... \n");
 
@@ -128,10 +129,11 @@ EHCI_AllocTd(IN PEHCI_EXTENSION EhciExtension,
     }
 
     TD = EhciEndpoint->FirstTD;
-
+    Size = ROUND_UP(sizeof(EHCI_HCD_TD), 32);
+    ASSERT(Size == sizeof(EHCI_HCD_TD));
     for (ix = 1; TD->TdFlags & EHCI_HCD_TD_FLAG_ALLOCATED; ix++)
     {
-        TD += 1;
+        TD = (PEHCI_HCD_TD)((ULONG_PTR)TD + Size);
 
         if (ix >= EhciEndpoint->MaxTDs)
         {
@@ -612,7 +614,7 @@ EHCI_OpenIsoEndpoint(IN PEHCI_EXTENSION EhciExtension,
     EhciEndpoint->RemainSITDs = SitdCount;
 
     /* Initialize all siTDs in the buffer */
-    Size = ROUND_UP(sizeof(EHCI_HCD_ITD), 32);
+    Size = ROUND_UP(sizeof(EHCI_HCD_SITD), 32);
     for (ix = 0; ix < SitdCount; ix++)
     {
         SITD = EhciEndpoint->FirstSITD + ix;
@@ -1057,7 +1059,7 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
 
     HcResourcesVA = (PEHCI_HC_RESOURCES)BaseVA;
     HcResourcesPA = BasePA;
-    ASSERT(!(HcResourcesPA & 0x3FF));
+    ASSERT(!(HcResourcesPA & 0xFFF));
 
     EhciExtension->HcResourcesVA = HcResourcesVA;
     EhciExtension->HcResourcesPA = BasePA;
@@ -1259,7 +1261,7 @@ EHCI_TakeControlHC(IN PEHCI_EXTENSION EhciExtension)
     EHCI_HC_CAPABILITY_PARAMS CapParameters;
 
     CapParameters = EhciExtension->CapabilityRegisters->CapParameters;
-    ASSERT(CapParameters.Addressing64bitCapability == 0);
+    //ASSERT(CapParameters.Addressing64bitCapability == 0);
 
     DPRINT("EHCI_TakeControlHC: EhciExtension - %p\n", EhciExtension);
 
@@ -1299,7 +1301,7 @@ EHCI_TakeControlHC(IN PEHCI_EXTENSION EhciExtension)
                                               sizeof(LegacyCapability));
         KeQuerySystemTime(&CurrentTime);
 
-        if (LegacyCapability.BiosOwnedSemaphore)
+        if (!LegacyCapability.BiosOwnedSemaphore)
         {
             DPRINT("EHCI_TakeControlHC: Ownership is ok\n");
             break;
@@ -1345,6 +1347,12 @@ EHCI_StartController(IN PVOID ehciExtension,
     EhciExtension->CapabilityRegisters = CapabilityRegisters;
 
     CapabilityRegLength = READ_REGISTER_UCHAR(&CapabilityRegisters->RegistersLength);
+
+    if (CapabilityRegLength & 3)
+    {
+        DPRINT1("EHCI_StartController: invalid CAPLENGTH - %u\n", CapabilityRegLength);
+        return MP_STATUS_HW_ERROR;
+    }
 
     OperationalRegs = (PEHCI_HW_REGISTERS)((ULONG_PTR)CapabilityRegisters +
                                                       CapabilityRegLength);
@@ -1435,7 +1443,7 @@ EHCI_StartController(IN PVOID ehciExtension,
 
         for (Port = 1; Port <= EhciExtension->NumberOfPorts; Port++)
         {
-            EHCI_RH_ChirpRootPort(EhciExtension, Port++);
+            EHCI_RH_ChirpRootPort(EhciExtension, Port);
         }
     }
 
@@ -2036,7 +2044,7 @@ EHCI_LinkTransferToQueue(IN PEHCI_EXTENSION EhciExtension,
         QH->sqh.HwQH.NextTD = NextTD->PhysicalAddress;
         QH->sqh.HwQH.AlternateNextTD = NextTD->HwTD.AlternateNextTD;
 
-        QH->sqh.HwQH.Token.Status = (UCHAR)~(EHCI_TOKEN_STATUS_ACTIVE |
+        QH->sqh.HwQH.Token.Status &= (UCHAR)~(EHCI_TOKEN_STATUS_ACTIVE |
                                              EHCI_TOKEN_STATUS_HALTED);
 
         QH->sqh.HwQH.Token.TransferBytes = 0;
@@ -2648,7 +2656,8 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
         PEHCI_HCD_ITD LastITD = NULL;
         PEHCI_HCD_ITD FirstITD = NULL;
         PEHCI_HC_RESOURCES HcResourcesVA;
-        ULONG CurrentFrame, InitFrame;
+        ULONG CurrentFrame, InitFrame, ReservedFrame;
+        ULONG TailFrames, HeadFrames;
         ULONG FrameIndex;
         EHCI_LINK_POINTER LinkPointer;
 
@@ -2666,14 +2675,44 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
         /* Use the first packet's FrameNumber for scheduling */
         InitFrame = IsoTransfer->Packets[0].FrameNumber % EHCI_FRAME_LIST_MAX_ENTRIES;
-        CurrentFrame = RtlFindClearBitsAndSet(&EhciExtension->IsoBitmap, NumITDs, InitFrame);
-        if (CurrentFrame == (ULONG)-1)
+
         {
-            /* no consecutive found */
-            DPRINT1("EHCI_SubmitIsoTransfer no consecutive gap found\n");
-            return MP_STATUS_NO_RESOURCES;
+            ULONG CurrentHwFrame = EHCI_Get32BitFrameNumber(EhciExtension) % EHCI_FRAME_LIST_MAX_ENTRIES;
+            ULONG FramesAhead = (InitFrame - CurrentHwFrame) % EHCI_FRAME_LIST_MAX_ENTRIES;
+
+            if (FramesAhead < EHCI_ISO_MIN_SCHEDULE_LEEWAY ||
+                FramesAhead > (EHCI_FRAME_LIST_MAX_ENTRIES / 2))
+            {
+                DPRINT("EHCI_SubmitIsoTransfer: requested frame %lu stale relative to current frame %lu, rescheduling\n",
+                        InitFrame, CurrentHwFrame);
+                InitFrame = ((CurrentHwFrame + EHCI_ISO_MIN_SCHEDULE_LEEWAY) & 0x3F8) % EHCI_FRAME_LIST_MAX_ENTRIES;
+            }
         }
-        DPRINT("OriginalFrame %u New FrameNumber %u NumITDs %u\n", InitFrame, CurrentFrame, NumITDs);
+
+
+retry:
+        TailFrames = EHCI_FRAME_LIST_MAX_ENTRIES - InitFrame;
+        if (TailFrames > NumITDs)
+            TailFrames = NumITDs;
+        HeadFrames = NumITDs - TailFrames;
+
+        if (!RtlAreBitsClear(&EhciExtension->IsoBitmap, InitFrame, TailFrames) ||
+            (HeadFrames && !RtlAreBitsClear(&EhciExtension->IsoBitmap, 0, HeadFrames)))
+        {
+            DPRINT("EHCI_SubmitIsoTransfer: no room for %lu frames starting at %lu (wrapped %lu)\n",
+                    NumITDs, InitFrame, HeadFrames);
+            InitFrame = RtlFindClearBits(&EhciExtension->IsoBitmap, NumITDs, 0);
+            ASSERT(InitFrame != (ULONG)-1);
+            goto retry;
+        }
+
+        RtlSetBits(&EhciExtension->IsoBitmap, InitFrame, TailFrames);
+        if (HeadFrames)
+            RtlSetBits(&EhciExtension->IsoBitmap, 0, HeadFrames);
+
+        ReservedFrame = InitFrame;
+
+        DPRINT("OriginalFrame %u ReservedFrame %u NumITDs %u\n", InitFrame, ReservedFrame, NumITDs);
         //EHCI_DisablePeriodicList(EhciExtension);
 
         /* Allocate and program iTDs, one per frame */
@@ -2691,6 +2730,9 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             {
                 DPRINT1("EHCI_SubmitIsoTransfer: Failed to allocate iTD %lu\n", ITDCount);
                 /* TODO: free previously allocated iTDs */
+                RtlClearBits(&EhciExtension->IsoBitmap, ReservedFrame, TailFrames);
+                if (HeadFrames)
+                    RtlClearBits(&EhciExtension->IsoBitmap, 0, HeadFrames);
                 return MP_STATUS_NO_RESOURCES;
             }
 
@@ -2704,6 +2746,8 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
             RtlZeroMemory(&ITD->HwTD, sizeof(EHCI_ISOCHRONOUS_TD));
             ITD->EhciTransfer = EhciTransfer;
             ITD->EhciEndpoint = EhciEndpoint;
+
+            CurrentFrame = ReservedFrame + ITDCount;
 
             /* How many packets go in this iTD */
             PacketsThisITD = IsoTransfer->TotalPackets - PacketIndex;
@@ -2755,7 +2799,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
                 BufferPA = Packet->Segment0Addr.LowPart;
                 PageAddr = BufferPA >> 12;
-                Offset = Packet->Segment0Addr.LowPart & 0xFFF;
+                Offset = BufferPA & 0xFFF;
 
                 /* Find or add the page for this packet's buffer */
                 if (BufferPageCount == 0 || PageAddr != LastPage)
@@ -2828,14 +2872,13 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 ITD->HwTD.Transaction[MicroFrame].Status = 1 << 3;
 
                 /* Set IOC on the last transaction of the last iTD */
-                if (p == PacketsThisITD - 1)
+                if (p == PacketsThisITD - 1 && PacketIndex + p == IsoTransfer->TotalPackets - 1)
                     ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 1;
                 else
                     ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 0;
 
                 /* Store software tracking info */
                 ITD->PacketLength[MicroFrame] = Packet->PacketLength;
-                ITD->PacketStatus[MicroFrame] = 0;
             }
 #ifdef USBEHCI_TRACE
             for(ULONG Index = 0; Index < 7; Index++)
@@ -2882,6 +2925,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 LinkPointer.Type = EHCI_LINK_TYPE_iTD;
                 LinkPointer.Terminate = 0;
                 LinkPointer.Reserved = 0;
+                ITD->HwTD.NextLink = LastITD->HwTD.NextLink;
                 LastITD->HwTD.NextLink = LinkPointer;
             }
             LastITD = ITD;
@@ -2906,7 +2950,6 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
                 EhciEndpoint->StartingFrame = FrameIndex;
 
             PacketIndex += PacketsThisITD;
-            CurrentFrame++;
             ITDCount++;
             InsertTailList(&EhciTransfer->ActiveITDs, &ITD->ActiveITDEntry);
         }
@@ -3740,12 +3783,13 @@ EHCI_PollActiveAsyncEndpoint(IN PEHCI_EXTENSION EhciExtension,
         {
             ASSERT((TD->TdFlags & EHCI_HCD_TD_FLAG_DUMMY) == 0);
 
-            TD->TdFlags |= EHCI_HCD_TD_FLAG_DONE;
-
             if (TD->HwTD.Token.Status & EHCI_TOKEN_STATUS_ACTIVE)
                 TD->TdFlags |= EHCI_HCD_TD_FLAG_ACTIVE;
-
-            InsertTailList(&EhciEndpoint->ListTDs, &TD->DoneLink);
+            else
+            {
+                TD->TdFlags |= EHCI_HCD_TD_FLAG_DONE;
+                InsertTailList(&EhciEndpoint->ListTDs, &TD->DoneLink);
+            }
             TD = TD->NextHcdTD;
         }
     }
@@ -4488,9 +4532,6 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
             }
             else
             {
-                ASSERT((Status & (1 << 2)) == 0);
-                ASSERT((Status & (1 << 1)) == 0);
-
                 /* Transaction completed - bytes transferred = programmed - remaining */
                 Completed = ITD->PacketLength[TransactionIndex] - Remaining;
                 TotalBytesTransferred += Completed;
@@ -4498,19 +4539,19 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                 /* Check for errors (bit 2 = Transaction Error in 4-bit status) */
                 if (Status & 0x01)
                 {
-                    DPRINT1("EHCI_ProcessCompletedITD: Transaction %d error, status 0x%x\n",
+                    DPRINT("EHCI_ProcessCompletedITD: Transaction %d error, status 0x%x\n",
                             TransactionIndex, Status);
                     ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_XACT_ERROR;
                 }
                 else if (Status & 0x02)
                 {
-                    DPRINT1("EHCI_ProcessCompletedITD: Babble %d error, status 0x%x\n",
+                    DPRINT("EHCI_ProcessCompletedITD: Babble %d error, status 0x%x\n",
                             TransactionIndex, Status);
                     ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_BABBLE_DETECTED;
                 }
                 else if (Status & 0x04)
                 {
-                    DPRINT1("EHCI_ProcessCompletedITD: Data Buffer Error %d error, status 0x%x\n",
+                    DPRINT("EHCI_ProcessCompletedITD: Data Buffer Error %d error, status 0x%x\n",
                             TransactionIndex, Status);
                     ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_DATA_BUFFER_ERROR;
                 }
@@ -4519,7 +4560,6 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
                     ITD->IsoPacket[TransactionIndex]->CompletionStatus = USBD_STATUS_SUCCESS;
                     ITD->IsoPacket[TransactionIndex]->BytesTransferred = Completed;
                 }
-                ITD->PacketStatus[TransactionIndex] = Status;
             }
         }
     }

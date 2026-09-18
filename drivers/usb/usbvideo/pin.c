@@ -175,6 +175,7 @@ USBVideoGetDataRangeIndexForFormat(
     *FormatIndex = DeviceExtension->VideoFormatInfo[2].bFormatIndex;
     *FrameIndex = DeviceExtension->VideoFormatInfo[2].bFrameIndex;
     *dwFrameInterval = DeviceExtension->VideoFormatInfo[2].dwFrameInterval;
+    *DataRange = (PKS_DATARANGE_VIDEO)DataRanges[0];
     return STATUS_SUCCESS;
 }
 
@@ -219,7 +220,7 @@ USBVideoSetStreamingDefaults(
         if (DataRange->bFixedSizeSamples)
         {
             /* uncompressed format have fixed samples */
-            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize;
+            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize * 2;
             ULONG Payload = DeviceExtension->dwMaxPayloadTransferSize;
             ULONG PacketCount = TransferSize / Payload;
             ULONG Rest = TransferSize % Payload;
@@ -229,9 +230,7 @@ USBVideoSetStreamingDefaults(
                 PacketCount++;
             }
             PacketCount = ROUND_UP(PacketCount, 8);
-            UrbPoolCount = 1; //max(PacketCount / 64, 1);
-            //PacketCount = min(PacketCount, 64);
-
+            UrbPoolCount = 1;
             TransferSize = PacketCount * Payload;
             DeviceExtension->IsoTransferSize = TransferSize;
             DeviceExtension->FrameContextCount = 1;
@@ -242,22 +241,22 @@ USBVideoSetStreamingDefaults(
         }
         else
         {
-            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize;
-            ULONG Payload = (DeviceExtension->dwMaxPayloadTransferSize);
-            ULONG Rest = TransferSize % Payload;
+            ULONG TransferSize = DeviceExtension->dwMaxVideoFrameSize * 2;
+            ULONG Payload = DeviceExtension->dwMaxPayloadTransferSize;
             ULONG PacketCount = TransferSize / Payload;
+            ULONG Rest = TransferSize % Payload;
+            ULONG UrbPoolCount;
             if (Rest != 0)
             {
                 PacketCount++;
             }
             PacketCount = ROUND_UP(PacketCount, 8);
-            PacketCount = min(PacketCount, 64);
-            TransferSize = DeviceExtension->dwMaxPayloadTransferSize * PacketCount;
-
+            UrbPoolCount = 1;
+            TransferSize = PacketCount * Payload;
             DeviceExtension->IsoTransferSize = TransferSize;
             DeviceExtension->FrameContextCount = 1;
-            DeviceExtension->FrameContextSize = TransferSize * 12;
-            DeviceExtension->UrbPoolCount = 4;
+            DeviceExtension->FrameContextSize = DeviceExtension->dwMaxVideoFrameSize * 2;
+            DeviceExtension->UrbPoolCount = UrbPoolCount;
             DeviceExtension->IsoPacketCount = PacketCount;
             DeviceExtension->IsMjpegFormat = IsEqualGUIDAligned(&DataRange->DataRange.SubFormat, &KSDATAFORMAT_SUBTYPE_MJPEG_LOCAL);
 
@@ -279,7 +278,7 @@ USBVideoSetStreamingFormat(
     PKSPIN Pin,
     PKSDATAFORMAT ConnectionFormat)
 {
-    PKS_DATARANGE_VIDEO DataRange;
+    PKS_DATARANGE_VIDEO DataRange = NULL;
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     UCHAR FormatIndex, FrameIndex;
     ULONG dwFrameInterval;

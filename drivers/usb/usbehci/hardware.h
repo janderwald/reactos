@@ -7,6 +7,10 @@
 
 #define EHCI_FRAME_LIST_MAX_ENTRIES  1024 // Number of frames in Frame List
 
+/* Minimum number of frames an iso start frame must be ahead of the live
+ * hardware frame counter for EHCI_SubmitIsoTransfer to trust it as-is. */
+#define EHCI_ISO_MIN_SCHEDULE_LEEWAY 16
+
 /* EHCI hardware registers */
 #define EHCI_USBCMD            0
 #define EHCI_USBSTS            1
@@ -77,6 +81,8 @@ typedef struct _EHCI_HC_CAPABILITY_REGISTERS {
 } EHCI_HC_CAPABILITY_REGISTERS, *PEHCI_HC_CAPABILITY_REGISTERS;
 
 C_ASSERT(FIELD_OFFSET(EHCI_HC_CAPABILITY_REGISTERS, StructParameters) == 0x04);
+C_ASSERT(FIELD_OFFSET(EHCI_HC_CAPABILITY_REGISTERS, CapParameters) == 0x08);
+C_ASSERT(FIELD_OFFSET(EHCI_HC_CAPABILITY_REGISTERS, CompanionPortRouteDesc) == 0x0C);
 
 typedef union _EHCI_USB_COMMAND {
   struct {

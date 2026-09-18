@@ -136,7 +136,7 @@ C_ASSERT(sizeof(USBPORT_SCATTER_GATHER_ELEMENT) == 24);
 
 typedef struct _USBPORT_SCATTER_GATHER_LIST {
   ULONG Flags;
-  ULONG_PTR CurrentVa;
+  PVOID CurrentVa;
   PVOID MappedSystemVa;
   ULONG SgElementCount;
   USBPORT_SCATTER_GATHER_ELEMENT SgElement[2];

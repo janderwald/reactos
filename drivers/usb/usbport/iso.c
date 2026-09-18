@@ -103,7 +103,7 @@ USBPORT_InitializeIsoTransfer(PDEVICE_OBJECT FdoDevice,
     {
         FdoExtension = FdoDevice->DeviceExtension;
         Packet = &FdoExtension->MiniPortInterface->Packet;
-        Urb->StartFrame = (Packet->Get32BitFrameNumber(FdoExtension->MiniPortExt) + 64) & 0xFFFFFFF0;
+        Urb->StartFrame = (Packet->Get32BitFrameNumber(FdoExtension->MiniPortExt) + 16) & 0x3FF;
         DPRINT("Urb StartFrame %u\n", Urb->StartFrame);
     }
     /*
@@ -266,8 +266,7 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
 
     // Update packet descriptors with completion status
     ASSERT(IsoBlock->TotalPackets == IsoUrb->NumberOfPackets);
-    i = 0;
-    do
+    for(i = 0; i < IsoUrb->NumberOfPackets; i++)
     {
         PacketDescriptor = &IsoUrb->IsoPacket[i];
         IsoPacketData = &IsoBlock->Packets[i];
@@ -275,7 +274,7 @@ USBPORT_CompleteIsoTransfer(IN PVOID MiniPortExtension,
         PacketDescriptor->Status = IsoPacketData->CompletionStatus;
         PacketDescriptor->Length = IsoPacketData->BytesTransferred;
         DPRINT("Status %x Length %u Index %u\n", PacketDescriptor->Status, PacketDescriptor->Length, i);
-    }while(i++ < IsoUrb->NumberOfPackets);
+    }
 
     // Complete the transfer
     USBPORT_MiniportCompleteTransfer(MiniPortExtension,

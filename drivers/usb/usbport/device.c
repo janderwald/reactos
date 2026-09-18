@@ -1586,6 +1586,12 @@ USBPORT_HandleSelectInterface(IN PDEVICE_OBJECT FdoDevice,
     if (USBDStatus)
     {
         Interface->InterfaceHandle = (USBD_INTERFACE_HANDLE)-1;
+
+        if (InterfaceHandle)
+        {
+            InsertTailList(&ConfigurationHandle->InterfaceHandleList,
+                           &InterfaceHandle->InterfaceLink);
+        }
     }
     else
     {

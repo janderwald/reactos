@@ -1323,7 +1323,6 @@ StreamingThread(
                             {
                                 /* Convert YUY2 to BGRA32 */
                                 yuy2_to_rgb32(g_AppState.pFrameBuf, g_AppState.dwWidth, g_AppState.dwHeight, g_AppState.pDisplayBuf);
-                                //UvcConvertYuy2ToRgb(g_AppState.pFrameBuf, g_AppState.pDisplayBuf, g_AppState.dwWidth, g_AppState.dwHeight);
 
                                 g_AppState.bFrameReady = TRUE;
                                 UpdateStatus("YUY2: %lu bytes", sh.DataUsed);
@@ -1341,7 +1340,6 @@ StreamingThread(
                     }
                 }
             }
-            break;
     }while(g_AppState.doStreaming);
     return 0;
 }
@@ -1477,6 +1475,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 case 103:  /* Close */
                     if (g_AppState.uTimerId)
                     {
+                        DEBUG_PRINT("Close event\n");
                         g_AppState.doStreaming = FALSE;
                         KillTimer(hwnd, (UINT_PTR)g_AppState.uTimerId);
                         g_AppState.uTimerId = 0;
