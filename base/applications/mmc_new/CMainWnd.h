@@ -24,11 +24,13 @@ class CMainWnd :
 private:
     CWndProcThunk m_FrameThunk;
 
-    int m_nConsoleNumber;
+    int m_ConsoleNumber;
     CAtlString m_ConsoleTitle;
     HMENU m_hMenuConsoleSmall;
     HMENU m_hMenuConsoleLarge;
-    CONSOLE_MODE m_ConsoleMode;
+    DOCUMENT_MODE m_DocumentMode;
+    BOOL m_LogicalReadOnly;
+    BOOL m_PreventViewCustomization;
 
     CToolbar<DWORD_PTR> m_ToolBar;
     int m_iToolBarHeight;
@@ -46,6 +48,7 @@ private:
 
 public:
     CWindow m_MDIClient;
+    CAtlString m_Filename;
 
 public:
 
@@ -144,7 +147,7 @@ private:
 
     void CreateNewConsoleTitle(CAtlString& str)
     {
-        DWORD_PTR args[1] = { (DWORD_PTR)(m_nConsoleNumber) };
+        DWORD_PTR args[1] = { (DWORD_PTR)(m_ConsoleNumber) };
         str.LoadString(IDS_CONSOLETITLE);
 
         LPTSTR lpTarget = NULL;
@@ -190,6 +193,10 @@ private:
     void UpdateLayout();
     void UpdateViews();
 
+    DWORD CreateNewFilename(PWSTR pBuffer, DWORD dwSize, DWORD Number);
+    LPWSTR ProgramModeToString();
+    LRESULT SaveMscFile(CAtlString &FileName);
+
 public:
     CAtlString *GetConsoleTitle();
     void SetConsoleTitle(CAtlString consoleTitle);
@@ -204,7 +211,11 @@ public:
     HIMAGELIST SnapinImageList();
     int RegisterView(CConsoleWnd *pView);
     void UnregisterView(CConsoleWnd *pView);
-    CONSOLE_MODE GetConsoleMode();
-    void SetConsoleMode(CONSOLE_MODE ConsoleMode);
+    DOCUMENT_MODE GetDocumentMode();
+    void SetDocumentMode(DOCUMENT_MODE DocumentMode);
+    BOOL GetLogicalReadOnly();
+    void SetLogicalReadOnly(BOOL LogicalReadOnly);
+    BOOL GetPreventViewCustomization();
+    void SetPreventViewCustomization(BOOL PreventCustomization);
 };
 
