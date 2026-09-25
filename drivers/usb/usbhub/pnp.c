@@ -10,8 +10,8 @@
 #define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBHUB_PNP
-#define NDEBUG_USBHUB_ENUM
+#define YDEBUG_USBHUB_PNP
+#define YDEBUG_USBHUB_ENUM
 #include "dbg_uhub.h"
 
 NTSTATUS

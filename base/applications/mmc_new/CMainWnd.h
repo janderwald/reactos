@@ -18,6 +18,8 @@
 #define BTN_HELP            5
 #define BTN_ACTIONS_PANE    6
 
+#define MAX_RECENT_FILES    4
+
 class CMainWnd :
     public CWindowImpl<CMainWnd>
 {
@@ -46,6 +48,8 @@ private:
 
     CSnapin *m_RootNode;
 
+    CAtlList<CRecentFileEntry *> m_RecentFilesList;
+
 public:
     CWindow m_MDIClient;
     CAtlString m_Filename;
@@ -60,10 +64,15 @@ public:
         MESSAGE_HANDLER(WM_USER_CLOSE_CHILD, OnCloseChild)
 
         COMMAND_ID_HANDLER(IDM_FILE_NEW, OnFileNew)
+        COMMAND_ID_HANDLER(IDM_FILE_OPEN, OnFileOpen)
         COMMAND_ID_HANDLER(IDM_FILE_SAVE, OnFileSave)
         COMMAND_ID_HANDLER(IDM_FILE_SAVEAS, OnFileSaveAs)
         COMMAND_ID_HANDLER(IDM_FILE_ADD, OnFileAdd)
         COMMAND_ID_HANDLER(IDM_FILE_OPTIONS, OnFileOptions)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT1, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT2, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT3, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT4, OnFileRecent)
         COMMAND_ID_HANDLER(IDM_FILE_EXIT, OnFileExit)
 
         COMMAND_ID_HANDLER(IDM_VIEW_CUSTOMIZE, OnViewCustomize)
@@ -123,6 +132,7 @@ private:
             SetMenu(m_hMenuConsoleSmall);
         else
             SetMenu(m_hMenuConsoleLarge);
+        UpdateRecentFilesMenu();
     }
 
     void UpdateTitle()
@@ -173,10 +183,12 @@ public:
     LRESULT OnClose(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
     LRESULT OnFileNew(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnFileOpen(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileSave(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileSaveAs(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileAdd(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileOptions(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnFileRecent(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileExit(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnViewCustomize(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnWindowsNew(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
@@ -193,9 +205,13 @@ private:
     void UpdateLayout();
     void UpdateViews();
 
+    VOID UpdateRecentFilesMenu();
+    VOID LoadRecentFiles();
+    VOID AddToRecentFiles(const CAtlString &FileName);
     DWORD CreateNewFilename(PWSTR pBuffer, DWORD dwSize, DWORD Number);
     LPWSTR ProgramModeToString();
-    LRESULT SaveMscFile(CAtlString &FileName);
+    LRESULT SaveMscFile(const CAtlString &FileName);
+    LRESULT LoadMscFile(const CAtlString &FileName);
 
 public:
     CAtlString *GetConsoleTitle();

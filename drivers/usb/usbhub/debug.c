@@ -7,7 +7,7 @@
 
 #include "usbhub.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 VOID

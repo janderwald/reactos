@@ -10,8 +10,14 @@
 #define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBHUB_POWER
+#define YDEBUG_USBHUB_POWER
 #include "dbg_uhub.h"
+
+typedef struct _USBH_D3_WAIT_CONTEXT
+{
+    KEVENT Event;
+    NTSTATUS Status;
+} USBH_D3_WAIT_CONTEXT, *PUSBH_D3_WAIT_CONTEXT;
 
 VOID
 NTAPI
@@ -68,6 +74,26 @@ USBH_HubESDRecoverySetD3Completion(IN PDEVICE_OBJECT DeviceObject,
     DPRINT("USBH_HubESDRecoverySetD3Completion ... \n");
 
     KeSetEvent((PRKEVENT)Context,
+               EVENT_INCREMENT,
+               FALSE);
+}
+
+VOID
+NTAPI
+USBH_HubESDRecoverySetD3StatusCompletion(IN PDEVICE_OBJECT DeviceObject,
+                                         IN UCHAR MinorFunction,
+                                         IN POWER_STATE PowerState,
+                                         IN PVOID Context,
+                                         IN PIO_STATUS_BLOCK IoStatus)
+{
+    PUSBH_D3_WAIT_CONTEXT WaitContext = Context;
+
+    DPRINT("USBH_HubESDRecoverySetD3StatusCompletion: Status - %lX\n",
+           IoStatus->Status);
+
+    WaitContext->Status = IoStatus->Status;
+
+    KeSetEvent(&WaitContext->Event,
                EVENT_INCREMENT,
                FALSE);
 }
@@ -163,7 +189,7 @@ USBH_HubStartESDRecovery(IN PUSBHUB_FDO_EXTENSION HubExtension)
 {
     PUSBHUB_FDO_EXTENSION RootHubDevExt;
     NTSTATUS Status;
-    KEVENT Event;
+    USBH_D3_WAIT_CONTEXT WaitContext;
     POWER_STATE PowerState;
 
     DPRINT("USBH_HubStartESDRecovery: HubExtension - %p\n", HubExtension);
@@ -177,7 +203,8 @@ USBH_HubStartESDRecovery(IN PUSBHUB_FDO_EXTENSION HubExtension)
         return Status;
     }
 
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    KeInitializeEvent(&WaitContext.Event, NotificationEvent, FALSE);
+    WaitContext.Status = STATUS_SUCCESS;
 
     /* First, set the hub to D3 (power off) */
     PowerState.DeviceState = PowerDeviceD3;
@@ -185,16 +212,21 @@ USBH_HubStartESDRecovery(IN PUSBHUB_FDO_EXTENSION HubExtension)
     Status = PoRequestPowerIrp(HubExtension->LowerPDO,
                                IRP_MN_SET_POWER,
                                PowerState,
-                               USBH_HubESDRecoverySetD3Completion,
-                               &Event,
+                               USBH_HubESDRecoverySetD3StatusCompletion,
+                               &WaitContext,
                                NULL);
     if (Status == STATUS_PENDING)
     {
-        Status = KeWaitForSingleObject(&Event,
+        Status = KeWaitForSingleObject(&WaitContext.Event,
                                        Suspended,
                                        KernelMode,
                                        FALSE,
                                        NULL);
+        if (NT_SUCCESS(Status))
+        {
+            /* The wait succeeded - use the actual result of the D3 power IRP */
+            Status = WaitContext.Status;
+        }
     }
     if (!NT_SUCCESS(Status))
     {

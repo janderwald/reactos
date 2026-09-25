@@ -10,7 +10,7 @@
 #define YDEBUG
 #include <debug.h>
 
-#define NDEBUG_EHCI_ROOT_HUB
+#define YDEBUG_EHCI_ROOT_HUB
 #include "dbg_ehci.h"
 
 MPSTATUS
@@ -99,7 +99,7 @@ EHCI_RH_ChirpRootPort(IN PVOID ehciExtension,
                  break;
         }
     }
-    while (PortSC.PortReset == 1);
+    while (PortSC.PortReset == 1 && (PortSC.AsULONG != -1));
 
     PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg);
 
@@ -115,7 +115,7 @@ EHCI_RH_ChirpRootPort(IN PVOID ehciExtension,
         EhciExtension->ResetPortBits |= PortBit;
 
         WRITE_REGISTER_ULONG(PortStatusReg, PortSC.AsULONG);
-        DPRINT_RH("EHCI_RH_ChirpRootPort: Disable port - %x\n", Port);
+        DPRINT_RH("EHCI_RH_ChirpRootPort: Enabled port - %x\n", Port);
     }
     else
     {
@@ -236,9 +236,10 @@ EHCI_RH_GetPortStatus(IN PVOID ehciExtension,
     PortMaskBits = 1 << (Port - 1);
 
     if (status.PortStatus.Usb20PortStatus.CurrentConnectStatus)
+    {
         status.PortStatus.Usb20PortStatus.LowSpeedDeviceAttached = 0;
-
-    status.PortStatus.Usb20PortStatus.HighSpeedDeviceAttached = 1;
+        status.PortStatus.Usb20PortStatus.HighSpeedDeviceAttached = 1;
+    }
 
     if (PortSC.ConnectStatusChange)
         EhciExtension->ConnectPortBits |= PortMaskBits;

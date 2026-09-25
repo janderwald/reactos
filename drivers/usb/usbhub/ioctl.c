@@ -10,7 +10,7 @@
 #define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBHUB_IOCTL
+#define YDEBUG_USBHUB_IOCTL
 #include "dbg_uhub.h"
 
 NTSTATUS
@@ -971,6 +971,12 @@ USBH_IoctlGetNodeConnectionDriverKeyName(IN PUSBHUB_FDO_EXTENSION HubExtension,
 
     KeyName = Irp->AssociatedIrp.SystemBuffer;
     Status = STATUS_INVALID_PARAMETER;
+
+    if (KeyName->ConnectionIndex == 0 ||
+        KeyName->ConnectionIndex > HubExtension->HubDescriptor->bNumberOfPorts)
+    {
+        goto Exit;
+    }
 
     PortData = &HubExtension->PortData[KeyName->ConnectionIndex - 1];
     PortDevice = PortData->DeviceObject;

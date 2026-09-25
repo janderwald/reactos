@@ -7,10 +7,10 @@
 
 #include "usbport.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBPORT_CORE
+#define YDEBUG_USBPORT_CORE
 #include "usbdebug.h"
 
 ULONG
