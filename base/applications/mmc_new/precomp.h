@@ -51,9 +51,11 @@ typedef enum _DOCUMENT_MODE
 #include "CRecentFileEntry.h"
 #include "CSnapinCacheEntry.h"
 #include "CSnapin.h"
+#include "CSnapinAlias.h"
 #include "CConsoleWnd.h"
 #include "CMainWnd.h"
 
+#include "CAboutSnapinDialog.h"
 #include "CAddDialog.h"
 #include "CCustomizeDialog.h"
 #include "COptionsDialog.h"

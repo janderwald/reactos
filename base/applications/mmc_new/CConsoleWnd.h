@@ -34,6 +34,8 @@ private:
     BOOL m_bStatusBarVisible;
     BOOL m_bDescriptionBarVisible;
 
+    HMENU m_hMenuTreeView;
+
     CSnapin *m_ViewRootNode;
     CSnapin *m_ViewSelectedNode;
 
@@ -42,7 +44,13 @@ public:
         MESSAGE_HANDLER(WM_CREATE, OnCreate)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
+        MESSAGE_HANDLER(WM_CONTEXTMENU, OnContextMenu)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
+        MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
+
+        COMMAND_ID_HANDLER(IDM_ACTION_NEW, OnActionNewWindow)
+        COMMAND_ID_HANDLER(IDM_ACTION_RENAME, OnActionRename)
+        COMMAND_ID_HANDLER(IDM_VIEW_CUSTOMIZE, OnViewCustomize)
     END_MSG_MAP()
 
 
@@ -86,7 +94,13 @@ public:
     LRESULT OnCreate(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnDestroy(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnSize(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnContextMenu(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnDrawItem(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnNotify(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+
+    LRESULT OnActionNewWindow(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnActionRename(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnViewCustomize(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
 
     BOOL IsTreeViewVisible();
     VOID SetTreeViewVisible(BOOL bVisible);
@@ -98,6 +112,7 @@ public:
     VOID SetActionsPaneVisible(BOOL bVisible);
 
     VOID UpdateView();
+    VOID SetStatusBarText(LPWSTR pszStatusText);
 
     VOID SaveView(MscFile *mscFile, IXMLDOMElement *pParentElement);
 
