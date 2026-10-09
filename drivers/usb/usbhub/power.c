@@ -10,7 +10,7 @@
 #define NDEBUG
 #include <debug.h>
 
-#define YDEBUG_USBHUB_POWER
+#define NDEBUG_USBHUB_POWER
 #include "dbg_uhub.h"
 
 typedef struct _USBH_D3_WAIT_CONTEXT

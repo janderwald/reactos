@@ -32,6 +32,7 @@ interface IAMCertifiedOutputProtection;
 interface IAMClockSlave;
 interface IAMCopyCaptureFileProgress;
 interface IAMCrossbar;
+interface IAMDeviceRemoval;
 interface IAMDevMemoryAllocator;
 interface IAMDevMemoryControl;
 interface IAMDroppedFrames;
@@ -43,6 +44,7 @@ interface IAMOpenProgress;
 interface IAMOverlayFX;
 interface IAMPhysicalPinInfo;
 interface IAMPushSource;
+interface IDistributorNotify;
 interface IAMStreamConfig;
 interface IAMTimecodeDisplay;
 interface IAMTimecodeGenerator;
@@ -65,6 +67,7 @@ interface IEnumStreamIdMap;
 interface IFileSourceFilter;
 interface IFileSinkFilter;
 interface IFileSinkFilter2;
+interface IAMDeviceRemoval;
 interface IFilterMapper;
 interface IFilterMapper2;
 interface IGraphBuilder;
@@ -567,6 +570,21 @@ typedef enum
 } AM_FILESINK_FLAGS;
 
 [
+        object,
+        uuid(f90a6130-b658-11d2-ae49-0000f8754b99),
+        pointer_default(unique)
+]
+interface IAMDeviceRemoval : IUnknown
+{
+    HRESULT DeviceInfo(
+        [out] CLSID *pclsidInterfaceClass,
+        [out] LPWSTR *pwszSymbolicLink);
+    HRESULT Reassociate();
+    HRESULT Disassociate();
+}
+typedef IAMDeviceRemoval *PAMDEVICEREMOVAL;
+
+[
 object,
 uuid(56a868a9-0ad4-11ce-b03a-0020af0ba770),
 pointer_default(unique)
@@ -902,6 +920,20 @@ interface IStreamBuilder : IUnknown
         ( [in] IPin * ppinOut,
           [in] IGraphBuilder * pGraph
         );
+}
+
+[
+    object,
+    uuid(56a868af-0ad4-11ce-b03a-0020af0ba770),
+    pointer_default(unique)
+]
+interface IDistributorNotify : IUnknown
+{
+    HRESULT Stop(void);
+    HRESULT Pause(void);
+    HRESULT Run(REFERENCE_TIME tStart);
+    HRESULT SetSyncSource([in] IReferenceClock * pClock);
+    HRESULT NotifyGraphChange(void);
 }
 
 

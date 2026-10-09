@@ -10,7 +10,7 @@
 #define NDEBUG
 #include <debug.h>
 
-#define YDEBUG_USBHUB_IOCTL
+#define NDEBUG_USBHUB_IOCTL
 #include "dbg_uhub.h"
 
 NTSTATUS

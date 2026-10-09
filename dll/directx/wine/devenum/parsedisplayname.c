@@ -92,7 +92,7 @@ static HRESULT WINAPI devenum_parser_ParseDisplayName(IParseDisplayName *iface,
         type = DEVICE_DMO;
         name += 4;
     }
-    else if (!wcsncmp(name, pnpW, 4))
+    else if (!wcsncmp(name, L"pnp:", 4))
     {
         type = DEVICE_PNP;
         name += 4;
@@ -117,13 +117,7 @@ static HRESULT WINAPI devenum_parser_ParseDisplayName(IParseDisplayName *iface,
     }
     else if (type == DEVICE_PNP)
     {
-        mon->devicePath = CoTaskMemAlloc((lstrlenW(name) + 1) * sizeof(WCHAR));
-        if (!mon->devicePath)
-        {
-            IMoniker_Release(&mon->IMoniker_iface);
-            return E_OUTOFMEMORY;
-        }
-         lstrcpyW(mon->devicePath, name);
+        moniker = pnp_moniker_create(NULL, name, NULL);
     }
     else
     {

@@ -26,13 +26,14 @@
 #include "dshow.h"
 #include "dmo.h"
 #include "dmodshow.h"
+#include "setupapi.h"
 
 enum device_type
 {
-    DEVICE_PNP,
     DEVICE_FILTER,
     DEVICE_CODEC,
     DEVICE_DMO,
+    DEVICE_PNP
 };
 
 struct moniker
@@ -44,14 +45,14 @@ struct moniker
     enum device_type type;
     WCHAR *name;    /* for filters and codecs */
     CLSID clsid;    /* for DMOs */
-    WCHAR * devicePath;
-} MediaCatMoniker;
-
+    WCHAR *devicePath; /* for pnp filters */
+    WCHAR *friendlyName; /* for pnp filters */
     IPropertyBag IPropertyBag_iface;
 };
 
 HRESULT create_filter_data(VARIANT *var, REGFILTER2 *rgf);
 struct moniker *dmo_moniker_create(const GUID class, const GUID clsid);
+struct moniker *pnp_moniker_create(const WCHAR *name, const WCHAR * devicePath, const GUID *class);
 struct moniker *codec_moniker_create(const GUID *class, const WCHAR *name);
 struct moniker *filter_moniker_create(const GUID *class, const WCHAR *name);
 HRESULT enum_moniker_create(REFCLSID class, IEnumMoniker **enum_mon);

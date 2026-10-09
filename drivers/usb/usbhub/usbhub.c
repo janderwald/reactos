@@ -10,8 +10,8 @@
 #define NDEBUG
 #include <debug.h>
 
-#define YDEBUG_USBHUB_SCE
-#define YDEBUG_USBHUB_PNP
+#define NDEBUG_USBHUB_SCE
+#define NDEBUG_USBHUB_PNP
 #include "dbg_uhub.h"
 
 #include <ntddstor.h>

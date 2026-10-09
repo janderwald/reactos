@@ -109,10 +109,11 @@ typedef struct _EHCI_HCD_ITD {
   PUSBPORT_ISO_PACKET_DATA IsoPacket[EHCI_MAX_ITD_TRANSACTIONS];
   ULONG ScheduledFrame; /* Frame list index where this iTD was inserted */
   ULONG PacketsThisITD;
+  struct _EHCI_HCD_ITD * NextITD;
 #ifdef _WIN64
   ULONG Pad[16];
 #else
-  ULONG Pad[1];
+  ULONG Pad[0];
 #endif
 } EHCI_HCD_ITD, *PEHCI_HCD_ITD;
 C_ASSERT(sizeof(EHCI_HCD_ITD) == ROUND_UP(sizeof(EHCI_HCD_ITD), 32));
@@ -236,6 +237,7 @@ typedef struct _EHCI_HC_RESOURCES {
   EHCI_STATIC_QH PeriodicHead[64];
   UCHAR Padded[0x160];
   EHCI_HCD_QH IsoDummyQH[EHCI_FRAME_LIST_MAX_ENTRIES];
+  UCHAR Padded1[0x160];
 } EHCI_HC_RESOURCES, *PEHCI_HC_RESOURCES;
 
 #define EHCI_FLAGS_CONTROLLER_SUSPEND 0x01

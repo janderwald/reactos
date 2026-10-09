@@ -1019,7 +1019,9 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
             }
 
             Urb->UrbIsochronousTransfer.StartFrame = ScheduledFrame;
+
             IsoEndpoint->IsoScheduleFrame = ScheduledFrame + FrameSpan;
+            IsoEndpoint->FrameNumber = ScheduledFrame + FrameSpan;
 
             /* Reject the transfer if the start frame is out of range */
             {

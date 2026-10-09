@@ -10,10 +10,12 @@
 #include <dshow.h>
 //#include <streams.h>
 #include <ks.h>
+#include <strmif.h>
 #define __STREAMS__
 #include <ksproxy.h>
 #include <devioctl.h>
 #include <stdio.h>
+
 //#include <wchar.h>
 //#include <tchar.h>
 //#include <uuids.h>
