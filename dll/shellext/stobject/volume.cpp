@@ -40,7 +40,13 @@ static HRESULT __stdcall Volume_FindMixerControl(CSysTray * pSysTray)
 
     if (waveOutId == (DWORD)-1)
     {
-        TRACE("WARNING: waveOut has no default device, trying with first available device...\n", waveOutId);
+        if (waveOutGetNumDevs() == 0)
+        {
+            WARN("No waveOut device available\n");
+            return S_FALSE;
+        }
+
+        TRACE("WARNING: waveOut has no default device, trying with first available device...\n");
 
         mixerId = 0;
     }
@@ -89,7 +95,8 @@ static HRESULT __stdcall Volume_FindMixerControl(CSysTray * pSysTray)
     mixerLineControls.pamxctrl = &mixerControl;
     mixerLineControls.cbmxctrl = sizeof(mixerControl);
 
-    if (mixerGetLineControlsW((HMIXEROBJ)g_hMixer, &mixerLineControls, MIXER_OBJECTF_HMIXER | MIXER_GETLINECONTROLSF_ONEBYTYPE))
+    result = mixerGetLineControlsW((HMIXEROBJ)g_hMixer, &mixerLineControls, MIXER_OBJECTF_HMIXER | MIXER_GETLINECONTROLSF_ONEBYTYPE);
+    if (result != MMSYSERR_NOERROR)
     {
         ERR("mixerGetLineControlsW failed (%lu)\n", result);
         return E_FAIL;

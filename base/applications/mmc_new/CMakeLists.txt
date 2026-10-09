@@ -6,6 +6,7 @@ add_definitions(-D_ATL_NO_EXCEPTIONS)
 
 list(APPEND CPP_SOURCE
     CAboutSnapinDialog.cpp
+    CAddAdvancedDialog.cpp
     CAddDialog.cpp
     CConsoleWnd.cpp
     CMainWnd.cpp
@@ -14,6 +15,7 @@ list(APPEND CPP_SOURCE
     CSnapin.cpp
     CSnapinCacheEntry.cpp
     CSnapinAlias.cpp
+    misc.cpp
     mscfile.cpp
     mmc.cpp
     # This is here so that they show up in visual studio:

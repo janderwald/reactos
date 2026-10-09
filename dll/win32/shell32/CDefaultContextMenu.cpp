@@ -994,7 +994,7 @@ CDefaultContextMenu::QueryContextMenu(
     {
         UINT added = qcminfo.idCmdFirst - idCmdNext;
         cIds += added;
-        IndexMenu += added;
+        IndexMenu += added; // Note: This is incorrect, forgets about separators and causes CORE-18577. We should build the menu in reverse order like Windows...
         m_iIdCBFirst = m_iIdSHELast;
         m_iIdCBLast = cIds;
         idCmdNext = idCmdFirst + cIds;
@@ -1363,6 +1363,21 @@ CDefaultContextMenu::MapVerbToCmdId(PVOID Verb, PUINT idCmd, BOOL IsUnicode)
             return TRUE;
         }
     }
+
+    // learn.microsoft.com/en-us/windows/win32/shell/dfm-mapcommandname
+    PWSTR pszVerbW = (PWSTR)Verb;
+    if (!IsUnicode)
+    {
+        SHAnsiToUnicode((PCSTR)Verb, UnicodeStr, _countof(UnicodeStr));
+        pszVerbW = UnicodeStr;
+    }
+    i = -1;
+    if (*pszVerbW && SUCCEEDED(_DoCallback(DFM_MAPCOMMANDNAME, (WPARAM)&i, pszVerbW)) && !HIWORD(i))
+    {
+        *idCmd = m_iIdCBFirst + i;
+        return TRUE;
+    }
+
     return FALSE; // Note: Even if the verb is "open", we must fail if we can't find a handler
 }
 

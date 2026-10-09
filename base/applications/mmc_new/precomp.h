@@ -46,7 +46,18 @@ typedef enum _DOCUMENT_MODE
     DocumentMode_UserSDI
 } DOCUMENT_MODE, *PDOCUMENT_MODE;
 
+typedef enum _LISTVIEW_MODE
+{
+    ListView_SmallIcons = 0,
+    ListView_LargeIcons,
+    ListView_List,
+    ListView_Detail
+} LISTVIEW_MODE, *PLISTVIEW_MODE;
+
 #include "mscfile.h"
+#include "misc.h"
+
+class CMainWnd;
 
 #include "CRecentFileEntry.h"
 #include "CSnapinCacheEntry.h"
@@ -57,6 +68,7 @@ typedef enum _DOCUMENT_MODE
 
 #include "CAboutSnapinDialog.h"
 #include "CAddDialog.h"
+#include "CAddAdvancedDialog.h"
 #include "CCustomizeDialog.h"
 #include "COptionsDialog.h"
 
