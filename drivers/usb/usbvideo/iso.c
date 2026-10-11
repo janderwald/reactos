@@ -379,7 +379,6 @@ USBVideoIsoReadComplete(
             if (PayloadDataLen > 0 && Frame->FrameSize + PayloadDataLen <= Frame->MaxFrameSize)
             {
                 DPRINT("Copying Bytes %u\n", PayloadDataLen);
-                PayloadDataLen &= ~(0x3); // YUY2 macropixel (Y0 U0 Y1 V0) is 4 bytes
                 RtlCopyMemory(
                     Frame->FrameBuffer + Frame->FrameSize,
                     Data + PayloadDataOffset,
@@ -403,6 +402,7 @@ USBVideoIsoReadComplete(
                                     TRUE);
                 Frame->FrameSize    = 0;
                 Frame->FrameStarted = FALSE;
+                break;
             }
         }
 #if 0
@@ -428,6 +428,7 @@ USBVideoIsoReadComplete(
 
                 Frame->FrameSize    = 0;
                 Frame->FrameStarted = FALSE;
+                break;
             }
         }
     }
@@ -437,6 +438,7 @@ USBVideoIsoReadComplete(
     //USBVideoGetCurrentFrameNumber(Pin);
     //DPRINT1("[USBVIDEO] UsbFrameNumber %u\n", DeviceExtension->UsbFrameNumber);
     /* requeue irp */
+    DPRINT1("[USBVIDEO] Rescheduling...\n");
     USBVideoQueueIsoRead(Pin,
                          DeviceExtension->hPipe,
                          (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer,

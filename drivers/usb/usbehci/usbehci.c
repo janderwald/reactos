@@ -1146,7 +1146,7 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
 
     RtlInitializeBitMap(&EhciExtension->IsoBitmap, EhciExtension->IsoBitmapBuffer, EHCI_FRAME_LIST_MAX_ENTRIES);
 
-    EHCI_AddDummyQHs(EhciExtension);
+    //EHCI_AddDummyQHs(EhciExtension);
 
     WRITE_REGISTER_ULONG(&OperationalRegs->PeriodicListBase,
                          EhciExtension->HcResourcesPA + FIELD_OFFSET(EHCI_HC_RESOURCES, PeriodicFrameList));
@@ -1668,14 +1668,13 @@ EHCI_InterruptService(IN PVOID ehciExtension)
         FrameIndex2 = (READ_REGISTER_ULONG(&OperationalRegs->FrameIndex) & EHCI_FRINDEX_FRAME_MASK) / EHCI_MICROFRAMES;
     } while (FrameIndex != FrameIndex2);
 
-
-    if (FrameIndex < EhciExtension->FrameIndex)
+    if (iStatus.FrameListRollover)
     {
-        EhciExtension->FrameHighPart += 0x4000;
+        EhciExtension->FrameHighPart += 0x800;
     }
 
     EhciExtension->FrameIndex = FrameIndex;
-
+    DPRINT1("FrameHighPart %x, FrameIndex %u\n", EhciExtension->FrameHighPart, FrameIndex );
     return TRUE;
 }
 
@@ -1698,7 +1697,8 @@ EHCI_InterruptDpc(IN PVOID ehciExtension,
 
     if (iStatus.Interrupt == 1 ||
         iStatus.ErrorInterrupt == 1 ||
-        iStatus.InterruptOnAsyncAdvance == 1)
+        iStatus.InterruptOnAsyncAdvance == 1 ||
+        iStatus.FrameListRollover == 1)
     {
         DPRINT_EHCI("EHCI_InterruptDpc: [%p] InterruptStatus - %X\n", EhciExtension, iStatus.AsULONG);
         RegPacket.UsbPortInvalidateEndpoint(EhciExtension, NULL);
@@ -2675,7 +2675,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
         PEHCI_HCD_ITD FirstITD = NULL;
         PEHCI_HC_RESOURCES HcResourcesVA;
         ULONG CurrentFrame, InitFrame, ReservedFrame;
-        ULONG TailFrames, HeadFrames;
+        //ULONG TailFrames, HeadFrames;
         ULONG FrameIndex;
         EHCI_LINK_POINTER LinkPointer;
 
@@ -2693,7 +2693,7 @@ EHCI_SubmitIsoTransfer(IN PVOID ehciExtension,
 
         /* Use the first packet's FrameNumber for scheduling */
         InitFrame = IsoTransfer->Packets[0].FrameNumber  & EHCI_FRINDEX_INDEX_MASK;
-
+#if 0
         {
             ULONG CurrentHwFrame = EHCI_Get32BitFrameNumber(EhciExtension) & EHCI_FRINDEX_INDEX_MASK;
             ULONG FramesAhead;
@@ -2735,7 +2735,7 @@ retry:
         RtlSetBits(&EhciExtension->IsoBitmap, InitFrame, TailFrames);
         if (HeadFrames)
             RtlSetBits(&EhciExtension->IsoBitmap, 0, HeadFrames);
-
+#endif
         ReservedFrame = InitFrame;
 
         DPRINT("OriginalFrame %u ReservedFrame %u NumITDs %u\n", InitFrame, ReservedFrame, NumITDs);
@@ -2756,9 +2756,9 @@ retry:
             {
                 DPRINT1("EHCI_SubmitIsoTransfer: Failed to allocate iTD %lu\n", ITDCount);
                 /* TODO: free previously allocated iTDs */
-                RtlClearBits(&EhciExtension->IsoBitmap, ReservedFrame, TailFrames);
-                if (HeadFrames)
-                    RtlClearBits(&EhciExtension->IsoBitmap, 0, HeadFrames);
+                //RtlClearBits(&EhciExtension->IsoBitmap, ReservedFrame, TailFrames);
+                //if (HeadFrames)
+                //    RtlClearBits(&EhciExtension->IsoBitmap, 0, HeadFrames);
                 return MP_STATUS_NO_RESOURCES;
             }
 
@@ -4131,33 +4131,17 @@ NTAPI
 EHCI_Get32BitFrameNumber(IN PVOID ehciExtension)
 {
     PEHCI_EXTENSION EhciExtension = ehciExtension;
-    ULONG SwUpper;
-    ULONG RawIdx, RawIdx2;
-    ULONG HwFrame;
-    ULONG ListIdx;
-    ULONG WrapFix;
+    ULONG HighPart;
+    ULONG Frame;
 
-    SwUpper = EhciExtension->FrameHighPart;
-    do
-    {
-        RawIdx = READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex);
-        RawIdx2 = READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex);
+    //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
 
-    } while (RawIdx != RawIdx2);
+    HighPart = EhciExtension->FrameHighPart;
+    Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FRAME_MASK) / EHCI_MICROFRAMES;
 
-    RawIdx = READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex);
-
-    RawIdx &= EHCI_FRINDEX_FRAME_MASK;
-    /* Shift away the 3 microframe bits, keep 11 bits for wrap detect */
-    HwFrame = (RawIdx >> 3);
-
-    /* Isolate the 10-bit frame list index */
-    ListIdx = HwFrame & EHCI_FRINDEX_INDEX_MASK;
-
-    /* Compute wrap race correction: 0x400 if bit 10 disagrees, else 0 */
-    WrapFix = (HwFrame ^ SwUpper) & EHCI_FRAME_LIST_MAX_ENTRIES;
-
-    return ListIdx | SwUpper;
+    /* The ISR keeps bit 10 of HighPart in step with the frame list half */
+    return ((Frame & EHCI_FRINDEX_INDEX_MASK) | HighPart) +
+           ((Frame ^ HighPart) & EHCI_FRAME_LIST_MAX_ENTRIES);
 }
 
 VOID

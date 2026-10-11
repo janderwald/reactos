@@ -1,7 +1,9 @@
 
 list(APPEND _keyboard_layouts
     kbd101
+    kbd101a
     kbd106
+    kbd106n
     kbda1
     kbda2
     kbda3
@@ -28,6 +30,7 @@ list(APPEND _keyboard_layouts
     kbdest
     kbdfc
     kbdfi
+    kbdfo
     kbdfr
     kbdgeo
     kbdgerg
@@ -56,6 +59,9 @@ list(APPEND _keyboard_layouts
     kbdmac
     kbdne
     kbdnec
+    kbdnec95
+    kbdnecat
+    kbdnecnt
     kbdno
     kbdpl
     kbdpl1
