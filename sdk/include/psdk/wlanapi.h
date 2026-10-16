@@ -252,6 +252,31 @@ typedef struct _WLAN_AVAILABLE_NETWORK_LIST {
 #endif
 } WLAN_AVAILABLE_NETWORK_LIST ,*PWLAN_AVAILABLE_NETWORK_LIST;
 
+typedef struct _WLAN_BSS_ENTRY {
+    DOT11_SSID dot11Ssid;
+    ULONG uPhyId;
+    DOT11_MAC_ADDRESS dot11Bssid;
+    DOT11_BSS_TYPE dot11BssType;
+    DOT11_PHY_TYPE dot11BssPhyType;
+    LONG lRssi;
+    ULONG uLinkQuality;
+    BOOL bInRegDomain;
+    USHORT usBeaconPeriod;
+    ULONGLONG ullTimestamp;
+    ULONGLONG ullHostTimestamp;
+    USHORT usCapabilityInformation;
+    ULONG ulChCenterFrequency;
+    WLAN_RATE_SET wlanRateSet;
+    ULONG ulIeOffset;
+    ULONG ulIeSize;
+} WLAN_BSS_ENTRY, *PWLAN_BSS_ENTRY;
+
+typedef struct _WLAN_BSS_LIST {
+    DWORD dwTotalSize;
+    DWORD dwNumberOfItems;
+    WLAN_BSS_ENTRY wlanBssEntries[1];
+} WLAN_BSS_LIST, *PWLAN_BSS_LIST;
+
 typedef struct _WLAN_CONNECTION_PARAMETERS {
     WLAN_CONNECTION_MODE wlanConnectionMode;
 #if defined(__midl) || defined(__WIDL__)
@@ -279,6 +304,18 @@ DWORD WINAPI WlanConnect(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid,
 DWORD WINAPI WlanDisconnect(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, PVOID pReserved);
 DWORD WINAPI WlanEnumInterfaces(IN HANDLE hClientHandle, PVOID pReserved, OUT PWLAN_INTERFACE_INFO_LIST *ppInterfaceList);
 DWORD WINAPI WlanGetAvailableNetworkList(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN DWORD dwFlags, PVOID pReserved, OUT PWLAN_AVAILABLE_NETWORK_LIST *ppAvailableNetworkList);
+
+DWORD
+WINAPI
+WlanGetNetworkBssList(
+    _In_ HANDLE hClientHandle,
+    _In_ const GUID *pInterfaceGuid,
+    _In_opt_ const PDOT11_SSID pDot11Ssid,
+    _In_ DOT11_BSS_TYPE dot11BssType,
+    _In_ BOOL bSecurityEnabled,
+    _Reserved_ PVOID pReserved,
+    _Outptr_ PWLAN_BSS_LIST *ppWlanBssList);
+
 DWORD WINAPI WlanGetInterfaceCapability(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, PVOID pReserved, OUT PWLAN_INTERFACE_CAPABILITY *ppCapability);
 DWORD WINAPI WlanDeleteProfile(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN LPCWSTR strProfileName, PVOID pReserved);
 DWORD WINAPI WlanGetProfile(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN LPCWSTR strProfileName, PVOID pReserved, OUT LPWSTR *pstrProfileXml, DWORD *pdwFlags, PDWORD pdwGrantedAccess);

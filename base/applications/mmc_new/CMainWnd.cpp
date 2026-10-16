@@ -32,6 +32,7 @@ CMainWnd::CMainWnd()
     , m_NextViewId(1)
     , m_RootNode(NULL)
     , m_NextNodeId(1)
+    , m_TempNodeMap(NULL)
 {
     m_FrameThunk.Init(XDefFrameProc, this);
     m_pfnSuperWindowProc = m_FrameThunk.GetWNDPROC();
@@ -121,6 +122,7 @@ CMainWnd::OnSize(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
 LRESULT
 CMainWnd::OnCloseChild(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
 {
+    UpdateLayout();
     UpdateTitle();
     UpdateMenu();
     return 0;
@@ -247,9 +249,7 @@ CMainWnd::OnFileOpen(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled)
         if (ret == ERROR_SUCCESS)
         {
             AddToRecentFiles(m_Filename);
-
-            if (CreateView(m_RootNode))
-                m_ConsoleNumber++;
+            m_ConsoleNumber++;
         }
     }
 
@@ -363,9 +363,7 @@ CMainWnd::OnFileRecent(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled)
         if (ret == ERROR_SUCCESS)
         {
             AddToRecentFiles(FileEntry->FileName());
-
-            if (CreateView(m_RootNode))
-                m_ConsoleNumber++;
+            m_ConsoleNumber++;
         }
     }
 
@@ -566,8 +564,10 @@ CMainWnd::CreateView(CSnapin *RootNode, CSnapin *SelectedNode)
         return FALSE;
     }
 
+    UpdateLayout();
     UpdateTitle();
     UpdateMenu();
+    UpdateViewMenu(child->GetListViewMode());
 
     return TRUE;
 }
@@ -670,19 +670,25 @@ CMainWnd::GetRootSnapin()
     return m_RootNode;
 }
 
-UINT
+VOID
 CMainWnd::RegisterView(CConsoleWnd *pView)
 {
     m_ViewList.AddTail(pView);
-    return m_NextViewId++;
+    if (pView->m_ViewId == 0)
+        pView->m_ViewId = m_NextViewId++;
+    else if (m_NextViewId <= pView->m_ViewId)
+        m_NextViewId = pView->m_ViewId + 1;
 }
 
-void
+VOID
 CMainWnd::UnregisterView(CConsoleWnd *pView)
 {
     POSITION pos = m_ViewList.Find(pView);
     if (pos)
+    {
         m_ViewList.RemoveAt(pos);
+        pView->m_ViewId = 0;
+    }
 }
 
 UINT
@@ -698,7 +704,7 @@ CMainWnd::UpdateNextNodeId(UINT NodeId)
         m_NextNodeId = NodeId + 1;
 }
 
-void
+VOID
 CMainWnd::UpdateViews()
 {
     CConsoleWnd *console;
@@ -710,18 +716,17 @@ CMainWnd::UpdateViews()
         console = (CConsoleWnd*)m_ViewList.GetNext(pos);
         if (console)
             console->UpdateView();
-
     }
 }
 
-void
+VOID
 CMainWnd::UpdateLayout()
 {
     RECT rcClient, rcToolBar = {0, 0, 0, 0};
     GetClientRect(&rcClient);
 
     int nToolBarFlags = SWP_NOZORDER;
-    if (m_bToolBarVisible)
+    if (m_bToolBarVisible && !m_ViewList.IsEmpty())
     {
         rcClient.top += m_iToolBarHeight;
         rcClient.bottom -= m_iToolBarHeight;
@@ -738,6 +743,30 @@ CMainWnd::UpdateLayout()
     m_ToolBar.SetWindowPos(NULL, rcToolBar.left, rcToolBar.top, rcToolBar.right, rcToolBar.bottom, nToolBarFlags);
 
     m_MDIClient.SetWindowPos(NULL, rcClient.left, rcClient.top, rcClient.right, rcClient.bottom, SWP_NOZORDER);
+}
+
+VOID
+CMainWnd::UpdateMenu()
+{
+    if (m_ViewList.IsEmpty())
+    {
+        SetMenu(m_hMenuConsoleSmall);
+    }
+    else
+    {
+        SetMenu(m_hMenuConsoleLarge);
+        UpdateRecentFilesMenu();
+    }
+}
+
+VOID
+CMainWnd::UpdateTitle()
+{
+    if (m_ViewList.IsEmpty())
+        m_ConsoleTitle.LoadString(IDS_APPTITLE);
+    else
+        CreateNewConsoleTitle(m_ConsoleTitle);
+    SetWindowTextW(m_ConsoleTitle.GetString());
 }
 
 DOCUMENT_MODE
@@ -817,15 +846,14 @@ CMainWnd::UpdateViewMenu(LISTVIEW_MODE ListViewMode)
 VOID
 CMainWnd::UpdateUpToolButton(BOOL bShow)
 {
-    if (bShow)
-        m_ToolBar.InsertButton(3, &TbButtons[3]);
-    else
-    {
-        TBBUTTON ToolButton;
-        m_ToolBar.GetButton(3, &ToolButton);
-        if (ToolButton.idCommand == IDM_TB_UP)
-            m_ToolBar.DeleteButton(3);
-    }
+    m_ToolBar.HideButton(IDM_TB_UP, !bShow);
+}
+
+VOID
+CMainWnd::UpdateToolbuttons(BOOL bTreeViewVisible, BOOL bActionsPaneVisible)
+{
+    m_ToolBar.CheckButton(IDM_TB_SCOPE_PANE, bTreeViewVisible);
+    m_ToolBar.CheckButton(IDM_TB_ACTIONS_PANE, bActionsPaneVisible);
 }
 
 VOID
@@ -1069,6 +1097,8 @@ CMainWnd::LoadMscFile(const CAtlString &FileName)
     VARIANT ProgramMode;
     HRESULT hr = S_OK;
 
+    m_TempNodeMap = new CSimpleMap<UINT, CSnapin*>();
+
     VariantInit(&ProgramMode);
 
     m_DocumentMode = DocumentMode_Author;
@@ -1127,11 +1157,15 @@ CMainWnd::LoadMscFile(const CAtlString &FileName)
 
     /* FIXME Parse other frame settings */
 
+    /* Parse the ScopeTree element */
     hr = ParseScopeTree(mscFile, pRootElement);
     if (hr != S_OK)
         goto done;
 
-    /* Parse the Views Element and create the views */
+    /* Parse the Views element */
+    hr = ParseViewsElement(mscFile, pRootElement);
+    if (hr != S_OK)
+        goto done;
 
 done:
     VariantClear(&ProgramMode);
@@ -1141,6 +1175,9 @@ done:
 
     if (pRootElement)
         pRootElement->Release();
+
+    delete m_TempNodeMap;
+    m_TempNodeMap = NULL;
 
     delete mscFile;
 
@@ -1190,6 +1227,68 @@ done:
 
     if (pScopeTreeElement)
         pScopeTreeElement->Release();
+
+    return hr;
+}
+
+HRESULT
+CMainWnd::ParseViewsElement(MscFile *mscFile, IXMLDOMElement *pRootElement)
+{
+    IXMLDOMElement *pViewsElement = NULL;
+    IXMLDOMNodeList *pChildList = NULL;
+    IXMLDOMNode *nextItem;
+    DOMNodeType NodeType;
+    BSTR NodeName = NULL;
+    HRESULT hr = S_OK;
+
+    hr = mscFile->GetElement(pRootElement, (LPWSTR)L"Views", &pViewsElement);
+    if (hr != S_OK)
+        goto done;
+
+    hr = pViewsElement->get_childNodes(&pChildList);
+    if (FAILED(hr))
+        goto done;
+
+    for (;;)
+    {
+        hr = pChildList->nextNode(&nextItem);
+        if (hr == S_FALSE)
+        {
+            hr = S_OK;
+            break;
+        }
+
+        hr = nextItem->get_nodeType(&NodeType);
+        if (hr == S_OK)
+        {
+            if (NodeType == NODE_ELEMENT)
+            {
+                NodeName = NULL;
+                hr = nextItem->get_baseName(&NodeName);
+                if (hr == S_OK)
+                {
+                    if (_wcsicmp(NodeName, L"View") == 0)
+                    {
+                        CConsoleWnd::ParseView(this, mscFile, (IXMLDOMElement *)nextItem);
+                    }
+                    SysFreeString(NodeName);
+                    NodeName = NULL;
+                }
+            }
+        }
+
+        nextItem->Release();
+    }
+
+done:
+    if (pChildList)
+        pChildList->Release();
+
+    if (NodeName)
+        SysFreeString(NodeName);
+
+    if (pViewsElement)
+        pViewsElement->Release();
 
     return hr;
 }
