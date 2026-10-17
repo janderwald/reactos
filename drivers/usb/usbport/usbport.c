@@ -1032,7 +1032,7 @@ USBPORT_IsrDpcHandler(IN PDEVICE_OBJECT FdoDevice,
 
             /* Check if the endpoint is ready to be processed.
              * Use wrap-safe comparison for 32-bit frame counter rollover. */
-            if (UsbportFrameAfter(FrameNumber, Endpoint->FrameNumber) ||
+            if (UsbportFrameAfter(FrameNumber, Endpoint->IsoScheduleFrame) ||
                 (Endpoint->Flags & ENDPOINT_FLAG_NUKE))
             {
                 EndpointReady = TRUE;

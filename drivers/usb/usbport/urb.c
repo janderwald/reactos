@@ -905,7 +905,7 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
             KIRQL OldIrql;
 
             /* Number of frames to schedule ahead when using ASAP mode */
-            #define ISO_ASAP_LEAD_FRAMES 5
+            #define ISO_ASAP_LEAD_FRAMES 8
 
             IsoPipeHandle = Urb->UrbIsochronousTransfer.PipeHandle;
 
@@ -1004,7 +1004,7 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
                 ScheduledFrame = IsoEndpoint->IsoScheduleFrame;
 
                 if (IsoEndpoint->IsFirstIsoTransfer ||
-                    UsbportFrameAfter(HwFrame, ScheduledFrame + PacketLimit))
+                    UsbportFrameAfter(HwFrame, ScheduledFrame + FrameSpan))
                 {
                     /* First transfer on this pipe, or we fell too far
                      * behind — resync to the current position. */
@@ -1020,6 +1020,7 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
 
             Urb->UrbIsochronousTransfer.StartFrame = ScheduledFrame;
 
+            IsoEndpoint->IsoScheduleStartFrame = ScheduledFrame;
             IsoEndpoint->IsoScheduleFrame = ScheduledFrame + FrameSpan;
             IsoEndpoint->FrameNumber = ScheduledFrame + FrameSpan;
 

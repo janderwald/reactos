@@ -911,7 +911,7 @@ EHCI_AlignHwStructure(IN PEHCI_EXTENSION EhciExtension,
     ULONG NewPAddress;
     ULONG_PTR VAddress;
 
-    DPRINT1("EHCI_AlignHwStructure: *PhysicalAddress - %X, *VirtualAddress - %X, Alignment - %x\n",
+    DPRINT("EHCI_AlignHwStructure: *PhysicalAddress - %X, *VirtualAddress - %X, Alignment - %x\n",
                  *PhysicalAddress,
                  *VirtualAddress,
                  Size);
@@ -1664,17 +1664,19 @@ EHCI_InterruptService(IN PVOID ehciExtension)
 
     do
     {
-        FrameIndex = (READ_REGISTER_ULONG(&OperationalRegs->FrameIndex) & EHCI_FRINDEX_FRAME_MASK) / EHCI_MICROFRAMES;
-        FrameIndex2 = (READ_REGISTER_ULONG(&OperationalRegs->FrameIndex) & EHCI_FRINDEX_FRAME_MASK) / EHCI_MICROFRAMES;
+        FrameIndex = (READ_REGISTER_ULONG(&OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
+        FrameIndex2 = (READ_REGISTER_ULONG(&OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
     } while (FrameIndex != FrameIndex2);
 
-    if (iStatus.FrameListRollover)
+    FrameIndex &= EHCI_FRINDEX_INDEX_MASK;
+
+    if (FrameIndex < EhciExtension->FrameIndex)
     {
-        EhciExtension->FrameHighPart += 0x800;
+        EhciExtension->FrameHighPart += 0x400;
     }
 
     EhciExtension->FrameIndex = FrameIndex;
-    DPRINT1("FrameHighPart %x, FrameIndex %u\n", EhciExtension->FrameHighPart, FrameIndex );
+    DPRINT("FrameHighPart %x, FrameIndex %u\n", EhciExtension->FrameHighPart, FrameIndex );
     return TRUE;
 }
 
@@ -2789,6 +2791,7 @@ retry:
             /* Setup buffer page 1 with max packet size and direction */
             ITD->HwTD.Buffer[1].MaximumPacketSize = EndpointProperties->MaxPacketSize;
             ITD->HwTD.Buffer[1].Direction = Direction;
+            ASSERT(EndpointProperties->MaxPacketSize < 1024);
 
             /* Setup buffer page 2 with multi (transactions per microframe).
              * Multi is a single field shared by the whole iTD (all up to 8
@@ -2915,7 +2918,7 @@ retry:
                 ITD->HwTD.Transaction[MicroFrame].Status = 1 << 3;
 
                 /* Set IOC on the last transaction of the last iTD */
-                if (p == PacketsThisITD - 1)
+                if (p == PacketsThisITD - 1 && PacketIndex + p == IsoTransfer->TotalPackets)
                     ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 1;
                 else
                     ITD->HwTD.Transaction[MicroFrame].InterruptOnComplete = 0;
@@ -4137,11 +4140,11 @@ EHCI_Get32BitFrameNumber(IN PVOID ehciExtension)
     //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
 
     HighPart = EhciExtension->FrameHighPart;
-    Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FRAME_MASK) / EHCI_MICROFRAMES;
+    Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
+    Frame &= EHCI_FRINDEX_INDEX_MASK;
 
     /* The ISR keeps bit 10 of HighPart in step with the frame list half */
-    return ((Frame & EHCI_FRINDEX_INDEX_MASK) | HighPart) +
-           ((Frame ^ HighPart) & EHCI_FRAME_LIST_MAX_ENTRIES);
+    return Frame | HighPart;
 }
 
 VOID
@@ -4563,7 +4566,7 @@ EHCI_ProcessCompletedITD(IN PEHCI_EXTENSION EhciExtension,
             else
             {
                 /* Transaction completed - bytes transferred = programmed - remaining */
-                Completed = ITD->PacketLength[MicroFrame] - Remaining;
+                Completed = Remaining;
                 TotalBytesTransferred += Completed;
 
                 /* Check for errors (bit 2 = Transaction Error in 4-bit status) */

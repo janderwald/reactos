@@ -438,7 +438,7 @@ USBVideoIsoReadComplete(
     //USBVideoGetCurrentFrameNumber(Pin);
     //DPRINT1("[USBVIDEO] UsbFrameNumber %u\n", DeviceExtension->UsbFrameNumber);
     /* requeue irp */
-    DPRINT1("[USBVIDEO] Rescheduling...\n");
+    DPRINT("[USBVIDEO] Rescheduling...\n");
     USBVideoQueueIsoRead(Pin,
                          DeviceExtension->hPipe,
                          (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer,

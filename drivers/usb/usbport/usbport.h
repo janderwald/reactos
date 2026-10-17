@@ -114,7 +114,7 @@
  */
 static __inline BOOLEAN UsbportFrameAfter(ULONG a, ULONG b)
 {
-    return (a - (b + 1)) < (MAXULONG / 2);
+    return (a > (b + 1));
 }
 static __inline BOOLEAN UsbportFrameAtOrAfter(ULONG a, ULONG b)
 {
@@ -256,6 +256,7 @@ typedef struct _USBPORT_ENDPOINT {
   LIST_ENTRY TtLink;
   LIST_ENTRY RebalanceLink;
   /* Isochronous scheduling state */
+  ULONG IsoScheduleStartFrame;
   ULONG IsoScheduleFrame;
   BOOLEAN IsFirstIsoTransfer;
 } USBPORT_ENDPOINT, *PUSBPORT_ENDPOINT;
