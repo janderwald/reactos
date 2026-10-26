@@ -640,8 +640,8 @@ USBPORT_ValidateTransferParametersURB(IN PURB Urb)
     if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
     {
             if (Urb->UrbIsochronousTransfer.TransferBuffer != NULL &&
-        Urb->UrbIsochronousTransfer.TransferBufferMDL == NULL &&
-        Urb->UrbIsochronousTransfer.TransferBufferLength != 0)
+                Urb->UrbIsochronousTransfer.TransferBufferMDL == NULL &&
+                Urb->UrbIsochronousTransfer.TransferBufferLength != 0)
         {
             Mdl = IoAllocateMdl(Urb->UrbIsochronousTransfer.TransferBuffer,
                             Urb->UrbIsochronousTransfer.TransferBufferLength,
@@ -659,6 +659,11 @@ USBPORT_ValidateTransferParametersURB(IN PURB Urb)
 
             Urb->UrbIsochronousTransfer.TransferBufferMDL = Mdl;
             Urb->UrbHeader.UsbdFlags |= USBD_FLAG_ALLOCATED_MDL;
+            return STATUS_SUCCESS;
+        }
+        else if (Urb->UrbIsochronousTransfer.TransferBufferLength != 0 &&
+                 Urb->UrbIsochronousTransfer.TransferBufferMDL != NULL)
+        {
             return STATUS_SUCCESS;
         }
     }
@@ -905,7 +910,7 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
             KIRQL OldIrql;
 
             /* Number of frames to schedule ahead when using ASAP mode */
-            #define ISO_ASAP_LEAD_FRAMES 8
+            #define ISO_ASAP_LEAD_FRAMES 5
 
             IsoPipeHandle = Urb->UrbIsochronousTransfer.PipeHandle;
 
@@ -1004,12 +1009,19 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
                 ScheduledFrame = IsoEndpoint->IsoScheduleFrame;
 
                 if (IsoEndpoint->IsFirstIsoTransfer ||
-                    UsbportFrameAfter(HwFrame, ScheduledFrame + FrameSpan))
+                    UsbportFrameAfter(HwFrame, ScheduledFrame))
                 {
                     /* First transfer on this pipe, or we fell too far
                      * behind — resync to the current position. */
                     ScheduledFrame = HwFrame + ISO_ASAP_LEAD_FRAMES;
                     IsoEndpoint->IsFirstIsoTransfer = FALSE;
+                }
+                else
+                {
+                    LONG FrameDelta = (LONG)(ScheduledFrame - HwFrame);
+                    DPRINT("HwFrame: %x\n", HwFrame);
+                    DPRINT("ScheduledFrame: %x\n", ScheduledFrame);
+                    DPRINT("FrameDelta %d\n", FrameDelta);
                 }
             }
             else
@@ -1019,10 +1031,6 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
             }
 
             Urb->UrbIsochronousTransfer.StartFrame = ScheduledFrame;
-
-            IsoEndpoint->IsoScheduleStartFrame = ScheduledFrame;
-            IsoEndpoint->IsoScheduleFrame = ScheduledFrame + FrameSpan;
-            IsoEndpoint->FrameNumber = ScheduledFrame + FrameSpan;
 
             /* Reject the transfer if the start frame is out of range */
             {
@@ -1036,9 +1044,15 @@ USBPORT_HandleSubmitURB(IN PDEVICE_OBJECT PdoDevice,
 
                     Urb->UrbHeader.Status = USBD_STATUS_BAD_START_FRAME;
                     Status = STATUS_SUCCESS;
+                    ASSERT(FALSE);
                     break;
                 }
             }
+
+            IsoEndpoint->IsoScheduleStartFrame = ScheduledFrame;
+            IsoEndpoint->IsoScheduleFrame = ScheduledFrame + FrameSpan;
+            IsoEndpoint->FrameNumber = ScheduledFrame + FrameSpan;
+            DPRINT("IsoScheduleStartFrame %x Index %u End %x \n", ScheduledFrame, ScheduledFrame & 0x3FF, IsoEndpoint->IsoScheduleFrame);
 
             /* Set transfer direction based on endpoint direction */
             if (IsoEndpoint->EndpointProperties.Direction == USBPORT_TRANSFER_DIRECTION_OUT)

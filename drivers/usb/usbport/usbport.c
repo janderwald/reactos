@@ -2375,6 +2375,15 @@ USBPORT_CompleteTransfer(IN PURB Urb,
     {
         IoFreeMdl(Transfer->TransferBufferMDL);
         Urb->UrbHeader.UsbdFlags &= ~USBD_FLAG_ALLOCATED_MDL;
+
+        if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
+        {
+            Urb->UrbIsochronousTransfer.TransferBufferMDL = NULL;
+        }
+        else
+        {
+            Urb->UrbControlTransfer.TransferBufferMDL = NULL;
+        }
     }
 
     if (Urb->UrbHeader.Function == URB_FUNCTION_ISOCH_TRANSFER)
