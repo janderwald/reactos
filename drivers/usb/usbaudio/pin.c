@@ -11,7 +11,7 @@
 
 #define PACKET_COUNT 16
 #define IRP_CAPTURE_COUNT 16
-#define RENDER_IRP_COUNT (4)
+#define RENDER_IRP_COUNT (16)
 
 NTSTATUS
 UsbAudioAllocCaptureUrbIso(
@@ -327,9 +327,10 @@ RenderInitializeUrbAndIrp(
     IN OUT PIRP Irp,
     IN PVOID TransferBuffer,
     IN ULONG TransferBufferSize,
-    IN ULONG PacketSize)
+    IN ULONG PacketSize,
+    IN ULONG PacketCount)
 {
-    ULONG Index, PacketCount;
+    ULONG Index;
     PURB Urb;
     PIO_STACK_LOCATION IoStack;
 
@@ -351,11 +352,6 @@ RenderInitializeUrbAndIrp(
 
     /* set completion routine */
     IoSetCompletionRoutine(Irp, UsbAudioRenderComplete, Pin, TRUE, TRUE, TRUE);
-
-    /* calculate packet count */
-    ASSERT(PacketSize);
-    PacketCount = TransferBufferSize / PacketSize;
-    ASSERT(TransferBufferSize % PacketSize == 0);
 
     /* lets allocate urb */
     Urb = (PURB)AllocFunction(GET_ISO_URB_SIZE(PacketCount));
@@ -690,7 +686,10 @@ InitStreamPin(
     PinContext->BufferLength = 0;
 
     /* initialize completion event */
-    KeInitializeEvent(&PinContext->StoppedStreamingEvent, NotificationEvent, FALSE);
+    KeInitializeEvent(&PinContext->StoppedStreamingEvent, SynchronizationEvent, FALSE);
+
+    /* init irp count */
+    PinContext->StoppedStreamingIrps = RENDER_IRP_COUNT;
 
     /* init irps */
     for (Index = 0; Index < RENDER_IRP_COUNT; Index++)
@@ -889,14 +888,33 @@ USBAudioPinClose(
     NTSTATUS Status;
     //ULONG InterfaceIndex;
 
+    DPRINT1("USBAudioPinClose entered\n");
+
     /* get pin context */
     PinContext = Pin->Context;
 
-    /* set stop streaming flag */
-    PinContext->StopStreaming = TRUE;
+    if (!PinContext->StopStreaming)
+    {
+        /* set stop streaming flag */
+        PinContext->StopStreaming = TRUE;
 
-    /* wait for completion */
-    KeWaitForSingleObject(&PinContext->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+        if (Pin->DataFlow == KSPIN_DATAFLOW_OUT)
+        {
+           if (PinContext->StoppedStreamingIrps != IRP_CAPTURE_COUNT)
+           {
+                /* wait for completion */
+                KeWaitForSingleObject(&PinContext->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+           }
+        }
+        else
+        {
+           if (PinContext->StoppedStreamingIrps != RENDER_IRP_COUNT)
+           {
+                /* wait for completion */
+                KeWaitForSingleObject(&PinContext->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+           }
+        }
+    }
 
     /* now abort pipe*/
     Urb = AllocFunction(sizeof(URB));
@@ -971,6 +989,7 @@ UsbAudioRenderComplete(
 
     /* insert entry into ready list */
     InsertTailList(&PinContext->IrpListHead, &Irp->Tail.Overlay.ListEntry);
+    InterlockedIncrement(&PinContext->StoppedStreamingIrps);
 
     /* release lock */
     KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
@@ -1097,6 +1116,8 @@ PinGetIrpFromReadyList(
         Irp = (PIRP)CONTAINING_RECORD(CurEntry, IRP, Tail.Overlay.ListEntry);
     }
 
+    InterlockedDecrement(&PinContext->StoppedStreamingIrps);
+
     /* release lock */
     KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
 
@@ -1111,7 +1132,7 @@ PinRenderProcess(
     PKSSTREAM_POINTER CloneStreamPointer;
     NTSTATUS Status;
     PPIN_CONTEXT PinContext;
-    ULONG PacketCount, TotalPacketSize, Offset;
+    ULONG PacketCount, MaximumPacketSize, Offset;
     PUCHAR TransferBuffer;
     PIRP Irp = NULL;
     KIRQL OldLevel;
@@ -1154,7 +1175,7 @@ PinRenderProcess(
     LeadingStreamPointer = KsPinGetLeadingEdgeStreamPointer(Pin, KSSTREAM_POINTER_STATE_LOCKED);
     if (LeadingStreamPointer == NULL)
     {
-        DPRINT1("PinRenderProcess NoData\n");
+        DPRINT("PinRenderProcess NoData\n");
         return STATUS_SUCCESS;
     }
 
@@ -1171,7 +1192,7 @@ PinRenderProcess(
     if (!Irp)
     {
         /* no irps available */
-        DPRINT1("No irps available");
+        DPRINT1("No irps available\n");
         KsStreamPointerUnlock(LeadingStreamPointer, FALSE);
         return STATUS_SUCCESS;
     }
@@ -1187,8 +1208,8 @@ PinRenderProcess(
     }
 
     /* calculate packet count */
-    TotalPacketSize = PinContext->InterfaceInfo->Pipes[0].MaximumPacketSize;
-    ASSERT(TotalPacketSize);
+    MaximumPacketSize = PinContext->InterfaceInfo->Pipes[0].MaximumPacketSize;
+    ASSERT(MaximumPacketSize);
 
     /* init transfer buffer*/
     TransferBuffer = CloneStreamPointer->StreamHeader->Data;
@@ -1201,22 +1222,22 @@ PinRenderProcess(
     Offset = CloneStreamPointer->Offset->Count - CloneStreamPointer->Offset->Remaining;
 
     /* calculate packet count */
-    PacketCount = (CloneStreamPointer->Offset->Remaining) / TotalPacketSize;
+    PacketCount = (CloneStreamPointer->Offset->Remaining) / MaximumPacketSize;
+    if (PacketCount * MaximumPacketSize < CloneStreamPointer->Offset->Remaining)
+        PacketCount++;
 
-    Status = RenderInitializeUrbAndIrp(Pin, PinContext, Irp, &TransferBuffer[Offset], PacketCount * TotalPacketSize, TotalPacketSize);
+    Status = RenderInitializeUrbAndIrp(Pin, PinContext, Irp, &TransferBuffer[Offset], CloneStreamPointer->Offset->Remaining, MaximumPacketSize, PacketCount);
     if (NT_SUCCESS(Status))
     {
         /* store in irp context */
         Irp->Tail.Overlay.DriverContext[1] = CloneStreamPointer;
 
         /* render audio bytes */
-        DPRINT("PinRenderProcess sending Irp %p PacketCount %u TotalPacketSize %u\n", Irp, PacketCount, TotalPacketSize);
+        DPRINT("PinRenderProcess sending Irp %p PacketCount %u MaximumPacketSize %u\n", Irp, PacketCount, MaximumPacketSize);
         Status = IoCallDriver(PinContext->LowerDevice, Irp);
 
     }
 
-    /* unlock stream pointer and finish*/
-    KsStreamPointerUnlock(LeadingStreamPointer, FALSE);
     return STATUS_PENDING;
 }
 
@@ -1622,6 +1643,10 @@ RenderPinStateChange(
     _In_ KSSTATE FromState)
 {
     NTSTATUS Status = STATUS_SUCCESS;
+    PPIN_CONTEXT PinContext;
+
+    /* get pin context */
+    PinContext = Pin->Context;
 
     if (FromState != ToState)
     {
@@ -1637,9 +1662,9 @@ RenderPinStateChange(
             }
             else
             {
-                if (ToState == KSSTATE_RUN)
+                if (ToState == KSSTATE_STOP)
                 {
-                    Status = STATUS_SUCCESS;
+                    PinContext->StopStreaming = TRUE;
                 }
             }
         }

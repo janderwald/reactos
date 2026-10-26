@@ -220,6 +220,7 @@ FilterAudioMuteHandler(
             else
             {
                 Status = UsbAudioGetSetProperty(FilterContext->DeviceExtension->LowerDevice, 0x01, 0x1 << 8, FeatureUnitDescriptor->bUnitID << 8, Data, 1, USBD_TRANSFER_DIRECTION_OUT);
+                Irp->IoStatus.Information = sizeof(BOOL);
             }
         }
     }
@@ -242,9 +243,9 @@ FilterAudioVolumeHandler(
     LONG Value;
     NTSTATUS Status = STATUS_INVALID_PARAMETER;
 
-
     /* get filter from irp */
     Filter = KsGetFilterFromIrp(Irp);
+    DPRINT1("FilterAudioVolumeHandler Filter %p\n", Filter);
 
     if (Filter)
     {
@@ -270,7 +271,7 @@ FilterAudioVolumeHandler(
                 Value = (LONG)TransferBuffer[0] * 256;
 
                 *(PLONG)Data = Value;
-                Irp->IoStatus.Information = sizeof(BOOL);
+                Irp->IoStatus.Information = sizeof(LONG);
             }
             else
             {
@@ -312,6 +313,30 @@ FilterAudioVolumeHandler(
         FreeFunction(TransferBuffer);
     }
     return Status;
+}
+
+VOID
+USBAudioSetVolume(
+    PDEVICE_EXTENSION DeviceExtension,
+    PUSB_AUDIO_CONTROL_FEATURE_UNIT_DESCRIPTOR FeatureUnitDescriptor)
+{
+    PSHORT TransferBuffer;
+    NTSTATUS Status;
+
+    TransferBuffer = AllocFunction(sizeof(USHORT));
+    ASSERT(TransferBuffer);
+    *TransferBuffer = 0xFFFF;
+
+    /* get maximum value */
+    Status = UsbAudioGetSetProperty(DeviceExtension->LowerDevice, 0x83, 0x2 << 8, FeatureUnitDescriptor->bUnitID << 8, TransferBuffer, sizeof(USHORT), USBD_TRANSFER_DIRECTION_IN);
+    ASSERT(NT_SUCCESS(Status));
+    DPRINT1("TransferBuffer %p MaxValue %x\n", TransferBuffer, *TransferBuffer);
+    *TransferBuffer = 0x0C00; // FIXME
+
+    /* set volume request */
+    Status = UsbAudioGetSetProperty(DeviceExtension->LowerDevice, 0x01, 0x2 << 8, FeatureUnitDescriptor->bUnitID << 8, TransferBuffer, sizeof(USHORT), USBD_TRANSFER_DIRECTION_OUT);
+    ASSERT(NT_SUCCESS(Status));
+    FreeFunction(TransferBuffer);
 }
 
 
@@ -606,7 +631,6 @@ BuildUSBAudioFilterTopology(
                             Value |= FeatureUnitDescriptor->bmaControls[Index];
                         }
 
-
                         if (Value & 0x01) /* MUTE*/
                         {
                             NodeDescriptors[FilterDescriptor->NodeDescriptorsCount].Type = &KSNODETYPE_MUTE;
@@ -642,6 +666,7 @@ BuildUSBAudioFilterTopology(
                             NodeContext[DescriptorCount].NodeCount++;
 
                             FilterDescriptor->NodeDescriptorsCount++;
+                            USBAudioSetVolume(DeviceExtension, FeatureUnitDescriptor);
                         }
 
                         if (Value & 0x04) /* BASS */
