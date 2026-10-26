@@ -2960,7 +2960,7 @@ retry:
 #endif
 
             /* Schedule this iTD in the periodic frame list */
-            FrameIndex = CurrentFrame % (EHCI_FRAME_LIST_MAX_ENTRIES);
+            FrameIndex = CurrentFrame & (EHCI_FRINDEX_FRAME_MASK);
 
             KeMemoryBarrier();
 
@@ -4135,11 +4135,17 @@ EHCI_Get32BitFrameNumber(IN PVOID ehciExtension)
 {
     PEHCI_EXTENSION EhciExtension = ehciExtension;
     ULONG HighPart;
-    ULONG Frame;
+    ULONG Frame, Frame2;
 
     //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
 
     HighPart = EhciExtension->FrameHighPart;
+    do
+    {
+        Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
+        Frame2 = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
+    } while (Frame != Frame2);
+
     Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
     Frame &= EHCI_FRINDEX_INDEX_MASK;
 
