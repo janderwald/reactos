@@ -17,6 +17,9 @@
 #include <drivers/usbport/usbmport.h>
 #include "hardware.h"
 
+#define ROUND_DOWN(n, align) (((ULONG)n) & ~((align) - 1l))
+#define ROUND_UP(n, align) ROUND_DOWN(((ULONG)n) + (align) - 1, (align))
+
 extern USBPORT_REGISTRATION_PACKET RegPacket;
 
 #define UHCI_MAX_HC_SCHEDULE_ERRORS        16
@@ -48,6 +51,7 @@ typedef struct _UHCI_HCD_TD {
   ULONG PhysicalAddress;
   ULONG Flags;
   struct _UHCI_HCD_TD * NextHcdTD;
+  struct _UHCI_HCD_TD * NextTD;
   _ANONYMOUS_UNION union {
     PUHCI_TRANSFER UhciTransfer;
 #if !defined(_M_X64)
@@ -65,7 +69,7 @@ typedef struct _UHCI_HCD_TD {
   ULONG ScheduledFrame;
   PUSBPORT_ISO_PACKET_DATA IsoPacket;
 #if !defined(_M_X64)
-  UCHAR Padded[9];
+  UCHAR Padded[6];
 #else
   ULONG Padded[3];
 #endif
@@ -178,10 +182,8 @@ typedef struct _UHCI_EXTENSION {
   ULONG SuspendChangePortMask;
   ULONG HcScheduleError;
   LONG ExtensionLock;
-  UHCI_USB_STATUS StatusMask;
+  UHCI_INTERRUPT_ENABLE StatusMask;
   UHCI_USB_STATUS HcStatus;
-  RTL_BITMAP IsoBitmap;
-  PULONG IsoBitmapBuffer;
   UCHAR SOF_Modify;
   UCHAR Padded2[3];
   ULONG PendingTransfers;
