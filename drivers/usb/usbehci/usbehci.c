@@ -2960,7 +2960,7 @@ retry:
 #endif
 
             /* Schedule this iTD in the periodic frame list */
-            FrameIndex = CurrentFrame & (EHCI_FRINDEX_FRAME_MASK);
+            FrameIndex = CurrentFrame & (EHCI_FRINDEX_INDEX_MASK);
 
             KeMemoryBarrier();
 
@@ -2977,7 +2977,7 @@ retry:
             HcResourcesVA->PeriodicFrameList[FrameIndex] = LinkPointer.AsULONG;
             KeMemoryBarrier();
             /* Store the frame index in the iTD for unlinking later */
-            ITD->ScheduledFrame = FrameIndex;
+            ITD->ScheduledFrame = CurrentFrame;
 
             /* Track which frame this iTD was inserted at */
             if (ITDCount == 0)
@@ -2994,7 +2994,7 @@ retry:
         EHCI_EnablePeriodicList(EhciExtension);
 
         DPRINT1("EHCI_SubmitIsoTransfer: Scheduled %lu iTDs for %lu packets EndFrame %u\n",
-               ITDCount, IsoTransfer->TotalPackets, EhciEndpoint->StartingFrame + ITDCount);
+               ITDCount, IsoTransfer->TotalPackets, ITD->ScheduledFrame & EHCI_FRINDEX_INDEX_MASK);
         return MP_STATUS_SUCCESS;
     }
     else
@@ -4133,24 +4133,19 @@ ULONG
 NTAPI
 EHCI_Get32BitFrameNumber(IN PVOID ehciExtension)
 {
-    PEHCI_EXTENSION EhciExtension = ehciExtension;
-    ULONG HighPart;
-    ULONG Frame, Frame2;
+     PEHCI_EXTENSION EhciExtension = ehciExtension;
+     ULONG HighPart;
+     ULONG Frame;
 
-    //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
+     //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
 
-    HighPart = EhciExtension->FrameHighPart;
-    do
-    {
-        Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
-        Frame2 = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
-    } while (Frame != Frame2);
+     HighPart = EhciExtension->FrameHighPart;
+     Frame = READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) / EHCI_MICROFRAMES;
+     Frame &= EHCI_FRINDEX_FRAME_MASK;
 
-    Frame = (READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex) & EHCI_FRINDEX_FULL_MASK) / EHCI_MICROFRAMES;
-    Frame &= EHCI_FRINDEX_INDEX_MASK;
-
-    /* The ISR keeps bit 10 of HighPart in step with the frame list half */
-    return Frame | HighPart;
+     /* The ISR keeps bit 10 of HighPart in step with the frame list half */
+     return ((Frame & EHCI_FRINDEX_INDEX_MASK) | HighPart) +
+            ((Frame ^ HighPart) & EHCI_FRAME_LIST_MAX_ENTRIES);
 }
 
 VOID
@@ -4668,7 +4663,7 @@ EHCI_UnlinkITDFromFrameList(IN PEHCI_EXTENSION EhciExtension,
     DPRINT_EHCI("EHCI_UnlinkITDFromFrameList: Unlinking iTD %p from frame %u\n", ITD, Frame);
 
     /* Search and unlink from frame list - simplified version */
-    CurrentLink.AsULONG = HcResourcesVA->PeriodicFrameList[Frame];
+    CurrentLink.AsULONG = HcResourcesVA->PeriodicFrameList[Frame & EHCI_FRINDEX_INDEX_MASK];
 
     if (CurrentLink.Address == TargetPhysicalAddress &&
         CurrentLink.Type == EHCI_LINK_TYPE_iTD)

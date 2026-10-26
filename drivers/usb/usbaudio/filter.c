@@ -329,13 +329,13 @@ USBAudioSetVolume(
 
     /* get maximum value */
     Status = UsbAudioGetSetProperty(DeviceExtension->LowerDevice, 0x83, 0x2 << 8, FeatureUnitDescriptor->bUnitID << 8, TransferBuffer, sizeof(USHORT), USBD_TRANSFER_DIRECTION_IN);
-    ASSERT(NT_SUCCESS(Status));
-    DPRINT1("TransferBuffer %p MaxValue %x\n", TransferBuffer, *TransferBuffer);
+    DPRINT1("USBAudioSetVolume Status %x TransferBuffer %p MaxValue %x\n", Status, TransferBuffer, *TransferBuffer);
+    if (NT_SUCCESS(Status))
+        return;
     *TransferBuffer = 0x0C00; // FIXME
 
     /* set volume request */
     Status = UsbAudioGetSetProperty(DeviceExtension->LowerDevice, 0x01, 0x2 << 8, FeatureUnitDescriptor->bUnitID << 8, TransferBuffer, sizeof(USHORT), USBD_TRANSFER_DIRECTION_OUT);
-    ASSERT(NT_SUCCESS(Status));
     FreeFunction(TransferBuffer);
 }
 

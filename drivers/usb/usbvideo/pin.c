@@ -754,11 +754,18 @@ USBVideoPinClose(
     /* get device extension */
     DeviceExtension = Pin->Context;
 
-    /* set stop streaming flag */
-    DeviceExtension->StopStreaming = TRUE;
 
-    /* wait for completion */
-    KeWaitForSingleObject(&DeviceExtension->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+    if (!DeviceExtension->StopStreaming || DeviceExtension->StoppedStreamingIrps != DeviceExtension->UrbPoolCount)
+    {
+        /* set stop streaming flag */
+        DeviceExtension->StopStreaming = TRUE;
+
+        DPRINT1("USBVideoPinClose before wait\n");
+
+        /* wait for completion */
+        KeWaitForSingleObject(&DeviceExtension->StoppedStreamingEvent, Executive, KernelMode, FALSE, NULL);
+    }
+
 
     /* now abort pipe*/
     Urb = AllocFunction(sizeof(URB));
@@ -800,10 +807,12 @@ USBVideoPinClose(
 
     for (ULONG i = 0; i < DeviceExtension->UrbPoolCount; i++)
     {
+        IoFreeMdl(DeviceExtension->Mdl[i]);
         FreeFunction(DeviceExtension->Irp[i]);
         FreeFunction(DeviceExtension->Urb[i]);
         FreeFunction(DeviceExtension->Buffer[i]);
     }
+    FreeFunction(DeviceExtension->Mdl);
     FreeFunction(DeviceExtension->FrameCtx);
     FreeFunction(DeviceExtension->Irp);
     FreeFunction(DeviceExtension->Urb);
@@ -813,6 +822,7 @@ USBVideoPinClose(
     DeviceExtension->Urb = NULL;
     DeviceExtension->Irp = NULL;
     DeviceExtension->Buffer = NULL;
+    DeviceExtension->Mdl = NULL;
 
     IoStopTimer(DeviceExtension->FunctionalDeviceObject);
 
