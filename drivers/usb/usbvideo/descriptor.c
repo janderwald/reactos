@@ -994,7 +994,7 @@ USBVideoPinBuildDescriptors(
     if (!Pins)
     {
         /* no memory */
-        return USBD_STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     /* initialize streaming pin */
@@ -1140,7 +1140,7 @@ USBVideoEnumTerminalDescriptors(
     if (!DeviceExtension->TerminalDescriptors)
     {
         DPRINT1("Failed to allocate terminal descriptos Count %u\n", DescriptorCount);
-        return USBD_STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     DPRINT1("EnumTerminalDescriptors Descriptors Count %u\n", DescriptorCount);
 

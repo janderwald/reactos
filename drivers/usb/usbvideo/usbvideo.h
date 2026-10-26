@@ -323,17 +323,20 @@ typedef struct
     PUCHAR * Buffer;                                              /* buffer array for irp queue */
     PURB * Urb;                                                   /* Urb array for irp queue */
     PIRP * Irp;                                                   /* irp array for irp queue */
+    PMDL * Mdl;
     PKSPIN Pin;                                                   /* pin reference */
     ULONG StopStreaming;                                          /* stops streaming */
+    KEVENT StopStreamingEvent;
     ULONG StoppedStreamingIrps;                                   /* stopped streaming irp count */
     KEVENT StoppedStreamingEvent;                                  /* stopped streaming event */
     KSPIN_LOCK StreamingLock;
     KSPIN_LOCK IsoIrpCompletionLock;
     LIST_ENTRY IsoIrpCompletionList;
+    KEVENT IsoIrpCompletionEvent;
+    KEVENT StartStreamingEvent;
     ULONG UsbFrameNumber;
     KEVENT UsbFrameNumberUpdated;
-    PKSWORKER ErrorWorker;
-    WORK_QUEUE_ITEM ErrorWorkItem;
+    HANDLE IrpSchedulerThread;
     ULONG IsoIrpCompletionCount;
     ULONG BulkTransferSize;
     ULONG IsoTransferSize;
@@ -342,8 +345,6 @@ typedef struct
     ULONG UrbPoolCount;
     ULONG IsoPacketCount;
     BOOLEAN IsMjpegFormat;
-    HANDLE ErrorControlThread;
-    ULONG ErrorControlActive;
 } USB_VIDEO_DEVICE_EXTENSION, *PUSB_VIDEO_DEVICE_EXTENSION;
 
 
@@ -364,7 +365,7 @@ USBVideoBulkReadComplete(
 
 NTSTATUS
 USBVideoQueueBulkRead(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     IN USBD_PIPE_HANDLE hBulkPipe,
     IN PUCHAR TransferBuffer,
     IN ULONG TransferLength,
@@ -612,6 +613,10 @@ USBVideoPinSetDeviceState(
 
 /* iso.c */
 
+VOID
+NTAPI
+IrpSchedulerThread(IN PVOID Parameter);
+
 NTSTATUS
 NTAPI
 USBVideoIsoReadComplete(
@@ -621,9 +626,9 @@ USBVideoIsoReadComplete(
 
 NTSTATUS
 USBVideoQueueIsoRead(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     IN USBD_PIPE_HANDLE hIsoPipe,
-    IN PUCHAR TransferBuffer,
+    IN PMDL Mdl,
     IN ULONG TransferLength,
     IN PIRP Irp,
     IN PURB Urb,

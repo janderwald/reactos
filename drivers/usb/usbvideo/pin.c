@@ -40,10 +40,8 @@ USBVideoPinSetDeviceState(
     _In_ KSSTATE FromState)
 {
     PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
-    ULONG Index;
-    PFRAME_CONTEXT FrameContext;
     NTSTATUS Status;
-    PURB pIsoFrameNumber;
+    OBJECT_ATTRIBUTES ObjectAttributes = RTL_CONSTANT_OBJECT_ATTRIBUTES(NULL, OBJ_KERNEL_HANDLE);
 
     /* get device extension */
     DeviceExtension = Pin->Context;
@@ -52,51 +50,20 @@ USBVideoPinSetDeviceState(
 
     if (ToState == KSSTATE_RUN)
     {
-        for (Index = 0; Index < DeviceExtension->UrbPoolCount; Index++)
-        {
-            if (DeviceExtension->PipeType == UsbdPipeTypeIsochronous)
-            {
-                if (DeviceExtension->UrbPoolCount == DeviceExtension->FrameContextCount)
-                    FrameContext = &DeviceExtension->FrameCtx[Index];
-                else
-                    FrameContext = &DeviceExtension->FrameCtx[0];
-
-                pIsoFrameNumber = AllocFunction(sizeof(struct _URB_GET_CURRENT_FRAME_NUMBER));
-                ASSERT(pIsoFrameNumber);
-                pIsoFrameNumber->UrbHeader.Function = URB_FUNCTION_GET_CURRENT_FRAME_NUMBER;
-                pIsoFrameNumber->UrbHeader.Length = sizeof(struct _URB_GET_CURRENT_FRAME_NUMBER);
-                Status = SubmitUrbSync(DeviceExtension->LowerDevice, pIsoFrameNumber);
-                ASSERT(NT_SUCCESS(Status));
-
-                USBVideoQueueIsoRead(
-                    Pin,
-                    DeviceExtension->hPipe,
-                    DeviceExtension->Buffer[Index],
-                    DeviceExtension->IsoTransferSize,
-                    DeviceExtension->Irp[Index],
-                    DeviceExtension->Urb[Index],
-                    pIsoFrameNumber->UrbGetCurrentFrameNumber.FrameNumber,
-                    FrameContext
-                );
-            }
-            else
-            {
-                ASSERT(DeviceExtension->PipeType == UsbdPipeTypeBulk);
-                USBVideoQueueBulkRead(
-                        Pin,
-                        DeviceExtension->hPipe,
-                        DeviceExtension->Buffer[Index],
-                        DeviceExtension->BulkTransferSize,
-                        DeviceExtension->Irp[Index],
-                        DeviceExtension->Urb[Index]);
-            }
-
-        }
-        IoStartTimer(DeviceExtension->FunctionalDeviceObject);
-    } else if (ToState == KSSTATE_PAUSE)
+        DeviceExtension->StopStreaming = FALSE;
+        KeClearEvent(&DeviceExtension->StopStreamingEvent);
+        Status = PsCreateSystemThread(&DeviceExtension->IrpSchedulerThread,
+                                      0,
+                                      &ObjectAttributes,
+                                      NULL,
+                                      NULL,
+                                      IrpSchedulerThread,
+                                      DeviceExtension);
+    }
+    else if (ToState == KSSTATE_STOP)
     {
-        DeviceExtension->ErrorControlActive = FALSE;
-        IoStopTimer(DeviceExtension->FunctionalDeviceObject);
+        DeviceExtension->StopStreaming = TRUE;
+        KeSetEvent(&DeviceExtension->StopStreamingEvent, 0, FALSE);
     }
     return STATUS_SUCCESS;
 }
@@ -698,6 +665,13 @@ USBVideoPinCreate(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    DeviceExtension->Mdl = AllocFunction(sizeof(PMDL) * DeviceExtension->UrbPoolCount);
+    if (!DeviceExtension->Mdl)
+    {
+        /* no memory */
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     for(ULONG i = 0; i < DeviceExtension->FrameContextCount; i++)
     {
         DeviceExtension->FrameCtx[i].FrameBuffer = AllocFunction(DeviceExtension->FrameContextSize);
@@ -745,11 +719,15 @@ USBVideoPinCreate(
         if (DeviceExtension->PipeType == UsbdPipeTypeIsochronous)
         {
             DeviceExtension->Buffer[i] = AllocFunction(DeviceExtension->IsoTransferSize);
+            DeviceExtension->Mdl[i] = IoAllocateMdl(DeviceExtension->Buffer[i], DeviceExtension->IsoTransferSize, FALSE, FALSE, NULL);
+            MmBuildMdlForNonPagedPool(DeviceExtension->Mdl[i]);
         }
         else
         {
             ASSERT(DeviceExtension->PipeType == UsbdPipeTypeBulk);
             DeviceExtension->Buffer[i] = AllocFunction(DeviceExtension->BulkTransferSize);
+            DeviceExtension->Mdl[i] = IoAllocateMdl(DeviceExtension->Buffer[i], DeviceExtension->BulkTransferSize, FALSE, FALSE, NULL);
+            MmBuildMdlForNonPagedPool(DeviceExtension->Mdl[i]);
         }
 
         if (!DeviceExtension->Buffer[i])
@@ -757,6 +735,7 @@ USBVideoPinCreate(
             /* no memory */
             return STATUS_INSUFFICIENT_RESOURCES;
         }
+
     }
     return STATUS_SUCCESS;
 }
@@ -835,7 +814,6 @@ USBVideoPinClose(
     DeviceExtension->Irp = NULL;
     DeviceExtension->Buffer = NULL;
 
-    DeviceExtension->ErrorControlActive = FALSE;
     IoStopTimer(DeviceExtension->FunctionalDeviceObject);
 
     Irp->IoStatus.Status = Status;

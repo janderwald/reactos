@@ -12,18 +12,14 @@
 
 NTSTATUS
 USBVideoQueueBulkRead(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     IN USBD_PIPE_HANDLE hBulkPipe,
     IN PUCHAR TransferBuffer,
     IN ULONG TransferLength,
     IN PIRP Irp,
     IN PURB Urb)
 {
-    PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     PIO_STACK_LOCATION IoStack;
-
-    /* get device extension */
-    DeviceExtension = Pin->Context;
 
     if (DeviceExtension->StopStreaming) {
        InterlockedIncrement(&DeviceExtension->StoppedStreamingIrps);
@@ -57,7 +53,7 @@ USBVideoQueueBulkRead(
     IoStack->Parameters.DeviceIoControl.IoControlCode = IOCTL_INTERNAL_USB_SUBMIT_URB;
     Irp->Tail.Overlay.DriverContext[0] = Urb;
 
-    IoSetCompletionRoutine(Irp, USBVideoBulkReadComplete, (PVOID)Pin, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, USBVideoBulkReadComplete, (PVOID)DeviceExtension, TRUE, TRUE, TRUE);
     return IoCallDriver(DeviceExtension->LowerDevice, Irp);
 }
 
@@ -74,8 +70,7 @@ USBVideoBulkReadComplete(
     PUVC_PAYLOAD_HEADER Hdr;
     UCHAR HeaderLen;
 
-    PKSPIN Pin = (PKSPIN)Context;
-    PUSB_VIDEO_DEVICE_EXTENSION  DeviceExtension = Pin->Context;
+    PUSB_VIDEO_DEVICE_EXTENSION  DeviceExtension = (PUSB_VIDEO_DEVICE_EXTENSION)Context;
     PFRAME_CONTEXT Frame     = &DeviceExtension->FrameCtx[0]; // bulk uses one frame context
     PURB Urb = Irp->Tail.Overlay.DriverContext[0];
 
@@ -85,7 +80,7 @@ USBVideoBulkReadComplete(
     if (!NT_SUCCESS(Irp->IoStatus.Status))
     {
         DPRINT1("Irp Failed with %x\n", Irp->IoStatus.Status);
-        USBVideoQueueBulkRead(Pin,
+        USBVideoQueueBulkRead(DeviceExtension,
                               DeviceExtension->hPipe,
                               (PUCHAR)Urb->UrbBulkOrInterruptTransfer.TransferBuffer,
                               DeviceExtension->BulkTransferSize,
@@ -164,7 +159,7 @@ USBVideoBulkReadComplete(
     }
 
     /* requeue irp */
-    USBVideoQueueBulkRead(Pin,
+    USBVideoQueueBulkRead(DeviceExtension,
                           DeviceExtension->hPipe,
                           (PUCHAR)Urb->UrbBulkOrInterruptTransfer.TransferBuffer,
                           DeviceExtension->BulkTransferSize,

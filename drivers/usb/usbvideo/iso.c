@@ -36,11 +36,9 @@ UsbVideoProcessStatusPacket(
             if (bEvent == 0x00) {
                 switch (bSelector) {
                     case 0x01:  // VS_PROBE_CONTROL
-                        DPRINT1("  Probe Control geaendert\n");
                         ASSERT(FALSE);
                         break;
                     case 0x02:  // VS_COMMIT_CONTROL
-                        DPRINT1("  Commit Control geaendert\n");
                         ASSERT(FALSE);
                         break;
                 }
@@ -185,24 +183,120 @@ USBVideoGetCurrentFrameNumber(
     return IoCallDriver(DeviceExtension->LowerDevice, Irp);
 }
 
+VOID
+USBVideoRequeueIrps(
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension)
+{
+    KIRQL OldLevel;
+
+    KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
+    while(!IsListEmpty(&DeviceExtension->IsoIrpCompletionList))
+    {
+        PLIST_ENTRY Entry = RemoveHeadList(&DeviceExtension->IsoIrpCompletionList);
+        PIRP IrpEntry = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+        PURB pUrb = IrpEntry->Tail.Overlay.DriverContext[0];
+        PFRAME_CONTEXT pFrame = IrpEntry->Tail.Overlay.DriverContext[1];
+        PMDL Mdl = IrpEntry->Tail.Overlay.DriverContext[2];
+
+        KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
+        DeviceExtension->IsoIrpCompletionCount--;
+        /* requeue irp */
+        DPRINT1("Requeing Irp %p\n", IrpEntry);
+        USBVideoQueueIsoRead(DeviceExtension,
+                             DeviceExtension->hPipe,
+                             Mdl,
+                             DeviceExtension->IsoTransferSize,
+                             IrpEntry,
+                             pUrb,
+                             DeviceExtension->UsbFrameNumber,
+                             pFrame);
+        KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
+    }
+    KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
+}
+
+VOID
+NTAPI
+IrpSchedulerThread(
+    IN PVOID Context)
+{
+    ULONG Index;
+    PFRAME_CONTEXT FrameContext;
+    PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension = (PUSB_VIDEO_DEVICE_EXTENSION)Context;
+
+    for (Index = 0; Index < DeviceExtension->UrbPoolCount; Index++)
+    {
+        if (DeviceExtension->PipeType == UsbdPipeTypeIsochronous)
+        {
+            if (DeviceExtension->UrbPoolCount == DeviceExtension->FrameContextCount)
+                FrameContext = &DeviceExtension->FrameCtx[Index];
+            else
+                FrameContext = &DeviceExtension->FrameCtx[0];
+
+            USBVideoQueueIsoRead(
+                DeviceExtension,
+                DeviceExtension->hPipe,
+                DeviceExtension->Mdl[Index],
+                DeviceExtension->IsoTransferSize,
+                DeviceExtension->Irp[Index],
+                DeviceExtension->Urb[Index],
+                0,
+                FrameContext);
+            }
+            else
+            {
+                ASSERT(DeviceExtension->PipeType == UsbdPipeTypeBulk);
+                USBVideoQueueBulkRead(
+                    DeviceExtension,
+                    DeviceExtension->hPipe,
+                    DeviceExtension->Buffer[Index],
+                    DeviceExtension->BulkTransferSize,
+                    DeviceExtension->Irp[Index],
+                    DeviceExtension->Urb[Index]);
+            }
+
+        }
+    DPRINT1("IrpSchedulerThread before loop\n");
+    while(!DeviceExtension->StopStreaming)
+    {
+        NTSTATUS Status;
+        PVOID WaitObjects[2];
+        WaitObjects[0] = &DeviceExtension->StopStreamingEvent;
+        WaitObjects[1] = &DeviceExtension->IsoIrpCompletionEvent;
+
+        Status = KeWaitForMultipleObjects(2, WaitObjects, WaitAny, Executive, KernelMode, FALSE, NULL, NULL);
+        if (Status == STATUS_WAIT_0)
+        {
+            DPRINT1("StopStreamingEvent signaled\n");
+            break;
+        }
+        else if (Status == STATUS_WAIT_0 + 1)
+        {
+            USBVideoRequeueIrps(DeviceExtension);
+        }
+        else
+        {
+            DPRINT1("Unexpected response Status %x\n", Status);
+            break;
+        }
+    }
+    DPRINT1("IrpSchedulerThread terminating\n");
+    ZwClose(&DeviceExtension->IrpSchedulerThread);
+}
 
 NTSTATUS
 USBVideoQueueIsoRead(
-    IN PKSPIN Pin,
+    IN PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension,
     IN USBD_PIPE_HANDLE hIsoPipe,
-    IN PUCHAR TransferBuffer,
+    IN PMDL Mdl,
     IN ULONG TransferLength,
     IN PIRP Irp,
     IN PURB Urb,
     IN ULONG FrameNumber,
     IN PFRAME_CONTEXT FrameCtx)
 {
-    PUSB_VIDEO_DEVICE_EXTENSION DeviceExtension;
     ULONG Index;
     PIO_STACK_LOCATION IoStack;
-
-    /* get device extension */
-    DeviceExtension = Pin->Context;
 
     if (DeviceExtension->StopStreaming)
     {
@@ -231,8 +325,8 @@ USBVideoQueueIsoRead(
     Urb->UrbIsochronousTransfer.Hdr.Length = GET_ISO_URB_SIZE(DeviceExtension->IsoPacketCount);
     Urb->UrbIsochronousTransfer.PipeHandle = DeviceExtension->hPipe;
     Urb->UrbIsochronousTransfer.TransferFlags = USBD_TRANSFER_DIRECTION_IN  | USBD_START_ISO_TRANSFER_ASAP;
-    Urb->UrbIsochronousTransfer.TransferBufferLength = (DeviceExtension->dwMaxPayloadTransferSize) * DeviceExtension->IsoPacketCount;
-    Urb->UrbIsochronousTransfer.TransferBuffer = TransferBuffer;
+    Urb->UrbIsochronousTransfer.TransferBufferLength = DeviceExtension->IsoTransferSize;
+    Urb->UrbIsochronousTransfer.TransferBufferMDL = Mdl;
     Urb->UrbIsochronousTransfer.NumberOfPackets = DeviceExtension->IsoPacketCount;
     Urb->UrbIsochronousTransfer.StartFrame = 0;
 
@@ -247,8 +341,9 @@ USBVideoQueueIsoRead(
     IoStack->Parameters.DeviceIoControl.IoControlCode = IOCTL_INTERNAL_USB_SUBMIT_URB;
     Irp->Tail.Overlay.DriverContext[0] = Urb;
     Irp->Tail.Overlay.DriverContext[1] = FrameCtx;
+    Irp->Tail.Overlay.DriverContext[2] = Mdl;
 
-    IoSetCompletionRoutine(Irp, USBVideoIsoReadComplete, (PVOID)Pin, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, USBVideoIsoReadComplete, (PVOID)DeviceExtension, TRUE, TRUE, TRUE);
     return IoCallDriver(DeviceExtension->LowerDevice, Irp);
 }
 
@@ -265,31 +360,26 @@ USBVideoIsoReadComplete(
     PUVC_PAYLOAD_HEADER Hdr;
     UCHAR HeaderLen;
     ULONG Index;
-    PKSPIN Pin = (PKSPIN)Context;
     KIRQL OldLevel;
-
-    PUSB_VIDEO_DEVICE_EXTENSION  DeviceExtension = Pin->Context;
+    PUSB_VIDEO_DEVICE_EXTENSION  DeviceExtension = (PUSB_VIDEO_DEVICE_EXTENSION)Context;
     PURB Urb = Irp->Tail.Overlay.DriverContext[0];
     PFRAME_CONTEXT Frame = Irp->Tail.Overlay.DriverContext[1];
+    PMDL Mdl = Irp->Tail.Overlay.DriverContext[2];
 
     /* check for success */
-    if (!NT_SUCCESS(Irp->IoStatus.Status))
+    if (!NT_SUCCESS(Irp->IoStatus.Status) || !NT_SUCCESS(Urb->UrbHeader.Status))
     {
-        DPRINT1("Irp Failed with %x\n", Irp->IoStatus.Status);
-        USBVideoQueueIsoRead(Pin,
-                              DeviceExtension->hPipe,
-                              (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer,
-                              DeviceExtension->IsoTransferSize,
-                              Irp,
-                              Urb,
-                              0, // FIXME
-                              Frame);
+        KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
+        InsertTailList(&DeviceExtension->IsoIrpCompletionList, &Irp->Tail.Overlay.ListEntry);
+        DeviceExtension->IsoIrpCompletionCount++;
+        KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
+        KeSetEvent(&DeviceExtension->IsoIrpCompletionEvent, 0, FALSE);
 
         return STATUS_MORE_PROCESSING_REQUIRED;
     }
     KeAcquireSpinLock(&DeviceExtension->StreamingLock, &OldLevel);
 
-    Data         = (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer;
+    Data         = (PUCHAR)MmGetMdlVirtualAddress(Mdl);
     for(Index = 0; Index < Urb->UrbIsochronousTransfer.NumberOfPackets; Index++)
     {
         if (Urb->UrbIsochronousTransfer.IsoPacket[Index].Status != USBD_STATUS_SUCCESS)
@@ -434,57 +524,11 @@ USBVideoIsoReadComplete(
     }
     KeReleaseSpinLock(&DeviceExtension->StreamingLock, OldLevel);
 
-    //RtlZeroMemory(Urb->UrbIsochronousTransfer.TransferBuffer, DeviceExtension->IsoTransferSize);
-    //USBVideoGetCurrentFrameNumber(Pin);
-    //DPRINT1("[USBVIDEO] UsbFrameNumber %u\n", DeviceExtension->UsbFrameNumber);
-    /* requeue irp */
-    DPRINT("[USBVIDEO] Rescheduling...\n");
-    USBVideoQueueIsoRead(Pin,
-                         DeviceExtension->hPipe,
-                         (PUCHAR)Urb->UrbIsochronousTransfer.TransferBuffer,
-                         DeviceExtension->IsoTransferSize,
-                         Irp,
-                         Urb,
-                         DeviceExtension->UsbFrameNumber,
-                         Frame);
-
-
-
-
-    // KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
-    // InsertTailList(&DeviceExtension->IsoIrpCompletionList, &Irp->Tail.Overlay.ListEntry);
-    // DeviceExtension->IsoIrpCompletionCount++;
-    // KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
-
-    // if (DeviceExtension->IsoIrpCompletionCount == DeviceExtension->UrbPoolCount)
-    // {
-    //     USBVideoGetCurrentFrameNumber(Pin);
-    //     //KeWaitForSingleObject(&DeviceExtension->UsbFrameNumberUpdated, Executive, KernelMode, FALSE, NULL);
-
-    //     KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
-    //     while(!IsListEmpty(&DeviceExtension->IsoIrpCompletionList))
-    //     {
-    //         PLIST_ENTRY Entry = RemoveHeadList(&DeviceExtension->IsoIrpCompletionList);
-    //         PIRP IrpEntry = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
-    //         PURB pUrb = IrpEntry->Tail.Overlay.DriverContext[0];
-    //         PFRAME_CONTEXT pFrame = IrpEntry->Tail.Overlay.DriverContext[1];
-
-    //         KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
-    //         DeviceExtension->IsoIrpCompletionCount--;
-    //         /* requeue irp */
-    //         USBVideoQueueIsoRead(Pin,
-    //                              DeviceExtension->hPipe,
-    //                             (PUCHAR)pUrb->UrbIsochronousTransfer.TransferBuffer,
-    //                              DeviceExtension->IsoTransferSize,
-    //                             IrpEntry,
-    //                             pUrb,
-    //                             DeviceExtension->UsbFrameNumber,
-    //                             pFrame);
-
-    //         KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
-    //     }
-    //     KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
-    // }
+    KeAcquireSpinLock(&DeviceExtension->IsoIrpCompletionLock, &OldLevel);
+    InsertTailList(&DeviceExtension->IsoIrpCompletionList, &Irp->Tail.Overlay.ListEntry);
+    DeviceExtension->IsoIrpCompletionCount++;
+    KeReleaseSpinLock(&DeviceExtension->IsoIrpCompletionLock, OldLevel);
+    KeSetEvent(&DeviceExtension->IsoIrpCompletionEvent, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }

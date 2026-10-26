@@ -95,7 +95,7 @@ USBVideoCreateFilterContext(
     if (!FilterDescriptor)
     {
         /* no memory */
-        return USBD_STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     /* init filter descriptor*/
