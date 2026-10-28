@@ -35,6 +35,9 @@ extern USBPORT_REGISTRATION_PACKET RegPacket;
 #define OHCI_MAX_BULK_TRANSFER_SIZE       0x40000
 #define OHCI_MAX_INTERRUPT_TRANSFER_SIZE  0x1000
 
+#define OHCI_MAX_ISO_PACKETS         255
+#define OHCI_ISO_SCHEDULE_DELAY      2 // frames between now and the first frame of an unscheduled transfer
+
 #define OHCI_MAX_ISO_TD_COUNT        64
 #define OHCI_MAX_CONTROL_TD_COUNT    38
 #define OHCI_MAX_BULK_TD_COUNT       68
@@ -136,7 +139,7 @@ typedef struct _OHCI_TRANSFER {
   ULONG Reserved;
   ULONG TransferLen;
   PUSBPORT_TRANSFER_PARAMETERS TransferParameters;
-  struct _URB_ISOCH_TRANSFER *IsoUrb;
+  PUSBPORT_ISO_TRANSFER_DATA IsoUrb;
   ULONG PendingTDs;
   ULONG Flags;
   USBD_STATUS USBDStatus;
