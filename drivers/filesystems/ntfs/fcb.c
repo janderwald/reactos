@@ -109,8 +109,14 @@ NtfsCreateFCB(PCWSTR FileName,
     }
 
     ExInitializeResourceLite(&Fcb->MainResource);
+    ExInitializeResourceLite(&Fcb->PagingIoResource);
+    FsRtlInitializeFileLock(&Fcb->FileLock, NULL, NULL);
 
     Fcb->RFCB.Resource = &(Fcb->MainResource);
+    Fcb->RFCB.PagingIoResource = &(Fcb->PagingIoResource);
+
+    /* NtfsFastIoCheckIfPossible decides per request */
+    Fcb->RFCB.IsFastIoPossible = FastIoIsQuestionable;
 
     return Fcb;
 }
@@ -122,6 +128,12 @@ NtfsDestroyFCB(PNTFS_FCB Fcb)
     ASSERT(Fcb);
     ASSERT(Fcb->Identifier.Type == NTFS_TYPE_FCB);
 
+    /* The volume stream belongs to the VCB */
+    if (Fcb->FileObject && !(Fcb->Flags & FCB_IS_VOLUME_STREAM))
+        ObDereferenceObject(Fcb->FileObject);
+
+    FsRtlUninitializeFileLock(&Fcb->FileLock);
+    ExDeleteResourceLite(&Fcb->PagingIoResource);
     ExDeleteResourceLite(&Fcb->MainResource);
 
     ExFreeToNPagedLookasideList(&NtfsGlobalData->FcbLookasideList, Fcb);
@@ -132,6 +144,21 @@ BOOLEAN
 NtfsFCBIsDirectory(PNTFS_FCB Fcb)
 {
     return ((Fcb->Entry.FileAttributes & NTFS_FILE_TYPE_DIRECTORY) == NTFS_FILE_TYPE_DIRECTORY);
+}
+
+
+/* Fast I/O and the cache are only for the data of regular files */
+BOOLEAN
+NTAPI
+NtfsIsRegularFileObject(
+    _In_ PFILE_OBJECT FileObject)
+{
+    PNTFS_FCB Fcb = (PNTFS_FCB)FileObject->FsContext;
+
+    if (Fcb == NULL || Fcb->Identifier.Type != NTFS_TYPE_FCB)
+        return FALSE;
+
+    return !(Fcb->Flags & FCB_IS_VOLUME) && !NtfsFCBIsDirectory(Fcb);
 }
 
 
@@ -350,7 +377,7 @@ NtfsFCBInitializeCache(PNTFS_VCB Vcb,
     }
     _SEH2_END;
 
-    ObDereferenceObject(FileObject);
+    /* The FCB keeps its reference, tearing down the cache map would otherwise free the stream */
     Fcb->Flags |= FCB_CACHE_INITIALIZED;
 
     return Status;

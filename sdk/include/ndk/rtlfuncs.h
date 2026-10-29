@@ -5111,6 +5111,32 @@ RtlRunOnceComplete(
     _In_ ULONG Flags,
     _In_opt_ PVOID Context);
 
+#if (NTDDI_VERSION >= NTDDI_WIN10)
+#define RTLP_NUMBER_OF_NTUSER_WNDPROCS 24
+#else
+#define RTLP_NUMBER_OF_NTUSER_WNDPROCS 23
+#endif
+#define RTLP_NUMBER_OF_NTUSER_WORKERPROCS 11
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlInitializeNtUserPfn(
+    _In_reads_bytes_(SizeOfProcsA) const VOID* WndProcsA,
+    _In_ SIZE_T SizeOfProcsA,
+    _In_reads_bytes_(SizeOfProcsW) const VOID* WndProcsW,
+    _In_ SIZE_T SizeOfProcsW,
+    _In_reads_bytes_(SizeOfProcsX) const VOID* WorkerProcs,
+    _In_ SIZE_T SizeOfProcsX);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlRetrieveNtUserPfn(
+    _Outptr_ const VOID** NtdllWndProcsA,
+    _Outptr_ const VOID** NtdllWndProcsW,
+    _Outptr_ const VOID** NtdllWorkerProcs);
+
 #endif
 
 #if (_WIN32_WINNT >= _WIN32_WINNT_VISTA) || (defined(__REACTOS__) && defined(_NTDLLBUILD_))
@@ -5178,6 +5204,57 @@ RtlIsValidLocaleName(
 #define RTL_LOCALE_ALLOW_NEUTRAL_NAMES 0x00000002 // Return locales like "en" or "de"
 
 #endif /* Win Vista or ReactOS Ntdll build */
+
+#if (NTDDI_VERSION >= NTDDI_VISTA) || (DLL_EXPORT_VERSION >= _WIN32_WINNT_VISTA)
+
+typedef VOID (NTAPI *PFLS_CALLBACK_FUNCTION)(PVOID);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlFlsAlloc(
+    _In_ PFLS_CALLBACK_FUNCTION Callback,
+    _Out_ PULONG FlsIndex);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlFlsFree(
+    _In_ ULONG FlsIndex);
+
+#endif /* (NTDDI_VERSION >= NTDDI_VISTA) || (DLL_EXPORT_VERSION >= _WIN32_WINNT_VISTA) */
+
+#if (NTDDI_VERSION >= NTDDI_WIN10)
+
+NTSTATUS
+NTAPI
+RtlFlsGetValue(
+    _In_ ULONG FlsIndex,
+    _Out_ PVOID* FlsData);
+
+NTSTATUS
+NTAPI
+RtlFlsSetValue(
+    _In_ ULONG FlsIndex,
+    _In_ PVOID FlsData);
+
+#endif /* NTDDI_VERSION >= NTDDI_WIN10 */
+
+#if (NTDDI_VERSION >= NTDDI_WIN11)
+
+NTSTATUS
+NTAPI
+RtlFlsAllocEx(
+    _In_ PFLS_CALLBACK_FUNCTION Callback,
+    _Out_opt_ PULONG Unknown,
+    _Out_ PULONG FlsIndex);
+
+PVOID
+WINAPI
+RtlFlsGetValue2(
+    _In_ ULONG FlsIndex);
+
+#endif /* NTDDI_VERSION >= NTDDI_WIN11 */
 
 #if (_WIN32_WINNT >= _WIN32_WINNT_WIN7) || (defined(__REACTOS__) && defined(_NTDLLBUILD_))
 

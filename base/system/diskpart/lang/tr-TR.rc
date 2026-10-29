@@ -81,7 +81,7 @@ STRINGTABLE
 BEGIN
     IDS_DELETE_PARTITION_FAIL "\nDiskPart, seçilen bölümü silemedi.\nLütfen seçilen bölümün silmek için geçerli olduğundan emin olun.\n"
     IDS_DELETE_PARTITION_SUCCESS "\nDiskPart seçilen bölümü başarıyla sildi.\n"
-    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be neccessary to the operation of your computer, and may not be deleted.\n"
+    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be necessary to the operation of your computer, and may not be deleted.\n"
 END
 
 /* Disk Information Labels */
@@ -126,7 +126,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_FORMAT_FAIL "\nDiskPart failed to format the selected volume.\n"
-    IDS_FORMAT_SUCCESS "\nDiskPart successfully formated the selected volume.\n"
+    IDS_FORMAT_SUCCESS "\nDiskPart successfully formatted the selected volume.\n"
     IDS_FORMAT_PROGRESS "\r  %3lu percent completed"
 END
 
@@ -216,14 +216,17 @@ STRINGTABLE
 BEGIN
     IDS_STATUS_YES "Evet"
     IDS_STATUS_NO "Hayır"
-    IDS_STATUS_DISK_HEALTHY "Sağlıklı"
-    IDS_STATUS_DISK_SICK "Bozuk"
-    IDS_STATUS_UNAVAILABLE "KULLANILAMAZ"
     IDS_STATUS_ONLINE "Çevrim İçi"
     IDS_STATUS_OFFLINE "Çevrim Dışı"
-    IDS_STATUS_NO_MEDIA "Ortam Yok"
-    IDS_INFO_BOOT "Boot"
-    IDS_INFO_SYSTEM "System"
+    IDS_STATUS_VOLUME_HEALTHY "Sağlıklı"
+    IDS_STATUS_VOLUME_FAILED "Bozuk"
+    IDS_STATUS_VOLUME_NO_MEDIA "Ortam Yok"
+    IDS_STATUS_VOLUME_REBUILD "Rebuild"
+    IDS_STATUS_VOLUME_UNUSABLE "KULLANILAMAZ"
+    IDS_INFO_VOLUME_BOOT "Boot"
+    IDS_INFO_VOLUME_SYSTEM "System"
+    IDS_INFO_VOLUME_HIDDEN "Hidden"
+    IDS_INFO_VOLUME_OFFLINE "Offline"
 END
 
 /* CMD Messages for commands */

@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
  * TRANSLATORS: Copyright 2008 Hongbo Ni <hongbo@njstar.com>
- *              Copyright 2018 Luke Luo <njlyf2011@hotmail.com>
+ *              Copyright 2018 Luo Yufan <njlyf2011@hotmail.com>
  *              Copyright 2021 Chan Chilung <eason066@gmail.com>
  */
 
@@ -135,7 +135,7 @@ STRINGTABLE /* Color names */
 
 STRINGTABLE
 {
-    IDS_FONT_SIZE   "选择 %d 到 %d 之间的字号。"
+    IDS_FONT_SIZE   "请选择 %1!d! 至 %2!d! 磅之间的字号。"
     IDS_SAVE_BUTTON "保存(&S)"
     IDS_SAVE_IN     "保存在(&I)："
     IDS_SAVE        "保存"

@@ -4,7 +4,7 @@
  * PURPOSE:     Chinese (Simplified) resource file
  * TRANSLATORS: Copyright 2008 Zhang Bing <e_zb@21cn.com> <ezb@mail.gywb.cn>
  *              Copyright 2009 Jingjing Fu <jingjingf@188.com>
- *              Copyright 2018 Luke Luo <njlyf2011@hotmail.com>
+ *              Copyright 2018 Luo Yufan <njlyf2011@hotmail.com>
  *              Copyright 2021 Wu Haotian <rigoligo03@gmail.com>
  */
 
@@ -97,7 +97,7 @@ BEGIN
             UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_SETBUDDYINT | WS_CHILD | WS_VISIBLE, 172, 170, 10, 13
     LTEXT "颜色1 (&1)：", IDC_ADVAPPEARANCE_COLOR1_T, 184, 160, 40, 9
     CHECKBOX "-", IDC_ADVAPPEARANCE_COLOR1_B, 184, 170, 28, 13, BS_PUSHLIKE | BS_BITMAP
-    LTEXT "颜色1 (&2)：", IDC_ADVAPPEARANCE_COLOR2_T, 216, 160, 40, 9
+    LTEXT "颜色2 (&2)：", IDC_ADVAPPEARANCE_COLOR2_T, 216, 160, 40, 9
     CHECKBOX "-", IDC_ADVAPPEARANCE_COLOR2_B, 216, 170, 28, 13, BS_PUSHLIKE | BS_BITMAP
     LTEXT "字体(&F)：", IDC_ADVAPPEARANCE_FONT_T, 5, 190, 50, 9
     COMBOBOX IDC_ADVAPPEARANCE_FONT_C, 5, 200, 130, 90, CBS_DROPDOWN |

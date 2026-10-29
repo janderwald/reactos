@@ -2085,7 +2085,6 @@ AddVolumeToList(
     {
         GetVolumeType(VolumeHandle, VolumeEntry);
         GetVolumeExtents(VolumeHandle, VolumeEntry);
-        GetVolumeSize(VolumeHandle, VolumeEntry);
         NtClose(VolumeHandle);
     }
 
@@ -2109,6 +2108,7 @@ AddVolumeToList(
                                                      (wcslen(szFilesystem) + 1) * sizeof(WCHAR));
         if (VolumeEntry->pszFilesystem)
             wcscpy(VolumeEntry->pszFilesystem, szFilesystem);
+        VolumeEntry->VolumeStatus = VOLUME_STATUS_HEALTHY;
     }
     else
     {
@@ -2124,6 +2124,12 @@ AddVolumeToList(
             VolumeEntry->SectorsPerAllocationUnit = 1;
             VolumeEntry->BytesPerSector = 512;
             VolumeEntry->VolumeType = VOLUME_TYPE_PARTITION;
+            VolumeEntry->VolumeStatus = VOLUME_STATUS_HEALTHY;
+        }
+        else if (dwError == ERROR_NOT_READY)
+        {
+            VolumeEntry->VolumeStatus = VOLUME_STATUS_NO_MEDIA;
+            VolumeEntry->Size.QuadPart = 0;
         }
     }
 
@@ -2151,6 +2157,69 @@ AddVolumeToList(
 
     InsertTailList(&VolumeListHead,
                    &VolumeEntry->ListEntry);
+}
+
+
+static
+VOID
+InsertListAfter(
+    _In_ PLIST_ENTRY ListEntry,
+    _In_ PLIST_ENTRY EntryToInsert)
+{
+    EntryToInsert->Blink = ListEntry;
+    EntryToInsert->Flink = ListEntry->Flink;
+    ListEntry->Flink->Blink = EntryToInsert;
+    ListEntry->Flink = EntryToInsert;
+}
+
+
+static
+VOID
+SortVolumeList(VOID)
+{
+    PLIST_ENTRY Entry, TempEntry, LastInsertEntry;
+    PVOLENTRY VolumeEntry;
+    ULONG VolumeNumber;
+
+    /* Desired sort order: CDROM volumes, Partition volumes */
+
+    if (IsListEmpty(&VolumeListHead))
+        return;
+
+    /* Move CDROM volumes to the head of the list */
+    LastInsertEntry = NULL;
+    Entry = VolumeListHead.Flink;
+    while (Entry != &VolumeListHead)
+    {
+        VolumeEntry = CONTAINING_RECORD(Entry, VOLENTRY, ListEntry);
+
+        if (VolumeEntry->VolumeType == VOLUME_TYPE_CDROM)
+        {
+            TempEntry = Entry;
+            Entry = Entry->Blink;
+
+            RemoveEntryList(TempEntry);
+            if (LastInsertEntry == NULL)
+                InsertHeadList(&VolumeListHead, TempEntry);
+            else
+                InsertListAfter(LastInsertEntry, TempEntry);
+            LastInsertEntry = TempEntry;
+        }
+
+        Entry = Entry->Flink;
+    }
+
+    /* Update the VolumeNumber */
+    VolumeNumber = 0;
+    Entry = VolumeListHead.Flink;
+    while (Entry != &VolumeListHead)
+    {
+        VolumeEntry = CONTAINING_RECORD(Entry, VOLENTRY, ListEntry);
+        VolumeEntry->VolumeNumber = VolumeNumber;
+ 
+        VolumeNumber++;
+        Entry = Entry->Flink;
+    }
 }
 
 
@@ -2188,6 +2257,8 @@ CreateVolumeList(VOID)
 
     FindVolumeClose(hVolume);
 
+    SortVolumeList();
+
     return STATUS_SUCCESS;
 }
 
@@ -2217,6 +2288,113 @@ DestroyVolumeList(VOID)
 
         /* Release disk entry */
         RtlFreeHeap(RtlGetProcessHeap(), 0, VolumeEntry);
+    }
+}
+
+
+VOID
+UpdateVolumeInfo(
+    _In_ PVOLENTRY VolumeEntry)
+{
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING Name;
+    WCHAR szVolumeName[MAX_PATH + 1];
+    WCHAR szFilesystem[MAX_PATH + 1];
+    WCHAR szRootPath[12];
+    IO_STATUS_BLOCK Iosb;
+    HANDLE VolumeHandle;
+    DWORD dwError;
+    NTSTATUS Status;
+
+
+    _swprintf(szRootPath, L"%c:\\", VolumeEntry->DriveLetter);
+
+    if (!RtlDosPathNameToNtPathName_U(szRootPath,
+                                      &Name,
+                                      NULL,
+                                      NULL))
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return;
+    }
+
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &Name,
+                               0,
+                               NULL,
+                               NULL);
+
+    Status = NtOpenFile(&VolumeHandle,
+                        SYNCHRONIZE,
+                        &ObjectAttributes,
+                        &Iosb,
+                        0,
+                        FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT);
+    if (NT_SUCCESS(Status))
+    {
+        GetVolumeSize(VolumeHandle, VolumeEntry);
+        VolumeEntry->Size.QuadPart = VolumeEntry->TotalAllocationUnits.QuadPart *
+                                     VolumeEntry->SectorsPerAllocationUnit *
+                                     VolumeEntry->BytesPerSector;
+        NtClose(VolumeHandle);
+    }
+    RtlFreeUnicodeString(&Name);
+
+    if (VolumeEntry->pszLabel)
+    {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, VolumeEntry->pszLabel);
+        VolumeEntry->pszLabel = NULL;
+    }
+
+    if (VolumeEntry->pszFilesystem)
+    {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, VolumeEntry->pszFilesystem);
+        VolumeEntry->pszFilesystem = NULL;
+    }
+
+    if (GetVolumeInformationW(VolumeEntry->VolumeName,
+                              szVolumeName,
+                              MAX_PATH + 1,
+                              &VolumeEntry->SerialNumber,
+                              NULL,
+                              NULL,
+                              szFilesystem,
+                              MAX_PATH + 1))
+    {
+        VolumeEntry->pszLabel = RtlAllocateHeap(RtlGetProcessHeap(),
+                                                0,
+                                                (wcslen(szVolumeName) + 1) * sizeof(WCHAR));
+        if (VolumeEntry->pszLabel)
+            wcscpy(VolumeEntry->pszLabel, szVolumeName);
+
+        VolumeEntry->pszFilesystem = RtlAllocateHeap(RtlGetProcessHeap(),
+                                                     0,
+                                                     (wcslen(szFilesystem) + 1) * sizeof(WCHAR));
+        if (VolumeEntry->pszFilesystem)
+            wcscpy(VolumeEntry->pszFilesystem, szFilesystem);
+        VolumeEntry->VolumeStatus = VOLUME_STATUS_HEALTHY;
+    }
+    else
+    {
+        dwError = GetLastError();
+        if (dwError == ERROR_UNRECOGNIZED_VOLUME)
+        {
+            VolumeEntry->pszFilesystem = RtlAllocateHeap(RtlGetProcessHeap(),
+                                                         0,
+                                                         (3 + 1) * sizeof(WCHAR));
+            if (VolumeEntry->pszFilesystem)
+                wcscpy(VolumeEntry->pszFilesystem, L"RAW");
+            VolumeEntry->SerialNumber = 0;
+            VolumeEntry->SectorsPerAllocationUnit = 1;
+            VolumeEntry->BytesPerSector = 512;
+            VolumeEntry->VolumeType = VOLUME_TYPE_PARTITION;
+            VolumeEntry->VolumeStatus = VOLUME_STATUS_HEALTHY;
+        }
+        else if (dwError == ERROR_NOT_READY)
+        {
+            VolumeEntry->VolumeStatus = VOLUME_STATUS_NO_MEDIA;
+            VolumeEntry->Size.QuadPart = 0;
+        }
     }
 }
 

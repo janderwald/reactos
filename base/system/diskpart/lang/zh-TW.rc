@@ -3,7 +3,7 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     Chinese (Traditional) resource file
  * TRANSLATORS: Copyright 2016 Henry Tang Ih <henrytang2@hotmail.com>
- *              Copyright 2018 Luke Luo <njlyf2011@hotmail.com>
+ *              Copyright 2018 Luo Yufan <njlyf2011@hotmail.com>
  *              Copyright 2020-2022 Chan Chilung <eason066@gmail.com>
  */
 
@@ -80,7 +80,7 @@ STRINGTABLE
 BEGIN
     IDS_DELETE_PARTITION_FAIL "\nDiskPart 無法刪除指定的磁碟分割。\n請確認已選擇的磁碟分割能夠正確地刪除。\n"
     IDS_DELETE_PARTITION_SUCCESS "\nDiskPart 成功刪除指定的磁碟分割。\n"
-    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be neccessary to the operation of your computer, and may not be deleted.\n"
+    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be necessary to the operation of your computer, and may not be deleted.\n"
 END
 
 /* Disk Information Labels */
@@ -125,7 +125,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_FORMAT_FAIL "\nDiskPart failed to format the selected volume.\n"
-    IDS_FORMAT_SUCCESS "\nDiskPart successfully formated the selected volume.\n"
+    IDS_FORMAT_SUCCESS "\nDiskPart successfully formatted the selected volume.\n"
     IDS_FORMAT_PROGRESS "\r  %3lu percent completed"
 END
 
@@ -215,14 +215,17 @@ STRINGTABLE
 BEGIN
     IDS_STATUS_YES "是"
     IDS_STATUS_NO "否"
-    IDS_STATUS_DISK_HEALTHY "健康"
-    IDS_STATUS_DISK_SICK "出現問題"
-    IDS_STATUS_UNAVAILABLE "不可用"
     IDS_STATUS_ONLINE "在線"
     IDS_STATUS_OFFLINE "離線"
-    IDS_STATUS_NO_MEDIA "沒有媒體"
-    IDS_INFO_BOOT "Boot"
-    IDS_INFO_SYSTEM "System"
+    IDS_STATUS_VOLUME_HEALTHY "健康"
+    IDS_STATUS_VOLUME_FAILED "出現問題"
+    IDS_STATUS_VOLUME_NO_MEDIA "沒有媒體"
+    IDS_STATUS_VOLUME_REBUILD "Rebuild"
+    IDS_STATUS_VOLUME_UNUSABLE "不可用"
+    IDS_INFO_VOLUME_BOOT "Boot"
+    IDS_INFO_VOLUME_SYSTEM "System"
+    IDS_INFO_VOLUME_HIDDEN "Hidden"
+    IDS_INFO_VOLUME_OFFLINE "Offline"
 END
 
 /* CMD Messages for commands */

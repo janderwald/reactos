@@ -3,7 +3,7 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     Chinese (Simplified) resource file
  * TRANSLATORS: Copyright 2016 Henry Tang Ih <henrytang2@hotmail.com>
- *              Copyright 2018 Luke Luo <njlyf2011@hotmail.com>
+ *              Copyright 2018 Luo Yufan <njlyf2011@hotmail.com>
  *              Copyright 2021 Wu Haotian <rigoligo03@gmail.com>
  */
 
@@ -56,7 +56,7 @@ STRINGTABLE
 BEGIN
     IDS_CLEAN_FAIL "\nDiskPart was unable to clean the disk.\nThe data on this disk may be unrecoverable.\n"
     IDS_CLEAN_SUCCESS "\nDiskPart succeeded in cleaning the disk.\n"
-    IDS_CLEAN_SYSTEM "\nThe selected disk is neccessary to the operation of your computer, and may not be cleaned.\n"
+    IDS_CLEAN_SYSTEM "\nThe selected disk is necessary to the operation of your computer, and may not be cleaned.\n"
 END
 
 STRINGTABLE
@@ -80,7 +80,7 @@ STRINGTABLE
 BEGIN
     IDS_DELETE_PARTITION_FAIL "\nDiskPart failed to delete the selected partition.\nPlease make sure the selected partition is valid to delete.\n"
     IDS_DELETE_PARTITION_SUCCESS "\nDiskPart successfully deleted the selected partition.\n"
-    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be neccessary to the operation of your computer, and may not be deleted.\n"
+    IDS_DELETE_PARTITION_SYSTEM "\nThe selected partition may be necessary to the operation of your computer, and may not be deleted.\n"
 END
 
 /* Disk Information Labels */
@@ -125,7 +125,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_FORMAT_FAIL "\nDiskPart failed to format the selected volume.\n"
-    IDS_FORMAT_SUCCESS "\nDiskPart successfully formated the selected volume.\n"
+    IDS_FORMAT_SUCCESS "\nDiskPart successfully formatted the selected volume.\n"
     IDS_FORMAT_PROGRESS "\r  %3lu percent completed"
 END
 
@@ -151,7 +151,7 @@ END
 /* Detail header titles */
 STRINGTABLE
 BEGIN
-    IDS_LIST_DISK_HEAD "  磁盘 ###   状态      大小     可用    活动 Gpt\n"
+    IDS_LIST_DISK_HEAD "  磁盘 ###   状态      大小     可用    动态 Gpt\n"
     IDS_LIST_DISK_LINE "  --------  ----------  -------  -------  ---  ---\n"
     IDS_LIST_DISK_FORMAT "%c 磁盘 %-3lu   %-10s  %-7s  %-7s   %1s    %1s\n"
     IDS_LIST_PARTITION_HEAD "  分区 ###          类型          大小     偏移量\n"
@@ -183,16 +183,16 @@ END
 /* Select command strings */
 STRINGTABLE
 BEGIN
-    IDS_SELECT_NO_DISK "\n没有当前选择的磁盘。\nP请选择一个磁盘，再试一次。\n\n"
+    IDS_SELECT_NO_DISK "\n没有当前选择的磁盘。\n请选择一个磁盘，再试一次。\n\n"
     IDS_SELECT_DISK "\n磁盘 %lu 现在是所选的磁盘。\n\n"
     IDS_SELECT_DISK_INVALID "\n无效的磁盘。\n\n"
     IDS_SELECT_DISK_ENUM_NO_START "\nNo disk enumeration started yet.\n\nNo disk is currently selected.\n\n"
     IDS_SELECT_DISK_ENUM_FINISHED "\nThe last disk has been enumerated.\n\nNo disk is currently selected.\n\n"
-    IDS_SELECT_NO_PARTITION "\n有是没有当前选定的分区。\n请选择一个磁盘，再试一次。\n\n"
+    IDS_SELECT_NO_PARTITION "\n没有当前选定的分区。\n请选择一个分区，再试一次。\n\n"
     IDS_SELECT_PARTITION "\n分区 %lu 现在是所选的分区。\n\n"
     IDS_SELECT_PARTITION_NO_DISK "\n没有一个选择是有分区的磁盘。\n请选择一个磁盘，再试一次。\n\n"
     IDS_SELECT_PARTITION_INVALID "\n无效的分区。\n\n"
-    IDS_SELECT_NO_VOLUME "\n没有当前所选的卷。\n请选择一个磁盘，再试一次。\n\n"
+    IDS_SELECT_NO_VOLUME "\n没有当前所选的卷。\n请选择一个卷，再试一次。\n\n"
     IDS_SELECT_VOLUME "\n卷 %lu 现在是所选的卷。\n\n"
     IDS_SELECT_VOLUME_INVALID "\nInvalid volume.\n\n"
 END
@@ -215,14 +215,17 @@ STRINGTABLE
 BEGIN
     IDS_STATUS_YES "是"
     IDS_STATUS_NO "否"
-    IDS_STATUS_DISK_HEALTHY "健康"
-    IDS_STATUS_DISK_SICK "欠佳"
-    IDS_STATUS_UNAVAILABLE "不可用"
     IDS_STATUS_ONLINE "联机"
     IDS_STATUS_OFFLINE "脱机"
-    IDS_STATUS_NO_MEDIA "没有媒体"
-    IDS_INFO_BOOT "Boot"
-    IDS_INFO_SYSTEM "System"
+    IDS_STATUS_VOLUME_HEALTHY "健康"
+    IDS_STATUS_VOLUME_FAILED "欠佳"
+    IDS_STATUS_VOLUME_NO_MEDIA "没有媒体"
+    IDS_STATUS_VOLUME_REBUILD "Rebuild"
+    IDS_STATUS_VOLUME_UNUSABLE "不可用"
+    IDS_INFO_VOLUME_BOOT "Boot"
+    IDS_INFO_VOLUME_SYSTEM "System"
+    IDS_INFO_VOLUME_HIDDEN "Hidden"
+    IDS_INFO_VOLUME_OFFLINE "Offline"
 END
 
 /* CMD Messages for commands */
@@ -241,7 +244,7 @@ BEGIN
     IDS_HELP_ATTRIBUTES                "操纵卷或磁盘的属性。\n"
     IDS_HELP_AUTOMOUNT                 "启用和禁用基本卷的自动挂载。\n"
     IDS_HELP_BREAK                     "中断镜像集。\n"
-    IDS_HELP_CLEAN                     "清除配置信息或所有信息，关闭\n              磁盘。\n"
+    IDS_HELP_CLEAN                     "清除磁盘上的配置信息或全部信息。\n"
     IDS_HELP_COMPACT                   "尝试减少文件的物理大小。\n"
 
     IDS_HELP_CONVERT                   "在不同的磁盘格式之间进行转换。\n"
@@ -287,8 +290,8 @@ BEGIN
     IDS_HELP_LIST_VDISK                "List virtual disk files.\n"
 
     IDS_HELP_MERGE                     "将子磁盘与父磁盘合并。\n"
-    IDS_HELP_OFFLINE                   "将当前标记为脱机的磁盘设置为联机。\n"
-    IDS_HELP_ONLINE                    "将当前标记为联机的磁盘设置为脱机。\n"
+    IDS_HELP_OFFLINE                   "将当前联机的对象设为脱机。\n"
+    IDS_HELP_ONLINE                    "将当前脱机的对象设为联机。\n"
     IDS_HELP_RECOVER                   "刷新无效包中的所有磁盘的状态，\n              并重新同步具有过期块或奇偶校\n              验数据的镜像卷和 RAID5 卷。\n"
     IDS_HELP_REM                       "无作用。这用来注释脚本。\n"
     IDS_HELP_REMOVE                    "删除驱动器号或指派的装载点。\n"

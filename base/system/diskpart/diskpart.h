@@ -114,6 +114,15 @@ typedef enum _VOLUME_TYPE
     VOLUME_TYPE_UNKNOWN
 } VOLUME_TYPE, *PVOLUME_TYPE;
 
+typedef enum _VOLUME_STATUS
+{
+    VOLUME_STATUS_HEALTHY,
+    VOLUME_STATUS_FAILED,
+    VOLUME_STATUS_NO_MEDIA,
+    VOLUME_STATUS_REBUILD,
+    VOLUME_STATUS_UNUSABLE
+} VOLUME_STATUS, *PVOLUME_STATUS;
+
 typedef struct _MBR_PARTITION_DATA
 {
     BOOLEAN BootIndicator;
@@ -258,6 +267,7 @@ typedef struct _VOLENTRY
 
     BOOL IsSystem;
     BOOL IsBoot;
+    VOLUME_STATUS VolumeStatus;
 
     PVOLUME_DISK_EXTENTS pExtents;
 
@@ -546,6 +556,10 @@ BOOL
 IsHexString(
     _In_ PWSTR pszHexString);
 
+WCHAR
+IsDriveLetter(
+    _In_ PWSTR pszString);
+
 BOOL
 HasPrefix(
     _In_ PWSTR pszString,
@@ -656,6 +670,10 @@ CreateVolumeList(VOID);
 
 VOID
 DestroyVolumeList(VOID);
+
+VOID
+UpdateVolumeInfo(
+    _In_ PVOLENTRY VolumeEntry);
 
 VOID
 ScanForUnpartitionedMbrDiskSpace(

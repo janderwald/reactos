@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <internal/x86x64/mm.h>
+
 #define _MI_PAGING_LEVELS 4
 #define _MI_HAS_NO_EXECUTE 1
 
@@ -98,9 +100,6 @@
 #define MI_MAKE_DIRTY_PAGE(x)      ((x)->u.Hard.Dirty = 1)
 #define MI_MAKE_CLEAN_PAGE(x)      ((x)->u.Hard.Dirty = 0)
 #define MI_MAKE_ACCESSED_PAGE(x)   ((x)->u.Hard.Accessed = 1)
-#define MI_PAGE_DISABLE_CACHE(x)   ((x)->u.Hard.CacheDisable = 1)
-#define MI_PAGE_WRITE_THROUGH(x)   ((x)->u.Hard.WriteThrough = 1)
-#define MI_PAGE_WRITE_COMBINED(x)  ((x)->u.Hard.WriteThrough = 0)
 #define MI_IS_PAGE_LARGE(x)        ((x)->u.Hard.LargePage == 1)
 #if !defined(CONFIG_SMP)
 #define MI_IS_PAGE_WRITEABLE(x)    ((x)->u.Hard.Write == 1)
@@ -304,11 +303,11 @@ MiPdeToPxe(PMMPDE PointerPde)
 
 /* Check P*E boundaries */
 #define MiIsPteOnPdeBoundary(PointerPte) \
-    ((((ULONG_PTR)PointerPte) & (PAGE_SIZE - 1)) == 0)
+    ((((ULONG_PTR)(PointerPte)) & (PAGE_SIZE - 1)) == 0)
 #define MiIsPteOnPpeBoundary(PointerPte) \
-    ((((ULONG_PTR)PointerPte) & (PDE_PER_PAGE * PAGE_SIZE - 1)) == 0)
+    ((((ULONG_PTR)(PointerPte)) & (PDE_PER_PAGE * PAGE_SIZE - 1)) == 0)
 #define MiIsPteOnPxeBoundary(PointerPte) \
-    ((((ULONG_PTR)PointerPte) & (PPE_PER_PAGE * PDE_PER_PAGE * PAGE_SIZE - 1)) == 0)
+    ((((ULONG_PTR)(PointerPte)) & (PPE_PER_PAGE * PDE_PER_PAGE * PAGE_SIZE - 1)) == 0)
 
 //
 // Decodes a Prototype PTE into the underlying PTE
