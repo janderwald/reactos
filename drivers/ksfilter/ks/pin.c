@@ -1751,6 +1751,7 @@ KsStreamPointerDelete(
         /* decrement ref count */
         Pointer->Ref->RefCount--;
         IKsPin_CompleteStreamHeader(This, Pointer);
+        IKsPin_PrepareStreamHeader(This, This->LeadingEdgeStreamPointer);
     }
 
     /* FIXME make sure no timeouts are pending */
