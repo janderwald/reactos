@@ -1050,8 +1050,8 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
     PEHCI_STATIC_QH AsyncHead;
     ULONG AsyncHeadPA;
     PEHCI_STATIC_QH PeriodicHead;
-    PEHCI_HCD_QH PeriodicDummyQH;
     ULONG PeriodicHeadPA;
+    PEHCI_STATIC_QH StaticQH;
     EHCI_LINK_POINTER NextLink;
     EHCI_LINK_POINTER StaticHeadPA;
     ULONG Frame;
@@ -1112,30 +1112,16 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
 
     EHCI_InitializeInterruptSchedule(EhciExtension);
 
-    PeriodicDummyQH = &HcResourcesVA->IsoDummyQH[0];
-    PeriodicHeadPA = HcResourcesPA + FIELD_OFFSET(EHCI_HC_RESOURCES, IsoDummyQH[0]);
-
+    /* every frame starts with the static interrupt QH tree, EHCI_AddDummyQHs puts a
+     * dummy QH in front of it, the iTDs are linked in front of the dummy QH */
     for (Frame = 0; Frame < EHCI_FRAME_LIST_MAX_ENTRIES; Frame++)
     {
-        EHCI_AlignHwStructure(EhciExtension,
-                              &PeriodicHeadPA,
-                              (PULONG_PTR)&PeriodicDummyQH,
-                              sizeof(EHCI_HCD_QH));
+        StaticQH = EHCI_GetQhForFrame(EhciExtension, Frame);
 
-        StaticHeadPA.Address = (PeriodicHeadPA >> 5);
+        StaticHeadPA.AsULONG = StaticQH->PhysicalAddress;
         StaticHeadPA.Type = EHCI_LINK_TYPE_QH;
-        StaticHeadPA.Terminate = 1;
 
-        //DPRINT_EHCI("EHCI_InitializeSchedule: StaticHeadPA[%x] - %X\n",
-        //            Frame,
-        //            StaticHeadPA);
-
-        PeriodicDummyQH += 1;
-        PeriodicHeadPA += sizeof(EHCI_HCD_QH);
-
-        KeMemoryBarrier();
         HcResourcesVA->PeriodicFrameList[Frame] = StaticHeadPA.AsULONG;
-        KeMemoryBarrier();
     }
 
     EhciExtension->IsoDummyQHListVA = &HcResourcesVA->IsoDummyQH[0];
@@ -1146,7 +1132,8 @@ EHCI_InitializeSchedule(IN PEHCI_EXTENSION EhciExtension,
 
     RtlInitializeBitMap(&EhciExtension->IsoBitmap, EhciExtension->IsoBitmapBuffer, EHCI_FRAME_LIST_MAX_ENTRIES);
 
-    //EHCI_AddDummyQHs(EhciExtension);
+    EHCI_AddDummyQHs(EhciExtension);
+    KeMemoryBarrier();
 
     WRITE_REGISTER_ULONG(&OperationalRegs->PeriodicListBase,
                          EhciExtension->HcResourcesPA + FIELD_OFFSET(EHCI_HC_RESOURCES, PeriodicFrameList));
@@ -3816,13 +3803,14 @@ EHCI_PollActiveAsyncEndpoint(IN PEHCI_EXTENSION EhciExtension,
         {
             ASSERT((TD->TdFlags & EHCI_HCD_TD_FLAG_DUMMY) == 0);
 
+            /* the controller has left these TDs, the ones still active were skipped
+             * after a short packet and must be completed too, or the transfer never ends */
+            TD->TdFlags |= EHCI_HCD_TD_FLAG_DONE;
+
             if (TD->HwTD.Token.Status & EHCI_TOKEN_STATUS_ACTIVE)
                 TD->TdFlags |= EHCI_HCD_TD_FLAG_ACTIVE;
-            else
-            {
-                TD->TdFlags |= EHCI_HCD_TD_FLAG_DONE;
-                InsertTailList(&EhciEndpoint->ListTDs, &TD->DoneLink);
-            }
+
+            InsertTailList(&EhciEndpoint->ListTDs, &TD->DoneLink);
             TD = TD->NextHcdTD;
         }
     }
