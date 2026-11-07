@@ -25,6 +25,10 @@
  * than the prebuffer play too. It is longer than the prebuffer, a client delivering in real
  * time fills the prebuffer before */
 #define RENDER_START_TIMEOUT_MS (RENDER_PREBUFFER_MS + 50)
+/* closing the pin waits this long for the queued audio: at most 1s in the fifo and
+ * RENDER_IRP_COUNT * RENDER_PACKETS_PER_URB ms in pending transfers */
+#define RENDER_DRAIN_TIMEOUT_MS (3000)
+#define RENDER_DRAIN_POLL_MS (10)
 
 
 NTSTATUS
@@ -1337,6 +1341,55 @@ USBAudioPinCreate(
     return Status;
 }
 
+/* stream frames complete when they are copied to the fifo, so a client sees its last buffer
+ * done and closes the pin while up to 1s of its audio is still queued. Play it before closing.
+ * This can't be done on reset, PlaySound resets the device right after its last buffer */
+static
+VOID
+UsbAudioRenderDrain(
+    IN PKSPIN Pin,
+    IN PPIN_CONTEXT PinContext)
+{
+    PKSDATAFORMAT_WAVEFORMATEX WaveFormat;
+    LARGE_INTEGER Delay;
+    ULONG MaximumPacketLength;
+    ULONG Waited;
+    ULONG Remaining;
+    BOOLEAN Done;
+    KIRQL OldLevel;
+
+    WaveFormat = (PKSDATAFORMAT_WAVEFORMATEX)Pin->ConnectionFormat;
+
+    /* less than a packet can't be sent */
+    MaximumPacketLength = (WaveFormat->WaveFormatEx.nSamplesPerSec / USB_AUDIO_FRAMES_PER_SECOND + 1) *
+                          WaveFormat->WaveFormatEx.nBlockAlign;
+
+    Delay.QuadPart = -10000LL * RENDER_DRAIN_POLL_MS;
+
+    /* the pin is closing, the process routine must not be restarted */
+    InterlockedExchange(&PinContext->RenderWaitingForSpace, FALSE);
+
+    for (Waited = 0; Waited < RENDER_DRAIN_TIMEOUT_MS; Waited += RENDER_DRAIN_POLL_MS)
+    {
+        KeAcquireSpinLock(&PinContext->IrpListLock, &OldLevel);
+        Remaining = PinContext->BufferLength;
+        Done = (Remaining < MaximumPacketLength && PinContext->StoppedStreamingIrps == RENDER_IRP_COUNT);
+
+        /* a sound shorter than the prebuffer has to start now */
+        if (!Done && !PinContext->RenderStarted)
+            PinContext->RenderForceStart = TRUE;
+        KeReleaseSpinLock(&PinContext->IrpListLock, OldLevel);
+
+        if (Done)
+            break;
+
+        UsbAudioRenderPump(Pin);
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+    }
+
+    DPRINT("UsbAudioRenderDrain waited %u ms, %u bytes left\n", Waited, Remaining);
+}
+
 NTSTATUS
 NTAPI
 USBAudioPinClose(
@@ -1355,6 +1408,12 @@ USBAudioPinClose(
 
     if (!PinContext->StopStreaming)
     {
+        if (Pin->DataFlow == KSPIN_DATAFLOW_IN)
+        {
+            /* play the audio which is still queued */
+            UsbAudioRenderDrain(Pin, PinContext);
+        }
+
         /* set stop streaming flag */
         PinContext->StopStreaming = TRUE;
 

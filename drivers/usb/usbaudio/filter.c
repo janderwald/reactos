@@ -521,6 +521,43 @@ USBAudioSetVolume(
     FreeFunction(TransferBuffer);
 }
 
+/* a device may start muted and nothing else clears it, the stream would then be silent */
+static
+VOID
+USBAudioClearMute(
+    PDEVICE_EXTENSION DeviceExtension,
+    PUSB_AUDIO_CONTROL_FEATURE_UNIT_DESCRIPTOR FeatureUnitDescriptor)
+{
+    PUCHAR TransferBuffer;
+    NTSTATUS Status;
+    ULONG Channel, ChannelCount;
+    UCHAR Muted;
+
+    TransferBuffer = AllocFunction(sizeof(UCHAR));
+    if (!TransferBuffer)
+        return;
+
+    ChannelCount = UsbAudioGetFeatureUnitControlCount(FeatureUnitDescriptor);
+    for (Channel = 0; Channel < ChannelCount; Channel++)
+    {
+        if (!(UsbAudioGetFeatureUnitControls(FeatureUnitDescriptor, Channel) & USB_AUDIO_FU_CONTROL_MUTE))
+            continue;
+
+        Status = UsbAudioFeatureUnitRequest(DeviceExtension, FeatureUnitDescriptor, USB_AUDIO_GET_CUR, USB_AUDIO_MUTE_CONTROL, Channel, TransferBuffer, sizeof(UCHAR));
+        Muted = *TransferBuffer;
+        DPRINT("USBAudioClearMute Unit %u Channel %u Muted %u Status %x\n", FeatureUnitDescriptor->bUnitID, Channel, Muted, Status);
+
+        if (NT_SUCCESS(Status) && !Muted)
+            continue;
+
+        *TransferBuffer = 0;
+        Status = UsbAudioFeatureUnitRequest(DeviceExtension, FeatureUnitDescriptor, USB_AUDIO_SET_CUR, USB_AUDIO_MUTE_CONTROL, Channel, TransferBuffer, sizeof(UCHAR));
+        DPRINT("USBAudioClearMute Unit %u Channel %u cleared Status %x\n", FeatureUnitDescriptor->bUnitID, Channel, Status);
+    }
+
+    FreeFunction(TransferBuffer);
+}
+
 
 ULONG
 CountTopologyComponents(
@@ -830,6 +867,7 @@ BuildUSBAudioFilterTopology(
                             NodeContext[DescriptorCount].NodeCount++;
 
                             FilterDescriptor->NodeDescriptorsCount++;
+                            USBAudioClearMute(DeviceExtension, FeatureUnitDescriptor);
                         }
                         if (Value & 0x02) /* VOLUME */
                         {
