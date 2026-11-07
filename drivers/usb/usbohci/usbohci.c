@@ -156,7 +156,9 @@ OHCI_InsertEndpointInSchedule(IN POHCI_ENDPOINT OhciEndpoint)
 
         InsertTailList(HeadLink, &ED->HcdEDLink);
 
-        ED->HwED.NextED = 0;
+        /* the static interrupt EDs form a tree which continues behind the last ED of this
+         * node, a terminated list would hide all EDs of the shorter periods and the iso EDs */
+        ED->HwED.NextED = PrevED->HwED.NextED;
         PrevED->HwED.NextED = ED->PhysicalAddress;
     }
 }
@@ -2162,6 +2164,7 @@ OHCI_ProcessDoneIsoTD(IN POHCI_EXTENSION OhciExtension,
     if (IsPortComplete && OhciTransfer->PendingTDs == 0)
     {
         /* this also hands the packet results to the URB */
+        DPRINT("OHCI: TransferComplete Transfer %p TransferLen %u\n", OhciTransfer, OhciTransfer->TransferLen);
         RegPacket.UsbPortCompleteIsoTransfer(OhciExtension,
                                              OhciEndpoint,
                                              OhciTransfer->TransferParameters,
