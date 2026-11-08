@@ -54,7 +54,7 @@ typedef struct _UHCI_HCD_TD {
   struct _UHCI_HCD_TD * NextTD;
   _ANONYMOUS_UNION union {
     PUHCI_TRANSFER UhciTransfer;
-#if !defined(_M_X64)
+#ifndef _WIN64
     ULONG Frame; // for SOF_HcdTDs only
 #else
     struct {
@@ -68,8 +68,8 @@ typedef struct _UHCI_HCD_TD {
   LIST_ENTRY ActiveITDEntry;
   ULONG ScheduledFrame;
   PUSBPORT_ISO_PACKET_DATA IsoPacket;
-  USHORT BounceIndex; // bounce buffer of an iso packet, UHCI_ISO_NO_BOUNCE_BUFFER if not used
-#if !defined(_M_X64)
+  USHORT BounceIndex;
+#ifndef _WIN64
   UCHAR Padded[4];
 #else
   USHORT Padded1;
@@ -77,7 +77,7 @@ typedef struct _UHCI_HCD_TD {
 #endif
 } UHCI_HCD_TD, *PUHCI_HCD_TD;
 
-#if !defined(_M_X64)
+#ifndef _WIN64
 C_ASSERT(sizeof(UHCI_HCD_TD) == 0x50);
 #else
 C_ASSERT(sizeof(UHCI_HCD_TD) == 0x80);
@@ -94,15 +94,15 @@ typedef struct _UHCI_HCD_QH {
   ULONG PhysicalAddress;
   ULONG QhFlags;
   struct _UHCI_HCD_QH * NextHcdQH;
-#if !defined(_M_X64)
+#ifndef _WIN64
   ULONG Pad1;
 #endif
   struct _UHCI_HCD_QH * PrevHcdQH;
-#if !defined(_M_X64)
+#ifndef _WIN64
   ULONG Pad2;
 #endif
   PUHCI_ENDPOINT UhciEndpoint;
-#if !defined(_M_X64)
+#ifndef _WIN64
   ULONG Pad3;
 #endif
   ULONG Padded[6];
