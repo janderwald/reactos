@@ -7,6 +7,7 @@
  *                  Johannes Anderwald
  */
 
+#include <ntifs.h>
 #include "wdmaud.h"
 
 #define NDEBUG
@@ -167,7 +168,7 @@ WdmAudIoctlClose(
         else if (ClientInfo->hPins[Index].Handle == DeviceInfo->hDevice && ClientInfo->hPins[Index].Type == MIXER_DEVICE_TYPE)
         {
             DPRINT1("Closing mixer %p\n", DeviceInfo->hDevice);
-            return WdmAudControlCloseMixer(DeviceObject, Irp, DeviceInfo, ClientInfo, Index);
+            return WdmAudControlCloseMixer(Irp, ClientInfo, Index);
         }
     }
 
@@ -307,6 +308,53 @@ WdmAudResetStream(
     return SetIrpIoStatus(Irp, Status, sizeof(WDMAUD_DEVICE_INFO));
 }
 
+static
+NTSTATUS
+WdmAudDuplicatePinHandle(
+    IN PIRP Irp,
+    IN PWDMAUD_DEVICE_INFO DeviceInfo,
+    IN PWDMAUD_CLIENT ClientInfo)
+{
+    OBJECT_HANDLE_INFORMATION HandleInformation;
+    PFILE_OBJECT FileObject;
+    NTSTATUS Status;
+    ULONG Index;
+
+    for (Index = 0; Index < ClientInfo->NumPins; ++Index)
+    {
+        if (ClientInfo->hPins[Index].Handle == DeviceInfo->hDevice &&
+            ClientInfo->hPins[Index].Type != MIXER_DEVICE_TYPE)
+        {
+            break;
+        }
+    }
+
+    if (Index == ClientInfo->NumPins)
+        return SetIrpIoStatus(Irp, STATUS_INVALID_HANDLE, 0);
+
+    Status = ObReferenceObjectByHandle(DeviceInfo->hDevice,
+                                       0,
+                                       *IoFileObjectType,
+                                       KernelMode,
+                                       (PVOID *)&FileObject,
+                                       &HandleInformation);
+    if (!NT_SUCCESS(Status))
+        return SetIrpIoStatus(Irp, Status, 0);
+
+    Status = ObOpenObjectByPointer(FileObject,
+                                   0,
+                                   NULL,
+                                   HandleInformation.GrantedAccess,
+                                   *IoFileObjectType,
+                                   KernelMode,
+                                   &DeviceInfo->u.hUserDevice);
+    ObDereferenceObject(FileObject);
+
+    return SetIrpIoStatus(Irp,
+                          Status,
+                          NT_SUCCESS(Status) ? sizeof(WDMAUD_DEVICE_INFO) : 0);
+}
+
 NTSTATUS
 NTAPI
 WdmAudDeviceControl(
@@ -375,6 +423,12 @@ WdmAudDeviceControl(
             return WdmAudGetMixerEvent(DeviceObject, Irp, DeviceInfo, ClientInfo);
         case IOCTL_RESET_STREAM:
             return WdmAudResetStream(DeviceObject, Irp, DeviceInfo);
+        case IOCTL_DUPLICATE_WDMAUD_PIN:
+            return WdmAudDuplicatePinHandle(Irp, DeviceInfo, ClientInfo);
+        case IOCTL_GETPREFERRED_WAVE_FORMAT:
+            return WdmAudGetPreferredWaveFormat(Irp, DeviceInfo);
+        case IOCTL_GETWAVEMIXERID:
+            return WdmAudGetWaveMixerId(Irp, DeviceInfo);
         case IOCTL_GETPOS:
             return WdmAudGetPosition(DeviceObject, Irp, DeviceInfo);
         case IOCTL_GETDEVID:
@@ -432,6 +486,9 @@ IoCompletion (
         /* failed */
         Irp->IoStatus.Information = 0;
     }
+
+    if (Irp->PendingReturned)
+        IoMarkIrpPending(Irp);
 
     /* dereference file object */
     ObDereferenceObject(Context->FileObject);

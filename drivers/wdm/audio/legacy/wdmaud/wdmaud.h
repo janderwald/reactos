@@ -20,6 +20,7 @@ typedef struct
 {
     HANDLE Handle;
     SOUND_DEVICE_TYPE Type;
+    ULONG DeviceIndex;
     ULONG FilterId;
     ULONG PinId;
     PRKEVENT NotifyEvent;
@@ -131,15 +132,12 @@ WdmAudControlOpenMixer(
 
 NTSTATUS
 WdmAudControlCloseMixer(
-    IN  PDEVICE_OBJECT DeviceObject,
     IN  PIRP Irp,
-    IN  PWDMAUD_DEVICE_INFO DeviceInfo,
     IN  PWDMAUD_CLIENT ClientInfo,
     IN  ULONG Index);
 
-VOID
-WdmAudCloseAllMixers(
-    IN PDEVICE_OBJECT DeviceObject,
+BOOLEAN
+WdmAudCloseMixer(
     IN PWDMAUD_CLIENT ClientInfo,
     IN ULONG Index);
 
@@ -191,6 +189,16 @@ WdmAudWaveCapabilities(
     IN  PWDMAUD_DEVICE_INFO DeviceInfo,
     IN  PWDMAUD_CLIENT ClientInfo,
     IN PWDMAUD_DEVICE_EXTENSION DeviceExtension);
+
+NTSTATUS
+WdmAudGetPreferredWaveFormat(
+    IN PIRP Irp,
+    IN PWDMAUD_DEVICE_INFO DeviceInfo);
+
+NTSTATUS
+WdmAudGetWaveMixerId(
+    IN PIRP Irp,
+    IN PWDMAUD_DEVICE_INFO DeviceInfo);
 
 NTSTATUS
 WdmAudMidiCapabilities(

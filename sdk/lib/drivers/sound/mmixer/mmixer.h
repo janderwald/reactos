@@ -122,6 +122,13 @@ ULONG
 MMixerGetWaveOutCount(
     IN PMIXER_CONTEXT MixerContext);
 
+MIXER_STATUS
+MMixerGetWaveMixerId(
+    IN PMIXER_CONTEXT MixerContext,
+    IN ULONG DeviceIndex,
+    IN ULONG bWaveIn,
+    OUT PULONG MixerId);
+
 ULONG
 MMixerGetMidiInCount(
     IN PMIXER_CONTEXT MixerContext);
@@ -198,6 +205,21 @@ MMixerWaveInCapabilities(
     OUT LPWAVEINCAPSW Caps);
 
 MIXER_STATUS
+MMixerGetWaveFormat(
+    IN PMIXER_CONTEXT MixerContext,
+    IN ULONG DeviceIndex,
+    IN ULONG bWaveIn,
+    OUT PWAVEFORMATEXTENSIBLE Format);
+
+MIXER_STATUS
+MMixerQueryWaveFormatSupport(
+    IN PMIXER_CONTEXT MixerContext,
+    IN ULONG DeviceIndex,
+    IN ULONG bWaveIn,
+    IN LPWAVEFORMATEX WaveFormat,
+    IN ULONG WaveFormatSize);
+
+MIXER_STATUS
 MMixerOpenWave(
     IN PMIXER_CONTEXT MixerContext,
     IN ULONG DeviceIndex,
@@ -272,7 +294,7 @@ MMixerInitializeRTStreamingBuffer(
     IN HANDLE DeviceHandle,
     IN ULONG RequestedBufferSize,
     IN ULONG NotificationCount,
-    OUT PVOID *RTStreamingBuffer,
+    OUT PUCHAR *RTStreamingBuffer,
     OUT PULONG RTStreamingBufferLength);
 
 MIXER_STATUS

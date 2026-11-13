@@ -39,6 +39,7 @@ typedef struct
         MIXERLINECONTROLSW MixControls;
         MIXERLINEW MixLine;
         WAVEFORMATEX WaveFormatEx;
+        WAVEFORMATEXTENSIBLE WaveFormatExtensible;
         WAVEOUTCAPSW WaveOutCaps;
         AUXCAPSW     AuxCaps;
         WAVEINCAPSW  WaveInCaps;
@@ -59,9 +60,11 @@ typedef struct
         }MixerEvent;
         KSSTATE State;
         KSRESET ResetStream;
+        ULONG MixerId;
         ULONG Volume;
         ULONG FrameSize;
         HANDLE hNotifyEvent;
+        HANDLE hUserDevice;
     }u;
 
 }WDMAUD_DEVICE_INFO, *PWDMAUD_DEVICE_INFO;
@@ -374,5 +377,49 @@ typedef struct
 #define IOCTL_RESET_STREAM \
     CTL_CODE(FILE_DEVICE_SOUND, \
              17, \
+             METHOD_BUFFERED, \
+             FILE_CREATE_TREE_CONNECTION | FILE_ANY_ACCESS)
+
+/// IOCTL_DUPLICATE_WDMAUD_PIN
+///
+/// Description: This IOCTL creates a user-mode handle for an opened KS pin.
+///
+/// Arguments:  InputBuffer is a pointer to a WDMAUD_DEVICE_INFO structure.
+///             The hDevice member must identify a pin opened by the caller.
+/// Result:     The duplicated handle is returned in u.hUserDevice.
+/// ReturnCode: STATUS_SUCCESS indicates success.
+
+#define IOCTL_DUPLICATE_WDMAUD_PIN \
+    CTL_CODE(FILE_DEVICE_SOUND, \
+             18, \
+             METHOD_BUFFERED, \
+             FILE_CREATE_TREE_CONNECTION | FILE_ANY_ACCESS)
+
+/// IOCTL_GETPREFERRED_WAVE_FORMAT
+///
+/// Description: This IOCTL returns the preferred native PCM format of a wave
+///              endpoint, including formats not represented by WAVEOUTCAPS.
+///
+/// Arguments:  InputBuffer is a pointer to a WDMAUD_DEVICE_INFO structure.
+///             DeviceType and DeviceIndex must identify a wave endpoint.
+/// Result:     The format is returned in u.WaveFormatExtensible.
+
+#define IOCTL_GETPREFERRED_WAVE_FORMAT \
+    CTL_CODE(FILE_DEVICE_SOUND, \
+             19, \
+             METHOD_BUFFERED, \
+             FILE_CREATE_TREE_CONNECTION | FILE_ANY_ACCESS)
+
+/// IOCTL_GETWAVEMIXERID
+///
+/// Description: This IOCTL maps a wave endpoint to the mixer which owns its
+///              topology controls.
+///
+/// Arguments:  DeviceType and DeviceIndex must identify a wave endpoint.
+/// Result:     The mixer index is returned in u.MixerId.
+
+#define IOCTL_GETWAVEMIXERID \
+    CTL_CODE(FILE_DEVICE_SOUND, \
+             20, \
              METHOD_BUFFERED, \
              FILE_CREATE_TREE_CONNECTION | FILE_ANY_ACCESS)

@@ -15,15 +15,94 @@
 #define NTOS_MODE_USER
 #include <ndk/rtlfuncs.h>
 #include <ndk/iofuncs.h>
-
 #define NDEBUG
 #include <debug.h>
 #include <mmebuddy_debug.h>
 
-
 BOOL MMixerLibraryInitialized = FALSE;
 
+DWORD
+WINAPI
+RTStreamingThreadProc(
+    LPVOID Parameter);
 
+DWORD
+WINAPI
+RTStreamingCompletionThreadProc(
+    IN  PVOID Parameter);
+
+static
+VOID
+WdmAudCloseHandle(
+    _Inout_ PHANDLE Handle)
+{
+    if (*Handle)
+    {
+        CloseHandle(*Handle);
+        *Handle = NULL;
+    }
+}
+
+static
+VOID
+WdmAudCloseRTStreamingEvents(
+    _Inout_ PSOUND_DEVICE_INSTANCE Instance)
+{
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingEvent);
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingStopEvent);
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingCompletionEvent);
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingCompletionReadyEvent);
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingCompletionFinishEvent);
+    WdmAudCloseHandle(&Instance->hNotifyRTStreamingCompletionStopEvent);
+}
+
+static
+VOID
+WdmAudStopRTStreamingThreads(
+    _Inout_ PSOUND_DEVICE_INSTANCE Instance)
+{
+    if (Instance->hRTStreamingThread)
+        SetEvent(Instance->hNotifyRTStreamingStopEvent);
+    if (Instance->hRTStreamingCompletionThread)
+        SetEvent(Instance->hNotifyRTStreamingCompletionStopEvent);
+
+    if (Instance->hRTStreamingThread)
+        WaitForSingleObject(Instance->hRTStreamingThread, INFINITE);
+    if (Instance->hRTStreamingCompletionThread)
+        WaitForSingleObject(Instance->hRTStreamingCompletionThread, INFINITE);
+
+    WdmAudCloseHandle(&Instance->hRTStreamingThread);
+    WdmAudCloseHandle(&Instance->hRTStreamingCompletionThread);
+}
+
+static
+BOOL
+WdmAudStartRTStreamingThreads(
+    _Inout_ PSOUND_DEVICE_INSTANCE Instance)
+{
+    if (!Instance->hRTStreamingThread)
+    {
+        ResetEvent(Instance->hNotifyRTStreamingStopEvent);
+        Instance->hRTStreamingThread =
+            CreateThread(NULL, 0, RTStreamingThreadProc, Instance, 0, NULL);
+    }
+
+    if (!Instance->hRTStreamingCompletionThread)
+    {
+        ResetEvent(Instance->hNotifyRTStreamingCompletionStopEvent);
+        Instance->hRTStreamingCompletionThread =
+            CreateThread(NULL, 0, RTStreamingCompletionThreadProc, Instance, 0, NULL);
+    }
+
+    if (Instance->hRTStreamingThread &&
+        Instance->hRTStreamingCompletionThread)
+    {
+        return TRUE;
+    }
+
+    WdmAudStopRTStreamingThreads(Instance);
+    return FALSE;
+}
 
 PVOID Alloc(ULONG NumBytes);
 MIXER_STATUS Close(HANDLE hDevice);
@@ -199,20 +278,15 @@ Control(
     }
 
     /* Wait for the I/O to complete */
-    IoResult = GetOverlappedResult(hMixer,
-                                   &Overlapped,
-                                   &Transferred,
-                                   TRUE);
+    WaitForSingleObjectEx(Overlapped.hEvent, INFINITE, TRUE);
 
     /* Don't need this any more */
     CloseHandle(Overlapped.hEvent);
 
-    if ( ! IoResult )
+    if (!IoResult)
         return MM_STATUS_UNSUCCESSFUL;
-
     if ( lpBytesReturned )
         *lpBytesReturned = Transferred;
-
     return MM_STATUS_SUCCESS;
 }
 
@@ -340,12 +414,12 @@ WdmAudInitUserModeMixer()
 
     if (MMixerLibraryInitialized)
     {
-        /* library is already initialized */
+        /* Library is already initialized */
         return TRUE;
     }
 
 
-    /* create a device list */
+    /* Create a device list */
     DeviceHandle = SetupDiGetClassDevs(&CategoryGuid,
                                        NULL,
                                        NULL,
@@ -353,28 +427,28 @@ WdmAudInitUserModeMixer()
 
     if (DeviceHandle == INVALID_HANDLE_VALUE)
     {
-        /* failed to create a device list */
+        /* Failed to create a device list */
         return FALSE;
     }
 
 
-    /* initialize the mixer library */
+    /* Initialize the mixer library */
     Status = MMixerInitialize(&MixerContext, Enum, (PVOID)DeviceHandle);
 
-    /* free device list */
+    /* Free device list */
     SetupDiDestroyDeviceInfoList(DeviceHandle);
 
     if (Status != MM_STATUS_SUCCESS)
     {
-        /* failed to initialize mixer library */
+        /* Failed to initialize mixer library */
         DPRINT1("Failed to initialize mixer library with %x\n", Status);
         return FALSE;
     }
 
-    /* library is now initialized */
+    /* Library is now initialized */
     MMixerLibraryInitialized = TRUE;
 
-    /* completed successfully */
+    /* Completed successfully */
     return TRUE;
 }
 
@@ -473,6 +547,42 @@ WdmAudGetWaveInCapabilities(
 }
 
 MMRESULT
+WdmAudQueryWaveFormatSupportByMMixer(
+    IN  PSOUND_DEVICE SoundDevice,
+    IN  PWAVEFORMATEX WaveFormat,
+    IN  DWORD WaveFormatSize)
+{
+    MMDEVICE_TYPE DeviceType;
+    PVOID Identifier;
+    MMRESULT Result;
+    MIXER_STATUS Status;
+
+    Result = GetSoundDeviceType(SoundDevice, &DeviceType);
+    if (!MMSUCCESS(Result) ||
+        (DeviceType != WAVE_IN_DEVICE_TYPE &&
+         DeviceType != WAVE_OUT_DEVICE_TYPE))
+    {
+        return MMSYSERR_BADDEVICEID;
+    }
+
+    Result = GetSoundDeviceIdentifier(SoundDevice, &Identifier);
+    if (!MMSUCCESS(Result))
+        return TranslateInternalMmResult(Result);
+
+    Status = MMixerQueryWaveFormatSupport(&MixerContext,
+                                          PtrToUlong(Identifier),
+                                          DeviceType == WAVE_IN_DEVICE_TYPE,
+                                          WaveFormat,
+                                          WaveFormatSize);
+    if (Status == MM_STATUS_SUCCESS)
+        return MMSYSERR_NOERROR;
+    if (Status == MM_STATUS_NO_MEMORY)
+        return MMSYSERR_NOMEM;
+
+    return WAVERR_BADFORMAT;
+}
+
+MMRESULT
 WdmAudSetWaveDeviceFormatByMMixer(
     IN  PSOUND_DEVICE_INSTANCE Instance,
     IN  DWORD DeviceId,
@@ -483,7 +593,9 @@ WdmAudSetWaveDeviceFormatByMMixer(
     PSOUND_DEVICE SoundDevice;
     MMRESULT Result;
     BOOL bWaveIn;
+    BOOL EventRegistered = FALSE;
 
+    DPRINT("SetWaveDeviceFormatByMMixer\n");
     Result = GetSoundDeviceFromInstance(Instance, &SoundDevice);
 
     if ( ! MMSUCCESS(Result) )
@@ -492,19 +604,95 @@ WdmAudSetWaveDeviceFormatByMMixer(
     }
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
-    SND_ASSERT( Result == MMSYSERR_NOERROR );
+    ASSERT( Result == MMSYSERR_NOERROR );
 
     bWaveIn = (DeviceType == WAVE_IN_DEVICE_TYPE ? TRUE : FALSE);
 
     if (MMixerOpenWave(&MixerContext, DeviceId, bWaveIn, WaveFormat, NULL, NULL, &Instance->Handle) == MM_STATUS_SUCCESS)
     {
-        if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+        MIXER_STATUS MixerStatus = MMixerInitializeRTStreamingBuffer(
+            &MixerContext,
+            Instance->Handle,
+            PAGE_SIZE * 8,
+            2,
+            &Instance->RTStreamingBuffer,
+            &Instance->RTStreamingBufferLength);
+        if (MixerStatus == MM_STATUS_SUCCESS)
+        {
+            DPRINT("RTStreamingBuffer %p Length %u\n",
+            Instance->RTStreamingBuffer,
+            Instance->RTStreamingBufferLength);
+
+            /* Clear buffer */
+            RtlZeroMemory(Instance->RTStreamingBuffer, Instance->RTStreamingBufferLength);
+            /* Set offset */
+            Instance->RTStreamingBufferOffset = 0;
+            Instance->hNotifyRTStreamingEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            Instance->hNotifyRTStreamingStopEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            Instance->hNotifyRTStreamingCompletionEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            Instance->hNotifyRTStreamingCompletionReadyEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+            Instance->hNotifyRTStreamingCompletionFinishEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            Instance->hNotifyRTStreamingCompletionStopEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            if (Instance->hNotifyRTStreamingEvent == NULL ||
+                Instance->hNotifyRTStreamingStopEvent == NULL ||
+                Instance->hNotifyRTStreamingCompletionEvent == NULL ||
+                Instance->hNotifyRTStreamingCompletionReadyEvent == NULL ||
+                Instance->hNotifyRTStreamingCompletionFinishEvent == NULL ||
+                Instance->hNotifyRTStreamingCompletionStopEvent == NULL
+            )
+            {
+                DPRINT1("Failed to create event with %x", GetLastError());
+                goto FailedRTStreamingSetup;
+            }
+            MixerStatus = MMixerRegisterRTStreamingEvent(&MixerContext, Instance->Handle, Instance->hNotifyRTStreamingEvent);
+            if (MixerStatus != MM_STATUS_SUCCESS)
+                goto FailedRTStreamingSetup;
+
+            EventRegistered = TRUE;
+            Instance->RTStreamingShadowBuffer = (PUCHAR)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Instance->RTStreamingBufferLength);
+            if (Instance->RTStreamingShadowBuffer == NULL)
+            {
+                DPRINT1("Failed to create shadow buffer with %x\n", GetLastError());
+                goto FailedRTStreamingSetup;
+            }
+
+            Instance->RTStreamingShadowBufferLength = Instance->RTStreamingBufferLength;
+            Instance->RTStreamingShadowBufferBytesUsed = 0;
+            Instance->RTStreamingShadowBufferReadOffset = 0;
+            Instance->RTStreamingShadowBufferWriteOffset = 0;
+            Instance->RTStreamingBufferBytesWritten = 0;
+            Instance->RTStreamingUnderrunCount = 0;
+            Instance->RTStreamingUnderrunBytes = 0;
+            Instance->LegacyStreaming = FALSE;
+            Instance->RTStreamingEnabled = TRUE;
+        }
+        else
+        {
+            Instance->LegacyStreaming = TRUE;
+        }
+
+        if (DeviceType == WAVE_OUT_DEVICE_TYPE && !Instance->RTStreamingEnabled)
         {
             MMixerSetWaveStatus(&MixerContext, Instance->Handle, KSSTATE_ACQUIRE);
             MMixerSetWaveStatus(&MixerContext, Instance->Handle, KSSTATE_PAUSE);
             MMixerSetWaveStatus(&MixerContext, Instance->Handle, KSSTATE_RUN);
         }
         return MMSYSERR_NOERROR;
+
+FailedRTStreamingSetup:
+        if (EventRegistered)
+        {
+            MMixerUnregisterRTStreamingEvent(&MixerContext,
+                                             Instance->Handle,
+                                             Instance->hNotifyRTStreamingEvent);
+        }
+        WdmAudCloseRTStreamingEvents(Instance);
+        HeapFree(GetProcessHeap(), 0, Instance->RTStreamingShadowBuffer);
+        Instance->RTStreamingShadowBuffer = NULL;
+        Instance->RTStreamingShadowBufferLength = 0;
+        Instance->RTStreamingBuffer = NULL;
+        Instance->RTStreamingBufferLength = 0;
+        return MMSYSERR_ERROR;
     }
     return MMSYSERR_ERROR;
 }
@@ -537,7 +725,7 @@ WdmAudGetCapabilitiesByMMixer(
     }
     else
     {
-        // not supported
+        /* Not supported */
         return MMSYSERR_ERROR;
     }
 }
@@ -562,6 +750,8 @@ WdmAudCloseSoundDeviceByMMixer(
     PSOUND_DEVICE SoundDevice;
     MMRESULT Result;
 
+    DPRINT("CloseSoundDeviceByMMixer\n");
+
     Result = GetSoundDeviceFromInstance(SoundDeviceInstance, &SoundDevice);
 
     if ( ! MMSUCCESS(Result) )
@@ -574,21 +764,37 @@ WdmAudCloseSoundDeviceByMMixer(
 
     if (DeviceType == MIXER_DEVICE_TYPE)
     {
-        /* no op */
+        /* No op */
         return MMSYSERR_NOERROR;
     }
     else if (DeviceType == WAVE_IN_DEVICE_TYPE || DeviceType == WAVE_OUT_DEVICE_TYPE)
     {
-        /* make sure the pin is stopped */
+        /* Make sure the pin is stopped */
         MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_PAUSE);
         MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_ACQUIRE);
         MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_STOP);
+        if (SoundDeviceInstance->RTStreamingEnabled)
+        {
+            SoundDeviceInstance->RTStreamingEnabled = FALSE;
+            WdmAudStopRTStreamingThreads(SoundDeviceInstance);
 
+            DPRINT("closing device handling\n");
+            SoundDeviceInstance->RTStreamingBuffer = NULL;
+            SoundDeviceInstance->RTStreamingBufferLength = 0;
+            SoundDeviceInstance->RTStreamingBufferOffset = 0;
+            MMixerUnregisterRTStreamingEvent(&MixerContext,
+                                             SoundDeviceInstance->Handle,
+                                             SoundDeviceInstance->hNotifyRTStreamingEvent);
+            HeapFree(GetProcessHeap(), 0, SoundDeviceInstance->RTStreamingShadowBuffer);
+            SoundDeviceInstance->RTStreamingShadowBuffer = NULL;
+            SoundDeviceInstance->RTStreamingShadowBufferLength = 0;
+            WdmAudCloseRTStreamingEvents(SoundDeviceInstance);
+        }
         CloseHandle(Handle);
         return MMSYSERR_NOERROR;
     }
 
-    /* midi is not supported */
+    /* Midi is not supported */
     return MMSYSERR_ERROR;
 }
 
@@ -644,14 +850,14 @@ WdmAudQueryMixerInfoByMMixer(
             return WdmAudGetLineInfo(hMixer, MixerId, MixLine, Flags);
         case MXDM_GETLINECONTROLS:
             return WdmAudGetLineControls(hMixer, MixerId, MixControls, Flags);
-       case MXDM_SETCONTROLDETAILS:
+        case MXDM_SETCONTROLDETAILS:
             return WdmAudSetControlDetails(hMixer, MixerId, MixDetails, Flags);
-       case MXDM_GETCONTROLDETAILS:
+        case MXDM_GETCONTROLDETAILS:
             return WdmAudGetControlDetails(hMixer, MixerId, MixDetails, Flags);
-       default:
-           DPRINT1("MixerId %lu, uMsg %lu, Parameter %p, Flags %lu\n", MixerId, uMsg, Parameter, Flags);
-           SND_ASSERT(0);
-           return MMSYSERR_NOTSUPPORTED;
+        default:
+            DPRINT1("MixerId %lu, uMsg %lu, Parameter %p, Flags %lu\n", MixerId, uMsg, Parameter, Flags);
+            SND_ASSERT(0);
+            return MMSYSERR_NOTSUPPORTED;
     }
 }
 
@@ -706,11 +912,13 @@ WdmAudSetWaveStateByMMixer(
 {
     MMDEVICE_TYPE DeviceType;
     PSOUND_DEVICE SoundDevice;
+    MIXER_STATUS MixerStatus;
     MMRESULT Result;
+
+    DPRINT("WdmAuSetWaveState bStart %x\n", bStart);
 
     Result = GetSoundDeviceFromInstance(SoundDeviceInstance, &SoundDevice);
     SND_ASSERT( Result == MMSYSERR_NOERROR );
-
 
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
     SND_ASSERT( Result == MMSYSERR_NOERROR );
@@ -719,15 +927,30 @@ WdmAudSetWaveStateByMMixer(
     {
         if (bStart)
         {
-            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_ACQUIRE);
-            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_PAUSE);
-            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_RUN);
+            if (SoundDeviceInstance->RTStreamingEnabled)
+            {
+                if (!WdmAudStartRTStreamingThreads(SoundDeviceInstance))
+                    return MMSYSERR_NOMEM;
+            }
+
+            MixerStatus = MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_ACQUIRE);
+            if (MixerStatus == MM_STATUS_SUCCESS)
+                MixerStatus = MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_PAUSE);
+            if (MixerStatus == MM_STATUS_SUCCESS)
+                MixerStatus = MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_RUN);
+            if (MixerStatus != MM_STATUS_SUCCESS)
+                return MMSYSERR_ERROR;
+
+            if (SoundDeviceInstance->RTStreamingEnabled)
+                SoundDeviceInstance->bStarted = TRUE;
         }
         else
         {
             MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_PAUSE);
             MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_ACQUIRE);
             MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_STOP);
+            if (SoundDeviceInstance->RTStreamingEnabled)
+                SoundDeviceInstance->bStarted = FALSE;
         }
     }
     else if (DeviceType == MIDI_IN_DEVICE_TYPE || DeviceType == MIDI_OUT_DEVICE_TYPE)
@@ -757,17 +980,49 @@ WdmAudResetStreamByMMixer(
 {
     MIXER_STATUS Status;
 
+    DPRINT("WdmaudResetStream bStartReset %x\n", bStartReset);
+    if (SoundDeviceInstance->RTStreamingEnabled)
+    {
+        if (bStartReset)
+        {
+            SoundDeviceInstance->ResetInProgress = TRUE;
+            SoundDeviceInstance->bStarted = FALSE;
+            WdmAudStopRTStreamingThreads(SoundDeviceInstance);
+
+            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_PAUSE);
+            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_ACQUIRE);
+            MMixerSetWaveStatus(&MixerContext, SoundDeviceInstance->Handle, KSSTATE_STOP);
+
+            SoundDeviceInstance->RTStreamingBufferOffset = 0;
+            SoundDeviceInstance->RTStreamingShadowBufferReadOffset = 0;
+            SoundDeviceInstance->RTStreamingShadowBufferWriteOffset = 0;
+            InterlockedExchange(&SoundDeviceInstance->RTStreamingBufferBytesWritten, 0);
+            InterlockedExchange(&SoundDeviceInstance->RTStreamingShadowBufferBytesUsed, 0);
+            InterlockedExchange(&SoundDeviceInstance->RTStreamingUnderrunCount, 0);
+            InterlockedExchange(&SoundDeviceInstance->RTStreamingUnderrunBytes, 0);
+            RtlZeroMemory(SoundDeviceInstance->RTStreamingBuffer,
+                          SoundDeviceInstance->RTStreamingBufferLength);
+            RtlZeroMemory(SoundDeviceInstance->RTStreamingShadowBuffer,
+                          SoundDeviceInstance->RTStreamingShadowBufferLength);
+            MemoryBarrier();
+        }
+        else
+        {
+            SoundDeviceInstance->ResetInProgress = FALSE;
+        }
+        return MMSYSERR_NOERROR;
+    }
+
     if (DeviceType == WAVE_IN_DEVICE_TYPE || DeviceType == WAVE_OUT_DEVICE_TYPE)
     {
         Status = MMixerSetWaveResetState(&MixerContext, SoundDeviceInstance->Handle, bStartReset);
+        DPRINT("WdmaudResetStream Result %x\n", Status);
         if (Status == MM_STATUS_SUCCESS)
         {
-            /* completed successfully */
+            /* Completed successfully */
             return MMSYSERR_NOERROR;
         }
     }
-
-
     return MMSYSERR_NOTSUPPORTED;
 }
 
@@ -782,6 +1037,8 @@ WdmAudGetWavePositionByMMixer(
     MMRESULT Result;
     DWORD Position;
 
+    DPRINT("GetWavePosition\n");
+
     Result = GetSoundDeviceFromInstance(SoundDeviceInstance, &SoundDevice);
     if (!MMSUCCESS(Result))
         return TranslateInternalMmResult(Result);
@@ -791,6 +1048,16 @@ WdmAudGetWavePositionByMMixer(
 
     if (DeviceType == WAVE_IN_DEVICE_TYPE || DeviceType == WAVE_OUT_DEVICE_TYPE)
     {
+        if (SoundDeviceInstance->RTStreamingEnabled)
+        {
+            /* Store position */
+            Time->wType = TIME_BYTES;
+            Time->u.cb = SoundDeviceInstance->RTStreamingBufferBytesWritten;
+
+            /* Completed successfully */
+            return MMSYSERR_NOERROR;
+        }
+
         Status = MMixerGetWavePosition(&MixerContext, SoundDeviceInstance->Handle, &Position);
         if (Status == MM_STATUS_SUCCESS)
         {
@@ -816,7 +1083,8 @@ WdmAudGetVolumeByMMixer(
     MIXERCONTROL MixControl;
     MIXERLINECONTROLS MixLineControls;
     MIXERCONTROLDETAILS MixControlDetails;
-    MIXERCONTROLDETAILS_UNSIGNED MixControlDetailsU[2]; // For 2 (stereo) channels
+    PMIXERCONTROLDETAILS_UNSIGNED MixControlDetailsU;
+    DWORD ChannelCount;
 
     MixLine.cbStruct = sizeof(MixLine);
     MixLine.dwComponentType = MIXERLINE_COMPONENTTYPE_DST_SPEAKERS;
@@ -844,9 +1112,19 @@ WdmAudGetVolumeByMMixer(
     if (!MMSUCCESS(Result))
         return TranslateInternalMmResult(Result);
 
+    ChannelCount = (MixControl.fdwControl & MIXERCONTROL_CONTROLF_UNIFORM) ?
+                   1 : MixLine.cChannels;
+    if (!ChannelCount || ChannelCount > MAXDWORD / sizeof(*MixControlDetailsU))
+        return MMSYSERR_ERROR;
+
+    MixControlDetailsU = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                                   ChannelCount * sizeof(*MixControlDetailsU));
+    if (!MixControlDetailsU)
+        return MMSYSERR_NOMEM;
+
     MixControlDetails.cbStruct = sizeof(MixControlDetails);
     MixControlDetails.dwControlID = MixControl.dwControlID;
-    MixControlDetails.cChannels = MixLine.cChannels;
+    MixControlDetails.cChannels = ChannelCount;
     MixControlDetails.cMultipleItems = 0;
     MixControlDetails.cbDetails = sizeof(MIXERCONTROLDETAILS_UNSIGNED);
     MixControlDetails.paDetails = MixControlDetailsU;
@@ -857,7 +1135,12 @@ WdmAudGetVolumeByMMixer(
                                      &MixControlDetails,
                                      MIXER_OBJECTF_MIXER);
     if (MMSUCCESS(Result))
-        *pdwVolume = MAKELONG(LOWORD(MixControlDetailsU[0].dwValue), HIWORD(MixControlDetailsU[1].dwValue));
+    {
+        *pdwVolume = MAKELONG(LOWORD(MixControlDetailsU[0].dwValue),
+                              LOWORD(MixControlDetailsU[ChannelCount > 1 ? 1 : 0].dwValue));
+    }
+
+    HeapFree(GetProcessHeap(), 0, MixControlDetailsU);
 
     return Result;
 }
@@ -873,7 +1156,9 @@ WdmAudSetVolumeByMMixer(
     MIXERCONTROL MixControl;
     MIXERLINECONTROLS MixLineControls;
     MIXERCONTROLDETAILS MixControlDetails;
-    MIXERCONTROLDETAILS_UNSIGNED MixControlDetailsU[2]; // For 2 (stereo) channels
+    PMIXERCONTROLDETAILS_UNSIGNED MixControlDetailsU;
+    DWORD ChannelCount;
+    DWORD Channel;
 
     MixLine.cbStruct = sizeof(MixLine);
     MixLine.dwComponentType = MIXERLINE_COMPONENTTYPE_DST_SPEAKERS;
@@ -901,13 +1186,25 @@ WdmAudSetVolumeByMMixer(
     if (!MMSUCCESS(Result))
         return TranslateInternalMmResult(Result);
 
-    /* Convert volume level to be set */
-    MixControlDetailsU[0].dwValue = LOWORD(dwVolume); // Left channel
-    MixControlDetailsU[1].dwValue = HIWORD(dwVolume); // Right channel
+    ChannelCount = (MixControl.fdwControl & MIXERCONTROL_CONTROLF_UNIFORM) ?
+                   1 : MixLine.cChannels;
+    if (!ChannelCount || ChannelCount > MAXDWORD / sizeof(*MixControlDetailsU))
+        return MMSYSERR_ERROR;
+
+    MixControlDetailsU = HeapAlloc(GetProcessHeap(), 0,
+                                   ChannelCount * sizeof(*MixControlDetailsU));
+    if (!MixControlDetailsU)
+        return MMSYSERR_NOMEM;
+
+    for (Channel = 0; Channel < ChannelCount; ++Channel)
+    {
+        MixControlDetailsU[Channel].dwValue =
+            Channel ? HIWORD(dwVolume) : LOWORD(dwVolume);
+    }
 
     MixControlDetails.cbStruct = sizeof(MixControlDetails);
     MixControlDetails.dwControlID = MixControl.dwControlID;
-    MixControlDetails.cChannels = MixLine.cChannels;
+    MixControlDetails.cChannels = ChannelCount;
     MixControlDetails.cMultipleItems = 0;
     MixControlDetails.cbDetails = sizeof(MIXERCONTROLDETAILS_UNSIGNED);
     MixControlDetails.paDetails = MixControlDetailsU;
@@ -917,6 +1214,7 @@ WdmAudSetVolumeByMMixer(
                                      DeviceId,
                                      &MixControlDetails,
                                      MIXER_OBJECTF_MIXER);
+    HeapFree(GetProcessHeap(), 0, MixControlDetailsU);
     return Result;
 }
 
@@ -926,19 +1224,234 @@ CommitWaveBufferApc(PVOID ApcContext,
            PIO_STATUS_BLOCK IoStatusBlock,
            ULONG Reserved)
 {
-    DWORD dwErrorCode;
+    DWORD ErrorCode;
     PSOUND_OVERLAPPED Overlap;
     KSSTREAM_HEADER* lpHeader;
 
-    dwErrorCode = RtlNtStatusToDosError(IoStatusBlock->Status);
+    UNREFERENCED_PARAMETER(ApcContext);
+    UNREFERENCED_PARAMETER(Reserved);
+
     Overlap = (PSOUND_OVERLAPPED)IoStatusBlock;
     lpHeader = Overlap->CompletionContext;
+    ErrorCode = RtlNtStatusToDosError(IoStatusBlock->Status);
 
     /* Call mmebuddy overlap routine */
-    Overlap->OriginalCompletionRoutine(dwErrorCode,
-        lpHeader->DataUsed, &Overlap->Standard);
-
+    CompleteIO(ErrorCode, lpHeader->DataUsed, Overlap);
     HeapFree(GetProcessHeap(), 0, lpHeader);
+}
+
+static DWORD
+RTStreamingRingWrite(
+    PSOUND_DEVICE_INSTANCE SoundDeviceInstance,
+    const UCHAR *Source,
+    DWORD Length)
+{
+    ULONG Available;
+    ULONG BytesCopied;
+    ULONG FirstPart;
+    ULONG WriteOffset;
+    LONG BytesUsed;
+
+    BytesUsed = InterlockedCompareExchange(
+        &SoundDeviceInstance->RTStreamingShadowBufferBytesUsed, 0, 0);
+    if (BytesUsed < 0 ||
+        (ULONG)BytesUsed > SoundDeviceInstance->RTStreamingShadowBufferLength)
+    {
+        return 0;
+    }
+
+    Available = SoundDeviceInstance->RTStreamingShadowBufferLength - BytesUsed;
+    BytesCopied = min(Length, Available);
+    if (!BytesCopied)
+        return 0;
+
+    WriteOffset = SoundDeviceInstance->RTStreamingShadowBufferWriteOffset;
+    FirstPart = min(BytesCopied,
+                    SoundDeviceInstance->RTStreamingShadowBufferLength - WriteOffset);
+    RtlCopyMemory(&SoundDeviceInstance->RTStreamingShadowBuffer[WriteOffset],
+                  Source,
+                  FirstPart);
+    if (BytesCopied != FirstPart)
+    {
+        RtlCopyMemory(SoundDeviceInstance->RTStreamingShadowBuffer,
+                      Source + FirstPart,
+                      BytesCopied - FirstPart);
+    }
+
+    SoundDeviceInstance->RTStreamingShadowBufferWriteOffset =
+        (WriteOffset + BytesCopied) % SoundDeviceInstance->RTStreamingShadowBufferLength;
+    InterlockedExchangeAdd(&SoundDeviceInstance->RTStreamingShadowBufferBytesUsed,
+                           BytesCopied);
+    return BytesCopied;
+}
+
+static DWORD
+RTStreamingRingRead(
+    PSOUND_DEVICE_INSTANCE SoundDeviceInstance,
+    UCHAR *Destination,
+    DWORD Length)
+{
+    ULONG BytesCopied;
+    ULONG FirstPart;
+    ULONG ReadOffset;
+    LONG BytesUsed;
+
+    BytesUsed = InterlockedCompareExchange(
+        &SoundDeviceInstance->RTStreamingShadowBufferBytesUsed, 0, 0);
+    if (BytesUsed <= 0 ||
+        (ULONG)BytesUsed > SoundDeviceInstance->RTStreamingShadowBufferLength)
+    {
+        return 0;
+    }
+
+    BytesCopied = min(Length, (ULONG)BytesUsed);
+    ReadOffset = SoundDeviceInstance->RTStreamingShadowBufferReadOffset;
+    FirstPart = min(BytesCopied,
+                    SoundDeviceInstance->RTStreamingShadowBufferLength - ReadOffset);
+    RtlCopyMemory(Destination,
+                  &SoundDeviceInstance->RTStreamingShadowBuffer[ReadOffset],
+                  FirstPart);
+    if (BytesCopied != FirstPart)
+    {
+        RtlCopyMemory(Destination + FirstPart,
+                      SoundDeviceInstance->RTStreamingShadowBuffer,
+                      BytesCopied - FirstPart);
+    }
+
+    SoundDeviceInstance->RTStreamingShadowBufferReadOffset =
+        (ReadOffset + BytesCopied) % SoundDeviceInstance->RTStreamingShadowBufferLength;
+    InterlockedExchangeAdd(&SoundDeviceInstance->RTStreamingShadowBufferBytesUsed,
+                           -((LONG)BytesCopied));
+    return BytesCopied;
+}
+
+DWORD
+WINAPI
+RTStreamingThreadProc(
+    LPVOID Parameter)
+{
+    DWORD WaitStatus;
+    PVOID WaitObjects[2];
+    PSOUND_DEVICE SoundDevice;
+    MMDEVICE_TYPE DeviceType;
+    MMRESULT Result;
+
+    PSOUND_DEVICE_INSTANCE SoundDeviceInstance;
+
+    SoundDeviceInstance = (PSOUND_DEVICE_INSTANCE)Parameter;
+
+    Result = GetSoundDeviceFromInstance(SoundDeviceInstance, &SoundDevice);
+    if ( ! MMSUCCESS(Result) )
+    {
+        return TranslateInternalMmResult(Result);
+    }
+    Result = GetSoundDeviceType(SoundDevice, &DeviceType);
+    SND_ASSERT( Result == MMSYSERR_NOERROR );
+
+    WaitObjects[0] = (PVOID)SoundDeviceInstance->hNotifyRTStreamingStopEvent;
+    WaitObjects[1] = (PVOID)SoundDeviceInstance->hNotifyRTStreamingEvent;
+
+    DPRINT("RTStreamingThreadProc entered %p\n", SoundDeviceInstance);
+    SoundDeviceInstance->RTStreamingStarted = TRUE;
+    while (SoundDeviceInstance->RTStreamingEnabled)
+    {
+        WaitStatus = WaitForMultipleObjects(2, WaitObjects, FALSE, INFINITE);
+        if (WaitStatus == WAIT_OBJECT_0)
+        {
+            DPRINT("RTStreamingThreadProc StopEvent\n");
+            break;
+        }
+        else if (WaitStatus == WAIT_OBJECT_0 + 1)
+        {
+            DWORD Length = SoundDeviceInstance->RTStreamingBufferLength / 2;
+            DWORD BytesCopied;
+            if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+            {
+                UCHAR *PeriodBuffer =
+                    &SoundDeviceInstance->RTStreamingBuffer[SoundDeviceInstance->RTStreamingBufferOffset];
+
+                BytesCopied = RTStreamingRingRead(SoundDeviceInstance,
+                                                  PeriodBuffer,
+                                                  Length);
+                if (BytesCopied < Length)
+                {
+                    RtlZeroMemory(PeriodBuffer + BytesCopied,
+                                  Length - BytesCopied);
+                    InterlockedIncrement(&SoundDeviceInstance->RTStreamingUnderrunCount);
+                    InterlockedExchangeAdd(&SoundDeviceInstance->RTStreamingUnderrunBytes,
+                                           Length - BytesCopied);
+                }
+                InterlockedExchangeAdd(&SoundDeviceInstance->RTStreamingBufferBytesWritten,
+                                       BytesCopied);
+                SoundDeviceInstance->RTStreamingBufferOffset =
+                    (SoundDeviceInstance->RTStreamingBufferOffset + Length) %
+                    SoundDeviceInstance->RTStreamingBufferLength;
+            }
+            else if (DeviceType == WAVE_IN_DEVICE_TYPE)
+            {
+                RTStreamingRingWrite(
+                    SoundDeviceInstance,
+                    &SoundDeviceInstance->RTStreamingBuffer[SoundDeviceInstance->RTStreamingBufferOffset],
+                    Length);
+                SoundDeviceInstance->RTStreamingBufferOffset =
+                    (SoundDeviceInstance->RTStreamingBufferOffset + Length) %
+                    SoundDeviceInstance->RTStreamingBufferLength;
+            }
+        }
+    }
+    RtlZeroMemory(SoundDeviceInstance->RTStreamingBuffer, SoundDeviceInstance->RTStreamingBufferLength);
+    DPRINT("Exiting thread\n");
+    SoundDeviceInstance->RTStreamingStarted = FALSE;
+    return 0;
+}
+
+typedef struct
+{
+    PSOUND_OVERLAPPED Overlap;
+    LPSOUND_OVERLAPPED_COMPLETION_ROUTINE CompletionRoutine;
+    DWORD Status;
+    DWORD BytesTransferred;
+} COMPLETION_CONTEXT, *PCOMPLETION_CONTEXT;
+
+DWORD
+WINAPI
+RTStreamingCompletionThreadProc(
+    IN  PVOID Parameter)
+{
+    DWORD WaitStatus;
+    PVOID WaitObjects[2];
+    PSOUND_DEVICE_INSTANCE SoundDeviceInstance;
+    PCOMPLETION_CONTEXT Context;
+
+    SoundDeviceInstance = (PSOUND_DEVICE_INSTANCE)Parameter;
+
+    WaitObjects[0] = (PVOID)SoundDeviceInstance->hNotifyRTStreamingCompletionStopEvent;
+    WaitObjects[1] = (PVOID)SoundDeviceInstance->hNotifyRTStreamingCompletionEvent;
+
+    DPRINT("RTStreamingCompletionThreadProc entered %p\n", SoundDeviceInstance);
+    while (SoundDeviceInstance->RTStreamingEnabled)
+    {
+        SoundDeviceInstance->RTStreamingCompletionStarted = TRUE;
+        WaitStatus = WaitForMultipleObjects(2, WaitObjects, FALSE, INFINITE);
+        if (WaitStatus == WAIT_OBJECT_0)
+        {
+            DPRINT("RTStreamingCompletionThreadProc StopEvent\n");
+            break;
+        }
+        else if (WaitStatus == WAIT_OBJECT_0 + 1)
+        {
+            Context = (PCOMPLETION_CONTEXT)SoundDeviceInstance->RTStreamingCompletionContext;
+            ASSERT(Context);
+            SoundDeviceInstance->RTStreamingCompletionContext = NULL;
+            SetEvent(SoundDeviceInstance->hNotifyRTStreamingCompletionReadyEvent);
+            Context->CompletionRoutine(Context->Status, Context->BytesTransferred, Context->Overlap);
+            SetEvent(SoundDeviceInstance->hNotifyRTStreamingCompletionFinishEvent);
+            FreeMemory(Context);
+        }
+    }
+    DPRINT("Exiting completion thread\n");
+    SoundDeviceInstance->RTStreamingCompletionStarted = FALSE;
+    return MMSYSERR_NOERROR;
 }
 
 MMRESULT
@@ -947,7 +1460,7 @@ WdmAudCommitWaveBufferByMMixer(
     IN  PVOID OffsetPtr,
     IN  DWORD Length,
     IN  PSOUND_OVERLAPPED Overlap,
-    IN  LPOVERLAPPED_COMPLETION_ROUTINE CompletionRoutine)
+    IN  LPSOUND_OVERLAPPED_COMPLETION_ROUTINE CompletionRoutine)
 {
     PSOUND_DEVICE SoundDevice;
     MMDEVICE_TYPE DeviceType;
@@ -955,6 +1468,7 @@ WdmAudCommitWaveBufferByMMixer(
     ULONG IoCtl;
     KSSTREAM_HEADER* lpHeader;
     NTSTATUS Status;
+    PCOMPLETION_CONTEXT Context;
 
     Result = GetSoundDeviceFromInstance(SoundDeviceInstance, &SoundDevice);
 
@@ -962,48 +1476,138 @@ WdmAudCommitWaveBufferByMMixer(
     {
         return TranslateInternalMmResult(Result);
     }
-
     Result = GetSoundDeviceType(SoundDevice, &DeviceType);
     SND_ASSERT( Result == MMSYSERR_NOERROR );
 
-    lpHeader = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KSSTREAM_HEADER));
-    if ( ! lpHeader )
+    if (SoundDeviceInstance->RTStreamingEnabled)
     {
-        /* no memory */
-        return MMSYSERR_NOMEM;
+        if (!WdmAudStartRTStreamingThreads(SoundDeviceInstance))
+            return MMSYSERR_NOMEM;
+
+        Context = AllocateMemory(sizeof(*Context));
+        if (!Context)
+            return MMSYSERR_NOMEM;
+
+        Status = STATUS_SUCCESS;
+        DWORD Offset = 0;
+
+        if (DeviceType == WAVE_OUT_DEVICE_TYPE &&
+            !SoundDeviceInstance->bStarted)
+        {
+            DWORD PrefillLength = min(Length,
+                                      SoundDeviceInstance->RTStreamingBufferLength);
+
+            RtlCopyMemory(SoundDeviceInstance->RTStreamingBuffer,
+                          OffsetPtr,
+                          PrefillLength);
+            if (PrefillLength < SoundDeviceInstance->RTStreamingBufferLength)
+            {
+                RtlZeroMemory(SoundDeviceInstance->RTStreamingBuffer + PrefillLength,
+                              SoundDeviceInstance->RTStreamingBufferLength - PrefillLength);
+            }
+
+            SoundDeviceInstance->RTStreamingBufferOffset = 0;
+            InterlockedExchangeAdd(&SoundDeviceInstance->RTStreamingBufferBytesWritten,
+                                   PrefillLength);
+            Offset = PrefillLength;
+            MemoryBarrier();
+
+            Result = WdmAudSetWaveStateByMMixer(SoundDeviceInstance, TRUE);
+            if (Result != MMSYSERR_NOERROR)
+                Status = STATUS_UNSUCCESSFUL;
+        }
+
+        while(NT_SUCCESS(Status) && Offset < Length)
+        {
+            if (SoundDeviceInstance->ResetInProgress || !SoundDeviceInstance->RTStreamingEnabled || SoundDeviceInstance->bClosed)
+            {
+                Status = STATUS_CANCELLED;
+                break;
+            }
+            if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+            {
+                DWORD BytesCopied = RTStreamingRingWrite(
+                    SoundDeviceInstance,
+                    &((PUCHAR)OffsetPtr)[Offset],
+                    Length - Offset);
+                Offset += BytesCopied;
+                if (Offset < Length)
+                {
+                    DPRINT("Waiting...\n");
+                    Sleep(1);
+                }
+            }
+            else if (DeviceType == WAVE_IN_DEVICE_TYPE)
+            {
+                DWORD BytesCopied;
+
+                while(InterlockedCompareExchange(
+                          &SoundDeviceInstance->RTStreamingShadowBufferBytesUsed,
+                          0,
+                          0) == 0)
+                {
+                    DPRINT("Waiting...\n");
+                    Sleep(1);
+                }
+
+                BytesCopied = RTStreamingRingRead(
+                    SoundDeviceInstance,
+                    &((PUCHAR)OffsetPtr)[Offset],
+                    Length - Offset);
+                Offset += BytesCopied;
+            }
+        }
+        Context->BytesTransferred = Offset;
+        Context->Status = Status;
+        Context->CompletionRoutine = CompletionRoutine;
+        Context->Overlap = Overlap;
+        WaitForSingleObject(SoundDeviceInstance->hNotifyRTStreamingCompletionReadyEvent, INFINITE);
+        SoundDeviceInstance->RTStreamingCompletionContext = Context;
+        SetEvent(SoundDeviceInstance->hNotifyRTStreamingCompletionEvent);
+        WaitForSingleObject(SoundDeviceInstance->hNotifyRTStreamingCompletionFinishEvent, INFINITE);
+        return MMSYSERR_NOERROR;
     }
-
-    /* setup stream packet */
-    lpHeader->Size = sizeof(KSSTREAM_HEADER);
-    lpHeader->PresentationTime.Numerator = 1;
-    lpHeader->PresentationTime.Denominator = 1;
-    lpHeader->Data = OffsetPtr;
-    lpHeader->FrameExtent = Length;
-    Overlap->CompletionContext = lpHeader;
-    Overlap->OriginalCompletionRoutine = CompletionRoutine;
-    IoCtl = (DeviceType == WAVE_OUT_DEVICE_TYPE ? IOCTL_KS_WRITE_STREAM : IOCTL_KS_READ_STREAM);
-
-    if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+    else if (SoundDeviceInstance->LegacyStreaming)
     {
-        lpHeader->DataUsed = Length;
+        lpHeader = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KSSTREAM_HEADER));
+        if (!lpHeader)
+        {
+            /* No memory */
+            return MMSYSERR_NOMEM;
+        }
+
+        /* Setup stream packet */
+        lpHeader->Size = sizeof(KSSTREAM_HEADER);
+        lpHeader->PresentationTime.Numerator = 1;
+        lpHeader->PresentationTime.Denominator = 1;
+        lpHeader->Data = OffsetPtr;
+        lpHeader->FrameExtent = Length;
+        Overlap->CompletionContext = lpHeader;
+        Overlap->OriginalCompletionRoutine = CompletionRoutine;
+        IoCtl = (DeviceType == WAVE_OUT_DEVICE_TYPE ? IOCTL_KS_WRITE_STREAM : IOCTL_KS_READ_STREAM);
+
+        if (DeviceType == WAVE_OUT_DEVICE_TYPE)
+        {
+            lpHeader->DataUsed = Length;
+        }
+        Status = NtDeviceIoControlFile(
+            SoundDeviceInstance->Handle, NULL, CommitWaveBufferApc, NULL, (PIO_STATUS_BLOCK)Overlap, IoCtl, NULL, 0,
+            lpHeader, sizeof(KSSTREAM_HEADER));
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("NtDeviceIoControlFile() failed with status %08lx\n", Status);
+            Overlap->CompletionContext = NULL;
+            Overlap->OriginalCompletionRoutine = NULL;
+            HeapFree(GetProcessHeap(), 0, lpHeader);
+            return MMSYSERR_ERROR;
+        }
+
+        return MMSYSERR_NOERROR;
     }
-
-    Status = NtDeviceIoControlFile(SoundDeviceInstance->Handle,
-                                   NULL,
-                                   CommitWaveBufferApc,
-                                   NULL,
-                                   (PIO_STATUS_BLOCK)Overlap,
-                                   IoCtl,
-                                   NULL,
-                                   0,
-                                   lpHeader,
-                                   sizeof(KSSTREAM_HEADER));
-
-    if (!NT_SUCCESS(Status))
+    else
     {
-        DPRINT1("NtDeviceIoControlFile() failed with status %08lx\n", Status);
-        return MMSYSERR_ERROR;
+        ASSERT(FALSE);
     }
-
-    return MMSYSERR_NOERROR;
+    return MMSYSERR_NOTSUPPORTED;
 }

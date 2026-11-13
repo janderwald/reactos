@@ -1965,6 +1965,8 @@ DECLARE_INTERFACE_(IMiniportWaveRTStreamNotification, IMiniportWaveRTStream)
                 IN PKEVENT NotificationEvent\
     )
 
+typedef IMiniportWaveRTStreamNotification *PMINIPORTWAVERTSTREAMNOTIFICATION;
+
 /* ===============================================================
     IMiniportWaveRT Interface
 */

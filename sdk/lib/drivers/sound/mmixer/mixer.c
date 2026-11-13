@@ -625,8 +625,8 @@ MMixerGetControlDetails(
             break;
 
         default:
+            UNIMPLEMENTED_ONCE;
             Status = MM_STATUS_NOT_IMPLEMENTED;
-            //DPRINT1("ControlType %lx not implemented\n", MixerControl->Control.dwControlType);
     }
 
     return Status;
@@ -813,7 +813,6 @@ MMixerInitialize(
      InitializeListHead(&MixerList->WaveOutList);
      InitializeListHead(&MixerList->MidiInList);
      InitializeListHead(&MixerList->MidiOutList);
-
 
      /* store mixer list */
      MixerContext->MixerContext = (PVOID)MixerList;

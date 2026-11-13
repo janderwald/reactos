@@ -43,7 +43,7 @@ WdmAudCommitWaveBufferByLegacy(
     IN  PVOID OffsetPtr,
     IN  DWORD Length,
     IN  PSOUND_OVERLAPPED Overlap,
-    IN  LPOVERLAPPED_COMPLETION_ROUTINE CompletionRoutine);
+    IN  LPSOUND_OVERLAPPED_COMPLETION_ROUTINE CompletionRoutine);
 
 MMRESULT
 WriteFileEx_Remixer(
@@ -106,6 +106,12 @@ WdmAudSetWaveDeviceFormatByMMixer(
     IN  DWORD WaveFormatSize);
 
 MMRESULT
+WdmAudQueryWaveFormatSupportByMMixer(
+    IN  PSOUND_DEVICE SoundDevice,
+    IN  PWAVEFORMATEX WaveFormat,
+    IN  DWORD WaveFormatSize);
+
+MMRESULT
 WdmAudGetDeviceInterfaceStringByMMixer(
     IN  MMDEVICE_TYPE DeviceType,
     IN  DWORD DeviceId,
@@ -162,7 +168,7 @@ WdmAudCommitWaveBufferByMMixer(
     IN  PVOID OffsetPtr,
     IN  DWORD Length,
     IN  PSOUND_OVERLAPPED Overlap,
-    IN  LPOVERLAPPED_COMPLETION_ROUTINE CompletionRoutine);
+    IN  LPSOUND_OVERLAPPED_COMPLETION_ROUTINE CompletionRoutine);
 
 MMRESULT
 WdmAudCleanupByMMixer(VOID);
