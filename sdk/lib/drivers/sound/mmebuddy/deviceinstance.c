@@ -36,6 +36,9 @@ AllocateSoundDeviceInstance(
     /* Use default buffer count */
     NewInstance->BufferCount = SOUND_KERNEL_BUFFER_COUNT;
 
+    /* The header queue is used by the sound, streaming and completion threads */
+    InitializeCriticalSection(&NewInstance->QueueLock);
+
     /* Provide the caller with the new instance pointer */
     *SoundDeviceInstance = NewInstance;
 
@@ -51,6 +54,8 @@ FreeSoundDeviceInstance(
         checking.
     */
     SND_ASSERT( SoundDeviceInstance->Thread == NULL );
+
+    DeleteCriticalSection(&SoundDeviceInstance->QueueLock);
 
     ZeroMemory(SoundDeviceInstance, sizeof(SOUND_DEVICE_INSTANCE));
     FreeMemory(SoundDeviceInstance);
@@ -275,6 +280,12 @@ DestroySoundDeviceInstance(
     }
 
     SoundDeviceInstance->bClosed = TRUE;
+
+    /* Wait for the streaming thread, it stops committing now that the device is closed */
+    while (InterlockedCompareExchange(&SoundDeviceInstance->StreamingRequests, 0, 0) != 0)
+    {
+        Sleep(1);
+    }
 
     /* Stop the streaming thread */
     if ( SoundDeviceInstance->Thread )

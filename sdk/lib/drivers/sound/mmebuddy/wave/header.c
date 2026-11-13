@@ -250,7 +250,38 @@ EnqueueWaveHeader(
         return TranslateInternalMmResult(Result);
     }
 
-    if (!SoundDeviceInstance->HeadWaveHeader)
+    if (SoundDeviceInstance->RTStreamingEnabled)
+    {
+        BOOL Queued = FALSE;
+
+        /* the RT streaming and completion threads walk the queue concurrently */
+        EnterCriticalSection(&SoundDeviceInstance->QueueLock);
+
+        if (!SoundDeviceInstance->HeadWaveHeader)
+        {
+            SoundDeviceInstance->HeadWaveHeader = WaveHeader;
+            SoundDeviceInstance->TailWaveHeader = WaveHeader;
+            Queued = TRUE;
+        }
+        else if (SoundDeviceInstance->TailWaveHeader != WaveHeader)
+        {
+            SoundDeviceInstance->TailWaveHeader->lpNext = WaveHeader;
+            SoundDeviceInstance->TailWaveHeader = WaveHeader;
+            Queued = TRUE;
+        }
+
+        LeaveCriticalSection(&SoundDeviceInstance->QueueLock);
+
+        /* every header is streamed, the previous ones may still wait for completion;
+         * playback is paused until restarted, recording buffers are queued anytime */
+        if (Queued &&
+            SoundDeviceInstance->bClosed == FALSE &&
+            (DeviceType == WAVE_IN_DEVICE_TYPE || SoundDeviceInstance->bPaused == FALSE))
+        {
+            InitiateSoundStreaming(SoundDeviceInstance);
+        }
+    }
+    else if (!SoundDeviceInstance->HeadWaveHeader)
     {
         /* This is the first header in the queue */
         SND_TRACE(L"Enqueued first wave header\n");
@@ -262,11 +293,7 @@ EnqueueWaveHeader(
             /* Only do wave streaming when the stream has not been paused */
             if (SoundDeviceInstance->bPaused == FALSE && SoundDeviceInstance->bClosed == FALSE)
             {
-                if (SoundDeviceInstance->RTStreamingEnabled)
-                {
-                    InitiateSoundStreaming(SoundDeviceInstance);
-                }
-                else if (SoundDeviceInstance->LegacyStreaming)
+                if (SoundDeviceInstance->LegacyStreaming)
                 {
                     DoWaveStreaming(SoundDeviceInstance);
                 }
@@ -337,6 +364,8 @@ CompleteWaveHeader(
     SND_ASSERT( Extension );
 
     /* Remove the header from the queue, like so */
+    EnterCriticalSection(&SoundDeviceInstance->QueueLock);
+
     if (SoundDeviceInstance->HeadWaveHeader == Header)
     {
         SoundDeviceInstance->HeadWaveHeader = Header->lpNext;
@@ -376,6 +405,8 @@ CompleteWaveHeader(
             }
         }
     }
+
+    LeaveCriticalSection(&SoundDeviceInstance->QueueLock);
 
     /* Make sure we're not using this as the current buffer any more, either! */
 /*
