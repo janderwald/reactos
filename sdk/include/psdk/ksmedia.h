@@ -1290,6 +1290,11 @@ typedef enum {
 
 typedef struct
 {
+    LONG ActiveSpeakerPositions;
+} KSAUDIO_CHANNEL_CONFIG, *PKSAUDIO_CHANNEL_CONFIG;
+
+typedef struct
+{
     KSPROPERTY  Property;
     ULONG  NodeId;
     ULONG  Reserved;
