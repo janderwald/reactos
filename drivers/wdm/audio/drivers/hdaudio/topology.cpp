@@ -69,6 +69,7 @@ CMiniportTopology::Init(
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("QueryInterface failed with %x\n", Status);
+        m_PortEvents = NULL;
         return Status;
     }
 
@@ -103,15 +104,14 @@ CMiniportTopology::GenerateEventList(
 NTSTATUS
 HDAUDIO_NewMiniportTopology(
     OUT PMINIPORTTOPOLOGY* OutMiniport,
-    IN ULONG AssociatedPinsCount,
-    IN PULONG AssociatedPinIds,
+    IN PHDAUDIO_FILTER_CONTEXT FilterContext,
     IN CFunctionGroupNode * Node,
     IN CAdapterCommon * Adapter,
     IN PPCFILTER_DESCRIPTOR FilterDescription)
 {
     CMiniportTopology *This;
 
-    This = new (NonPagedPool, TAG_HDAUDIO) CMiniportTopology(NULL, AssociatedPinsCount, AssociatedPinIds, Node, Adapter, FilterDescription);
+    This = new (NonPagedPool, TAG_HDAUDIO) CMiniportTopology(NULL, FilterContext, Node, Adapter, FilterDescription);
     if (!This)
     {
         // out of memory

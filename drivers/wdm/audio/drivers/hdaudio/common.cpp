@@ -341,9 +341,10 @@ CAdapterCommon::TransferVerb(ULONG Verb, PULONG Response)
 
 NTSTATUS
 NTAPI
-CAdapterCommon::ChooseSubdeviceName(UCHAR DefaultDevice, UCHAR Wave, OUT LPWSTR *OutSubdeviceName)
+CAdapterCommon::ChooseSubdeviceName(UCHAR DefaultDevice, UCHAR Instance, UCHAR Wave, OUT LPWSTR *OutSubdeviceName)
 {
     WCHAR Buffer[64];
+    NTSTATUS Status;
 
     LPCWSTR DeviceTypes[] = {
         L"eLineOut",          // 0x00
@@ -363,22 +364,31 @@ CAdapterCommon::ChooseSubdeviceName(UCHAR DefaultDevice, UCHAR Wave, OUT LPWSTR 
         L"eReserved",         // 0xE
         L"eOther"             // 0xF
     };
+    LPCWSTR Suffix = Wave ? L"Wave" : L"Topo";
 
-    if (Wave)
+    /* the first filter of a type keeps the name the INF refers to,
+     * further filters of that type get a number to keep the names unique */
+    if (Instance)
     {
-        RtlStringCchPrintfW(Buffer, RTL_NUMBER_OF(Buffer), L"%s%s", DeviceTypes[DefaultDevice], L"Wave");
+        Status = RtlStringCchPrintfW(Buffer, RTL_NUMBER_OF(Buffer), L"%s%u%s",
+                                     DeviceTypes[DefaultDevice & 0xF], (ULONG)Instance, Suffix);
     }
     else
     {
-        RtlStringCchPrintfW(Buffer, RTL_NUMBER_OF(Buffer), L"%s%s", DeviceTypes[DefaultDevice], L"Topo");
+        Status = RtlStringCchPrintfW(Buffer, RTL_NUMBER_OF(Buffer), L"%s%s",
+                                     DeviceTypes[DefaultDevice & 0xF], Suffix);
     }
-    LPWSTR Name = (LPWSTR)ExAllocatePoolZero(NonPagedPool, (wcslen(Buffer) + 1) * sizeof(WCHAR), TAG_HDAUDIO);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    SIZE_T Length = (wcslen(Buffer) + 1) * sizeof(WCHAR);
+    LPWSTR Name = (LPWSTR)ExAllocatePoolZero(NonPagedPool, Length, TAG_HDAUDIO);
     if (!Name)
     {
         // no mem
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    RtlCopyMemory(Name, Buffer, wcslen(Buffer) * sizeof(WCHAR));
+    RtlCopyMemory(Name, Buffer, Length);
     *OutSubdeviceName = Name;
     return STATUS_SUCCESS;
 }
@@ -392,16 +402,16 @@ CAdapterCommon::InstallDevice(
     IN BOOLEAN bTopology,
     IN REFGUID PortClassId,
     IN PRESOURCELIST ResourceList,
-    IN ULONG AssociatedPinsCount,
-    IN PULONG AssociatedPinIds,
+    IN PHDAUDIO_FILTER_CONTEXT FilterContext,
     IN PVOID FunctionGroupNode,
     IN PPCFILTER_DESCRIPTOR FilterDescription,
     OUT PUNKNOWN *OutPortUnknown)
 {
     NTSTATUS Status;
     PPORT Port;
-    PMINIPORTTOPOLOGY MiniportTopology;
-    PMINIPORTWAVERT MiniportWaveRT;
+    PMINIPORTTOPOLOGY MiniportTopology = NULL;
+    PMINIPORTWAVERT MiniportWaveRT = NULL;
+    PUNKNOWN Miniport;
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)FunctionGroupNode;
 
     // allocate new port
@@ -415,467 +425,548 @@ CAdapterCommon::InstallDevice(
     if (bTopology)
     {
         DPRINT1("Topology\n");
-        // allocate new topology
-        Status = HDAUDIO_NewMiniportTopology(&MiniportTopology, AssociatedPinsCount, AssociatedPinIds, OutNode, this, FilterDescription);
-        if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("HDAUDIO: HDAUDIO_NewMiniportTopology failed with %x\n", Status);
-            Port->Release();
-            return Status;
-        }
+        Status = HDAUDIO_NewMiniportTopology(&MiniportTopology, FilterContext, OutNode, this, FilterDescription);
+        Miniport = (PUNKNOWN)MiniportTopology;
     }
     else
     {
         DPRINT1("WaveRT\n");
-        // allocate new miniport
-        Status = HDAUDIO_NewMiniportWaveRT(&MiniportWaveRT, AssociatedPinsCount, AssociatedPinIds, OutNode, this, FilterDescription);
-        if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("HDAUDIO: HDAUDIO_NewMiniportWaveRT failed with %x\n", Status);
-            Port->Release();
-            return Status;
-        }
+        Status = HDAUDIO_NewMiniportWaveRT(&MiniportWaveRT, FilterContext, OutNode, this, FilterDescription);
+        Miniport = (PUNKNOWN)MiniportWaveRT;
+    }
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HDAUDIO: creating the miniport for %S failed with %x\n", Name, Status);
+        Port->Release();
+        return Status;
     }
 
     // initialize the port driver
-    Status = Port->Init(DeviceObject, Irp, bTopology ? (PUNKNOWN)MiniportTopology : (PUNKNOWN)MiniportWaveRT, this, ResourceList);
-    if (!NT_SUCCESS(Status))
+    Status = Port->Init(DeviceObject, Irp, Miniport, this, ResourceList);
+    if (NT_SUCCESS(Status))
+    {
+        // register as subdevice
+        Status = PcRegisterSubdevice(DeviceObject, Name, Port);
+        if (!NT_SUCCESS(Status))
+            DPRINT1("HDAUDIO: PcRegisterSubdevice failed for Name %S with %x\n", Name, Status);
+    }
+    else
     {
         DPRINT1("HDAUDIO: Init failed for Name %S with %x\n", Name, Status);
-        Port->Release();
-        if (bTopology)
-            MiniportTopology->Release();
-        else
-            MiniportWaveRT->Release();
-        return Status;
-    }
-
-    // register as subdevice
-    Status = PcRegisterSubdevice(DeviceObject, Name, Port);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("HDAUDIO: PcRegisterSubdevice failed for Name %S with %x\n", Name, Status);
-        Port->Release();
-        if (bTopology)
-            MiniportTopology->Release();
-        else
-            MiniportWaveRT->Release();
-        return Status;
     }
 
     // query output port
-    if (OutPortUnknown)
+    if (NT_SUCCESS(Status) && OutPortUnknown)
     {
-        Status = Port->QueryInterface(IID_IUnknown,
-                                      (PVOID *)OutPortUnknown);
+        Status = Port->QueryInterface(IID_IUnknown, (PVOID *)OutPortUnknown);
         if (!NT_SUCCESS(Status))
-        {
             DPRINT1("HDAUDIO: QueryInterface failed for Name %S with %x\n", Name, Status);
-            Port->Release();
-            if (bTopology)
-                MiniportTopology->Release();
-            else
-                MiniportWaveRT->Release();
-            return Status;
-        }
     }
 
     Port->Release();
-    if (bTopology)
-        MiniportTopology->Release();
-    else
-        MiniportWaveRT->Release();
-
-    // done
+    Miniport->Release();
     return Status;
 }
 
-NTSTATUS
-NTAPI
-CAdapterCommon::FindConnectedWidgets(
-    IN ULONG NodeType,
-    IN ULONG RecursionLevel,
-    IN ULONG NodeId,
-    IN PVOID Node,
-    IN ULONG NodeIndex,
-    IN ULONG NodeCount,
-    OUT PULONG OutNodesCount,
-    OUT PULONG OutNodes,
-    IN UCHAR Digital)
+PHDAUDIO_FILTER_CONTEXT
+HDAUDIO_AllocateFilterContext(
+    IN BOOLEAN Capture,
+    IN ULONG PinCount,
+    IN PULONG Pins,
+    IN ULONG ConverterCount,
+    IN PULONG Converters)
 {
-    NTSTATUS Status;
-    CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
+    PHDAUDIO_FILTER_CONTEXT Context;
 
-    DPRINT1("RecursionLevel %u NodeId %u Node %p NodeIndex %u NodeCount %u\n",
-            RecursionLevel, NodeId, Node, NodeIndex, NodeCount);
+    Context = (PHDAUDIO_FILTER_CONTEXT)ExAllocatePoolZero(NonPagedPool, sizeof(HDAUDIO_FILTER_CONTEXT), TAG_HDAUDIO);
+    if (!Context)
+        return NULL;
 
-    PNODE_CONTEXT NodeContext = OutNode->FindNodeId(NodeId);
-    if (!NodeContext)
+    Context->Pins = (PULONG)ExAllocatePoolZero(NonPagedPool, (PinCount + 1) * sizeof(ULONG), TAG_HDAUDIO);
+    Context->Converters = (PULONG)ExAllocatePoolZero(NonPagedPool, (ConverterCount + 1) * sizeof(ULONG), TAG_HDAUDIO);
+    if (!Context->Pins || !Context->Converters)
     {
-        // invalid pin found
-        DPRINT1("HDAUDIO: No Pin Node found with id %u\n", NodeId);
-        return STATUS_UNSUCCESSFUL;
-    }
-    if (NodeContext->Visited)
-    {
-        // already processed
-        DPRINT1("Already processed\n");
-        *OutNodesCount = 0;
-        return STATUS_SUCCESS;
+        if (Context->Pins)
+            ExFreePoolWithTag(Context->Pins, TAG_HDAUDIO);
+        if (Context->Converters)
+            ExFreePoolWithTag(Context->Converters, TAG_HDAUDIO);
+        ExFreePoolWithTag(Context, TAG_HDAUDIO);
+        return NULL;
     }
 
-    NodeContext->Visited = TRUE;
+    Context->Ref = 1;
+    Context->Capture = Capture;
+    Context->PinCount = PinCount;
+    Context->ConverterCount = ConverterCount;
+    RtlCopyMemory(Context->Pins, Pins, PinCount * sizeof(ULONG));
+    RtlCopyMemory(Context->Converters, Converters, ConverterCount * sizeof(ULONG));
 
-    ULONG TotalFoundNodes = 0;
-    if (NodeContext->NodeType == NodeType && NodeContext->Digital == Digital)
+    /* every wave filter has its own pin descriptors and data ranges */
+    if (Capture)
     {
-        // found target node type
-        ASSERT(NodeIndex < NodeCount);
-        for (ULONG Index = 0; Index < NodeCount; Index++)
-        {
-            if (OutNodes[Index] == NodeContext->NodeId)
-            {
-                // already added
-                *OutNodesCount = 0;
-                return STATUS_SUCCESS;
-            }
-        }
-        TotalFoundNodes += 1;
-        OutNodes[NodeIndex] = NodeContext->NodeId;
-        NodeIndex++;
-        DPRINT1("HDAUDIO: Adding Node %u Type %u\n", NodeContext->NodeId, NodeType);
+        RtlCopyMemory(Context->WavePins, WaveInPins, sizeof(WaveInPins));
+        Context->WaveDescription = WaveInFilterDescription[0];
     }
-
-    ULONG ConnectionCount = NodeContext->ConnectionCount;
-    for (ULONG CNodeIndex = 0; CNodeIndex < ConnectionCount; CNodeIndex++)
+    else
     {
-        ULONG ConnectedNodeId = NodeContext->Connections[CNodeIndex];
-        PNODE_CONTEXT ConnectedNode = OutNode->FindNodeId(ConnectedNodeId);
-        if (!ConnectedNode || ConnectedNode->Visited)
+        RtlCopyMemory(Context->WavePins, WaveOutPins, sizeof(WaveOutPins));
+        Context->WaveDescription = WaveOutFilterDescription[0];
+    }
+    Context->WaveDescription.Pins = Context->WavePins;
+    Context->WavePins[0].KsPinDescriptor.DataRanges = Context->DataRanges;
+    Context->WavePins[0].KsPinDescriptor.DataRangesCount = 0;
+    return Context;
+}
+
+VOID
+HDAUDIO_ReferenceFilterContext(
+    IN PHDAUDIO_FILTER_CONTEXT Context)
+{
+    InterlockedIncrement(&Context->Ref);
+}
+
+VOID
+HDAUDIO_ReleaseFilterContext(
+    IN PHDAUDIO_FILTER_CONTEXT Context)
+{
+    if (InterlockedDecrement(&Context->Ref) != 0)
+        return;
+
+    ExFreePoolWithTag(Context->Pins, TAG_HDAUDIO);
+    ExFreePoolWithTag(Context->Converters, TAG_HDAUDIO);
+    ExFreePoolWithTag(Context, TAG_HDAUDIO);
+}
+
+static const ULONG HDAUDIO_SampleSizes[] = {8, 16, 20, 24, 32};
+static const ULONG HDAUDIO_SampleRates[] = {8000, 11025, 16000, 22050, 32000, 44100, 48000,
+                                            88200, 96000, 176400, 192000, 384000};
+
+/* the supported sample sizes and rates as bit masks, in the order of the tables above */
+static
+VOID
+HDAUDIO_GetFormatMasks(
+    IN PNODE_PCM_RATES Rates,
+    OUT PULONG SizeMask,
+    OUT PULONG RateMask)
+{
+    *SizeMask = (Rates->AudioFormatSupported8Bit ? 0x01 : 0) |
+                (Rates->AudioFormatSupported16Bit ? 0x02 : 0) |
+                (Rates->AudioFormatSupported20Bit ? 0x04 : 0) |
+                (Rates->AudioFormatSupported24Bit ? 0x08 : 0) |
+                (Rates->AudioFormatSupported32Bit ? 0x10 : 0);
+
+    *RateMask = (Rates->Supported8Khz ? 0x001 : 0) |
+                (Rates->Supported11Khz ? 0x002 : 0) |
+                (Rates->Supported16Khz ? 0x004 : 0) |
+                (Rates->Supported22Khz ? 0x008 : 0) |
+                (Rates->Supported32Khz ? 0x010 : 0) |
+                (Rates->Supported44Khz ? 0x020 : 0) |
+                (Rates->Supported48Khz ? 0x040 : 0) |
+                (Rates->Supported88Khz ? 0x080 : 0) |
+                (Rates->Supported96Khz ? 0x100 : 0) |
+                (Rates->Supported176Khz ? 0x200 : 0) |
+                (Rates->Supported192Khz ? 0x400 : 0) |
+                (Rates->Supported384Khz ? 0x800 : 0);
+}
+
+static
+VOID
+HDAUDIO_GetMaskRange(
+    IN ULONG Mask,
+    IN const ULONG *Values,
+    IN ULONG ValueCount,
+    OUT PULONG Minimum,
+    OUT PULONG Maximum)
+{
+    *Minimum = 0;
+    *Maximum = 0;
+    for (ULONG Index = 0; Index < ValueCount; Index++)
+    {
+        if (!(Mask & (1 << Index)))
             continue;
-
-        ULONG FoundNodes = 0;
-        Status = FindConnectedWidgets(
-            NodeType, RecursionLevel + 1, ConnectedNodeId, Node, NodeIndex, NodeCount, &FoundNodes, OutNodes, Digital);
-        if (NT_SUCCESS(Status))
-        {
-            if (FoundNodes)
-            {
-                NodeIndex += FoundNodes;
-                TotalFoundNodes += FoundNodes;
-            }
-        }
+        if (!*Minimum)
+            *Minimum = Values[Index];
+        *Maximum = Values[Index];
     }
-    *OutNodesCount = TotalFoundNodes;
-    return STATUS_SUCCESS;
 }
 
 NTSTATUS
 NTAPI
 CAdapterCommon::BuildWaveFormat(
     IN PVOID Node,
-    IN ULONG NodeCount,
-    IN PULONG TargetWidgets,
-    IN BOOLEAN Capture)
+    IN PHDAUDIO_FILTER_CONTEXT FilterContext)
 {
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
-    PKSDATARANGE_AUDIO DataRange;
-    PKSDATARANGE *DataRanges;
-    PPCPIN_DESCRIPTOR WavePins;
-
     ULONG MaximumChannels = 0;
-    ULONG MinimumBitsPerSample = (ULONG)-1;
-    ULONG MaximumBitsPerSample = 0;
-    ULONG MinimumSampleFrequency = (ULONG)-1;
-    ULONG MaximumSampleFrequency = 0;
-    ULONG AudioFormatIndex;
-    UCHAR FormatPCMSupported = 0;
-    UCHAR FormatFloatSupported = 0;
-    UCHAR FormatAC3Supported = 0;
+    ULONG SizeMask = (ULONG)-1;
+    ULONG RateMask = (ULONG)-1;
+    BOOLEAN FormatPCMSupported = TRUE;
+    BOOLEAN FormatFloatSupported = TRUE;
+    BOOLEAN FormatAC3Supported = TRUE;
+    ULONG MinimumBitsPerSample, MaximumBitsPerSample;
+    ULONG MinimumSampleFrequency, MaximumSampleFrequency;
     NTSTATUS Status;
 
-    if (Capture)
-    {
-        DataRange = m_WaveInDataRange;
-        DataRanges = m_WaveInDataRanges;
-        WavePins = m_WaveInPins;
-    }
-    else
-    {
-        DataRange = m_WaveOutDataRange;
-        DataRanges = m_WaveOutDataRanges;
-        WavePins = m_WaveOutPins;
-    }
+    ULONG ConvertersWithFormats = 0;
 
-    RtlZeroMemory(DataRange,
-                  sizeof(KSDATARANGE_AUDIO) * HDAUDIO_MAX_FORMAT_RANGES);
-    RtlZeroMemory(DataRanges,
-                  sizeof(PKSDATARANGE) * HDAUDIO_MAX_FORMAT_RANGES);
-    WavePins[0].KsPinDescriptor.DataRangesCount = 0;
-
-    for (ULONG NodeIndex = 0; NodeIndex < NodeCount; NodeIndex++)
+    /* a stream drives all converters of the filter, so only what all of them support is offered */
+    for (ULONG Index = 0; Index < FilterContext->ConverterCount; Index++)
     {
-        PNODE_CONTEXT ConnectedNode = OutNode->FindNodeId(TargetWidgets[NodeIndex]);
-        ASSERT(ConnectedNode);
-        MaximumChannels += ConnectedNode->ChannelCount;
+        PNODE_CONTEXT Converter = OutNode->FindNodeId(FilterContext->Converters[Index]);
+        if (!Converter)
+            continue;
+
+        MaximumChannels += Converter->ChannelCount ? Converter->ChannelCount : 1;
 
         NODE_PCM_RATES NodePcmRates;
-        Status = OutNode->GetSupportedPCMSizeRates(ConnectedNode->NodeId, &NodePcmRates);
-        if (NT_SUCCESS(Status))
+        RtlZeroMemory(&NodePcmRates, sizeof(NodePcmRates));
+        Status = OutNode->GetSupportedPCMSizeRates(Converter->NodeId, &NodePcmRates);
+        if (!NT_SUCCESS(Status))
         {
-            if (NodePcmRates.AudioFormatSupported8Bit)
-            {
-                MinimumBitsPerSample = 8;
-                MaximumBitsPerSample = max(8, MaximumBitsPerSample);
-            }
-            if (NodePcmRates.AudioFormatSupported16Bit)
-            {
-                MinimumBitsPerSample = min(16, MinimumBitsPerSample);
-                MaximumBitsPerSample = max(16, MaximumBitsPerSample);
-            }
-            if (NodePcmRates.AudioFormatSupported20Bit)
-            {
-                MinimumBitsPerSample = min(20, MinimumBitsPerSample);
-                MaximumBitsPerSample = max(20, MaximumBitsPerSample);
-            }
-            if (NodePcmRates.AudioFormatSupported24Bit)
-            {
-                MinimumBitsPerSample = min(24, MinimumBitsPerSample);
-                MaximumBitsPerSample = max(24, MaximumBitsPerSample);
-            }
-            if (NodePcmRates.AudioFormatSupported32Bit)
-            {
-                MinimumBitsPerSample = min(32, MinimumBitsPerSample);
-                MaximumBitsPerSample = max(32, MaximumBitsPerSample);
-            }
-            if (NodePcmRates.Supported8Khz)
-            {
-                MinimumSampleFrequency = 8000;
-                MaximumSampleFrequency = max(8000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported11Khz)
-            {
-                MinimumSampleFrequency = min(11025, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(11025, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported16Khz)
-            {
-                MinimumSampleFrequency = min(16000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(16000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported22Khz)
-            {
-                MinimumSampleFrequency = min(22050, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(22050, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported32Khz)
-            {
-                MinimumSampleFrequency = min(32000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(32000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported44Khz)
-            {
-                MinimumSampleFrequency = min(44100, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(44100, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported48Khz)
-            {
-                MinimumSampleFrequency = min(48000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(48000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported88Khz)
-            {
-                MinimumSampleFrequency = min(88200, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(88200, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported96Khz)
-            {
-                MinimumSampleFrequency = min(96000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(96000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported176Khz)
-            {
-                MinimumSampleFrequency = min(176400, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(176400, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported192Khz)
-            {
-                MinimumSampleFrequency = min(192000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(192000, MaximumSampleFrequency);
-            }
-            if (NodePcmRates.Supported384Khz)
-            {
-                MinimumSampleFrequency = min(384000, MinimumSampleFrequency);
-                MaximumSampleFrequency = max(384000, MaximumSampleFrequency);
-            }
-
-            if (NodePcmRates.PCMFormatSupported)
-            {
-                FormatPCMSupported = TRUE;
-            }
-            if (NodePcmRates.Float32FormatSupported)
-            {
-                FormatFloatSupported = TRUE;
-            }
-
-            if (NodePcmRates.AC3FormatSupported)
-            {
-                FormatAC3Supported = TRUE;
-            }
+            /* the converter does not restrict the formats then */
+            DPRINT1("Failed to get supported pcm rates for node %u Status %x\n", Converter->NodeId, Status);
+            continue;
         }
-        else
-        {
-            DPRINT1("Failed to get supported pcm rates for node %u Status %x\n", TargetWidgets[NodeIndex], Status);
-        }
+        ConvertersWithFormats++;
+
+        ULONG NodeSizeMask, NodeRateMask;
+        HDAUDIO_GetFormatMasks(&NodePcmRates, &NodeSizeMask, &NodeRateMask);
+        SizeMask &= NodeSizeMask;
+        RateMask &= NodeRateMask;
+        FormatPCMSupported = FormatPCMSupported && NodePcmRates.PCMFormatSupported;
+        FormatFloatSupported = FormatFloatSupported && NodePcmRates.Float32FormatSupported;
+        FormatAC3Supported = FormatAC3Supported && NodePcmRates.AC3FormatSupported;
     }
 
-    ULONG NodeType = (ULONG)-1;
-    ULONG Digital = 0xFF;
-    for (ULONG Index = 0; Index < NodeCount; Index++)
+    if (!ConvertersWithFormats)
     {
-        DPRINT1("I/O NodeIndex %u\n", TargetWidgets[Index]);
-        PNODE_CONTEXT Node = OutNode->FindNodeId(TargetWidgets[Index]);
-        ASSERT(Node);
-        if (Node)
-        {
-            if (!Index)
-            {
-                NodeType = Node->NodeType;
-                Digital = Node->Digital;
-            }
-            else
-            {
-                // node type should be same in the collection
-                ASSERT(NodeType == Node->NodeType);
-                ASSERT(Digital == Node->Digital);
-            }
-        }
+        DPRINT1("HDAUDIO: no converter reported its formats\n");
+        return STATUS_UNSUCCESSFUL;
     }
 
-    DPRINT1("Digital %x\n", Digital);
-    DPRINT1("NodeType %u\n", NodeType);
-    DPRINT1("MaximumChannels %u\n", MaximumChannels);
-    DPRINT1("MinimumBitsPerSample %u\n", MinimumBitsPerSample);
-    DPRINT1("MaximumBitsPerSample %u\n", MaximumBitsPerSample);
-    DPRINT1("MinimumSampleFrequency %u\n", MinimumSampleFrequency);
-    DPRINT1("MaximumSampleFrequency %u\n", MaximumSampleFrequency);
+    HDAUDIO_GetMaskRange(SizeMask, HDAUDIO_SampleSizes, RTL_NUMBER_OF(HDAUDIO_SampleSizes),
+                         &MinimumBitsPerSample, &MaximumBitsPerSample);
+    HDAUDIO_GetMaskRange(RateMask, HDAUDIO_SampleRates, RTL_NUMBER_OF(HDAUDIO_SampleRates),
+                         &MinimumSampleFrequency, &MaximumSampleFrequency);
+
+    DPRINT1("Converters %u MaximumChannels %u Bits %u-%u Frequency %u-%u PCM %u Float %u AC3 %u\n",
+            FilterContext->ConverterCount, MaximumChannels, MinimumBitsPerSample, MaximumBitsPerSample,
+            MinimumSampleFrequency, MaximumSampleFrequency,
+            FormatPCMSupported, FormatFloatSupported, FormatAC3Supported);
 
     ULONG FormatsSupported = FormatPCMSupported + FormatFloatSupported + FormatAC3Supported;
-    DPRINT1("FormatsSupported %u\n", FormatsSupported);
-    if (FormatsSupported == 0)
+    if (!FormatsSupported || !MaximumBitsPerSample || !MaximumSampleFrequency)
     {
-        // ignore pin
         DPRINT1("HDAUDIO: NO Formats supported\n");
         return STATUS_UNSUCCESSFUL;
     }
-    if (FormatsSupported > HDAUDIO_MAX_FORMAT_RANGES)
-        return STATUS_INTERNAL_ERROR;
 
-    for (AudioFormatIndex = 0; AudioFormatIndex < FormatsSupported; AudioFormatIndex++)
+    for (ULONG Index = 0; Index < FormatsSupported; Index++)
     {
-        DataRange[AudioFormatIndex].DataRange.FormatSize = sizeof(KSDATARANGE_AUDIO);
-        DataRange[AudioFormatIndex].DataRange.Flags = 0;
-        DataRange[AudioFormatIndex].DataRange.SampleSize = 0;
-        DataRange[AudioFormatIndex].DataRange.Reserved = 0;
+        PKSDATARANGE_AUDIO DataRange = &FilterContext->DataRange[Index];
 
-        DataRange[AudioFormatIndex].DataRange.MajorFormat = {KSDATAFORMAT_TYPE_AUDIO};
-        DataRange[AudioFormatIndex].DataRange.Specifier = {KSDATAFORMAT_SPECIFIER_WAVEFORMATEX};
+        DataRange->DataRange.FormatSize = sizeof(KSDATARANGE_AUDIO);
+        DataRange->DataRange.Flags = 0;
+        DataRange->DataRange.SampleSize = 0;
+        DataRange->DataRange.Reserved = 0;
+        DataRange->DataRange.MajorFormat = {KSDATAFORMAT_TYPE_AUDIO};
+        DataRange->DataRange.Specifier = {KSDATAFORMAT_SPECIFIER_WAVEFORMATEX};
 
         if (FormatPCMSupported)
         {
-            DPRINT1("PCM\n");
-            DataRange[AudioFormatIndex].DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_PCM};
+            DataRange->DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_PCM};
             FormatPCMSupported = FALSE;
         }
         else if (FormatAC3Supported)
         {
-            DPRINT1("AC3\n");
-            DataRange[AudioFormatIndex].DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_DOLBY_AC3_SPDIF};
+            DataRange->DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_DOLBY_AC3_SPDIF};
             FormatAC3Supported = FALSE;
         }
-        else if (FormatFloatSupported)
+        else
         {
-            DPRINT1("Float\n");
-            DataRange[AudioFormatIndex].DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_IEEE_FLOAT};
+            DataRange->DataRange.SubFormat = {KSDATAFORMAT_SUBTYPE_IEEE_FLOAT};
             FormatFloatSupported = FALSE;
         }
 
-        DataRange[AudioFormatIndex].MaximumChannels = MaximumChannels;
-        DataRange[AudioFormatIndex].MinimumBitsPerSample = MinimumBitsPerSample;
-        DataRange[AudioFormatIndex].MaximumBitsPerSample = MaximumBitsPerSample;
-        DataRange[AudioFormatIndex].MinimumSampleFrequency = MinimumSampleFrequency;
-        DataRange[AudioFormatIndex].MaximumSampleFrequency = MaximumSampleFrequency;
+        DataRange->MaximumChannels = MaximumChannels;
+        DataRange->MinimumBitsPerSample = MinimumBitsPerSample;
+        DataRange->MaximumBitsPerSample = MaximumBitsPerSample;
+        DataRange->MinimumSampleFrequency = MinimumSampleFrequency;
+        DataRange->MaximumSampleFrequency = MaximumSampleFrequency;
 
-        DataRanges[AudioFormatIndex] = (PKSDATARANGE)&DataRange[AudioFormatIndex];
+        FilterContext->DataRanges[Index] = (PKSDATARANGE)DataRange;
     }
 
-    WavePins[0].KsPinDescriptor.DataRangesCount = FormatsSupported;
-
+    FilterContext->WavePins[0].KsPinDescriptor.DataRangesCount = FormatsSupported;
     return STATUS_SUCCESS;
 }
 
-NTSTATUS
-NTAPI
-CAdapterCommon::BuildWaveInFormat(
-    IN ULONG AssociatedPinCount,
-    IN PULONG AssociatedPins,
-    IN PVOID Node)
+/*
+ * Searches a path through mixers and selectors. The connection list of a widget names
+ * its inputs, so a playback path is searched from the pin to a DAC and a recording
+ * path from an ADC to the pin. Path[0] is the start node.
+ */
+static
+BOOLEAN
+HDAUDIO_FindPath(
+    IN CFunctionGroupNode *Node,
+    IN ULONG NodeId,
+    IN BOOLEAN bOutput,
+    IN ULONG TargetNodeId,
+    IN UCHAR Digital,
+    IN BOOLEAN AllowClaimed,
+    IN ULONG Depth,
+    OUT PULONG Path,
+    OUT PULONG PathLength)
 {
-    return BuildWaveFormat(Node, AssociatedPinCount, AssociatedPins, TRUE);
+    PNODE_CONTEXT NodeContext;
+
+    if (Depth >= HDA_MAX_PATH_LENGTH)
+        return FALSE;
+
+    NodeContext = Node->FindNodeId(NodeId);
+    if (!NodeContext || NodeContext->Visited)
+        return FALSE;
+
+    Path[Depth] = NodeId;
+    if (Depth)
+    {
+        if (bOutput && NodeContext->NodeType == HDA_NODE_OUTPUT)
+        {
+            if (NodeContext->Digital != Digital || (NodeContext->Claimed && !AllowClaimed))
+                return FALSE;
+
+            *PathLength = Depth + 1;
+            return TRUE;
+        }
+
+        if (!bOutput && NodeId == TargetNodeId)
+        {
+            *PathLength = Depth + 1;
+            return TRUE;
+        }
+
+        /* the path only passes mixers and selectors */
+        if (NodeContext->NodeType != HDA_NODE_MIXER && NodeContext->NodeType != HDA_NODE_SELECTOR)
+            return FALSE;
+    }
+
+    NodeContext->Visited = TRUE;
+    for (ULONG Index = 0; Index < NodeContext->ConnectionCount; Index++)
+    {
+        if (HDAUDIO_FindPath(Node, NodeContext->Connections[Index], bOutput, TargetNodeId, Digital,
+                             AllowClaimed, Depth + 1, Path, PathLength))
+        {
+            NodeContext->Visited = FALSE;
+            return TRUE;
+        }
+    }
+    NodeContext->Visited = FALSE;
+    return FALSE;
+}
+
+/* unmutes an amplifier, a gain at the minimum is raised to 0 dB */
+static
+VOID
+HDAUDIO_UnmuteAmplifier(
+    IN CFunctionGroupNode *Node,
+    IN ULONG NodeId,
+    IN BOOLEAN Input,
+    IN UCHAR Index)
+{
+    AMPLIFIER_CAPABILITIES Caps;
+    AMPLIFIER_GAIN_MUTE_SET Set;
+    UCHAR Mute, Gain;
+
+    if (!NT_SUCCESS(Node->GetAmplifierDetails(NodeId, Input, &Caps)))
+        return;
+
+    for (UCHAR Left = 0; Left < 2; Left++)
+    {
+        if (!NT_SUCCESS(Node->GetAmplifierGainMute(NodeId, Input, Left, Index, &Mute, &Gain)) || !Gain)
+            Gain = Caps.Offset;
+
+        RtlZeroMemory(&Set, sizeof(Set));
+        Set.Output = !Input;
+        Set.Input = Input;
+        Set.Left = Left;
+        Set.Right = !Left;
+        Set.Index = Index;
+        Set.Mute = 0;
+        Set.Gain = Gain & 0x7F;
+        Node->SetAmplifierGainMute(NodeId, &Set);
+    }
 }
 
 NTSTATUS
 NTAPI
-CAdapterCommon::BuildWaveOutFormat(
-    IN ULONG AssociatedPinCount,
-    IN PULONG AssociatedPins,
+CAdapterCommon::SetupPath(
     IN PVOID Node,
-    IN UCHAR Digital)
+    IN BOOLEAN bOutput,
+    IN ULONG PinNodeId,
+    IN UCHAR DefaultDevice,
+    IN UCHAR Digital,
+    OUT PULONG ConverterNodeId)
 {
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
-    ULONG NodeIndex;
+    ULONG Path[HDA_MAX_PATH_LENGTH];
+    ULONG PathLength = 0;
+    BOOLEAN Found = FALSE;
     NTSTATUS Status;
 
-    ULONG TotalInputOutputWidgets = 0;
-    Status = OutNode->GetNodesWithType(0x00, &TotalInputOutputWidgets, NULL);
-    if (!NT_SUCCESS(Status))
-        return Status;
-
-    for (ULONG Index = 0; Index < AssociatedPinCount; Index++)
+    if (bOutput)
     {
-        DPRINT1("AssociatedNode %u\n", AssociatedPins[Index]);
-    }
-    PULONG TargetWidgets =
-        (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * TotalInputOutputWidgets, TAG_HDAUDIO);
-
-    if (!TargetWidgets)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    OutNode->ClearVisitedState();
-    ULONG SubNodeCount = 0;
-    for (NodeIndex = 0; NodeIndex < AssociatedPinCount; NodeIndex++)
-    {
-        ULONG NodesFound = 0;
-        Status = FindConnectedWidgets(
-            0x00, 0, AssociatedPins[NodeIndex], Node, SubNodeCount, TotalInputOutputWidgets, &NodesFound, TargetWidgets,
-            Digital);
-        if (NT_SUCCESS(Status))
+        /* a converter of its own if there is one left, a shared one otherwise */
+        for (ULONG Pass = 0; Pass < 2 && !Found; Pass++)
         {
-            SubNodeCount += NodesFound;
+            OutNode->ClearVisitedState();
+            Found = HDAUDIO_FindPath(OutNode, PinNodeId, TRUE, 0, Digital, Pass != 0, 0, Path, &PathLength);
         }
-    }
-    DPRINT1("Total I/O Nodes Found %u\n", SubNodeCount);
-    NTSTATUS Result;
-    if (SubNodeCount == 0)
-    {
-        Result = BuildWaveFormat(Node, AssociatedPinCount, AssociatedPins, FALSE);
     }
     else
     {
-        Result = BuildWaveFormat(Node, SubNodeCount, TargetWidgets, FALSE);
+        ULONG InputNodeCount = 0;
+        PULONG InputNodes = NULL;
+
+        Status = OutNode->GetNodesWithType(HDA_NODE_INPUT, &InputNodeCount, &InputNodes);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        for (ULONG Pass = 0; Pass < 2 && !Found; Pass++)
+        {
+            for (ULONG Index = 0; Index < InputNodeCount && !Found; Index++)
+            {
+                PNODE_CONTEXT Converter = OutNode->FindNodeId(InputNodes[Index]);
+                if (!Converter || Converter->Digital != Digital || (Converter->Claimed && !Pass))
+                    continue;
+
+                OutNode->ClearVisitedState();
+                Found = HDAUDIO_FindPath(OutNode, InputNodes[Index], FALSE, PinNodeId, Digital, TRUE, 0, Path, &PathLength);
+            }
+        }
+
+        if (InputNodes)
+            ExFreePool(InputNodes);
     }
-    ExFreePoolWithTag(TargetWidgets, TAG_HDAUDIO);
-    return Result;
+
+    if (!Found)
+    {
+        /* no route through mixers and selectors, the converter is taken as it is,
+         * one of the pin's kind which is not used yet if there is one */
+        ULONG ConverterCount = 0;
+        PULONG Converters = NULL;
+
+        DPRINT1("HDAUDIO: no converter path for pin %u output %u, using a fallback converter\n", PinNodeId, bOutput);
+
+        Status = OutNode->GetNodesWithType(bOutput ? HDA_NODE_OUTPUT : HDA_NODE_INPUT, &ConverterCount, &Converters);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        for (ULONG Pass = 0; Pass < 3 && !Found; Pass++)
+        {
+            for (ULONG Index = 0; Index < ConverterCount && !Found; Index++)
+            {
+                PNODE_CONTEXT Converter = OutNode->FindNodeId(Converters[Index]);
+                if (!Converter)
+                    continue;
+                if (Pass < 2 && Converter->Digital != Digital)
+                    continue;
+                if (Pass == 0 && Converter->Claimed)
+                    continue;
+
+                Path[0] = bOutput ? PinNodeId : Converters[Index];
+                Path[1] = bOutput ? Converters[Index] : PinNodeId;
+                PathLength = 2;
+                Found = TRUE;
+            }
+        }
+
+        if (Converters)
+            ExFreePool(Converters);
+
+        if (!Found)
+        {
+            DPRINT1("HDAUDIO: no converter for pin %u output %u\n", PinNodeId, bOutput);
+            return STATUS_NOT_FOUND;
+        }
+    }
+
+    for (ULONG Index = 0; Index < PathLength; Index++)
+    {
+        PNODE_CONTEXT NodeContext = OutNode->FindNodeId(Path[Index]);
+        UCHAR Connection = 0;
+        BOOLEAN Connected = FALSE;
+
+        if (!NodeContext)
+            continue;
+
+        DPRINT1("HDAUDIO: pin %u path node %u type %u\n", PinNodeId, Path[Index], NodeContext->NodeType);
+
+        OutNode->SetPowerState(Path[Index], TRUE);
+
+        /* the node takes its input from the next node of the path */
+        if (Index + 1 < PathLength)
+        {
+            for (ULONG CIndex = 0; CIndex < NodeContext->ConnectionCount; CIndex++)
+            {
+                if (NodeContext->Connections[CIndex] == Path[Index + 1])
+                {
+                    Connection = (UCHAR)CIndex;
+                    Connected = TRUE;
+                    break;
+                }
+            }
+
+            /* a mixer sums all of its inputs, everything else selects one */
+            if (Connected && NodeContext->ConnectionCount > 1 && NodeContext->NodeType != HDA_NODE_MIXER)
+                OutNode->SetConnectionIndex(Path[Index], Connection);
+        }
+
+        if (NodeContext->NodeType == HDA_NODE_PIN)
+        {
+            /* the output amplifier drives the jack, the input amplifier boosts it */
+            HDAUDIO_UnmuteAmplifier(OutNode, Path[Index], !bOutput, 0);
+        }
+        else
+        {
+            HDAUDIO_UnmuteAmplifier(OutNode, Path[Index], FALSE, 0);
+            if (Connected)
+                HDAUDIO_UnmuteAmplifier(OutNode, Path[Index], TRUE, Connection);
+        }
+    }
+
+    /* enable the pin in its direction, the reference voltage of a mic stays as it is */
+    PIN_CAPABILITIES PinCaps;
+    UCHAR PinControl = 0;
+    if (!NT_SUCCESS(OutNode->GetPinWidgetControlValue(PinNodeId, &PinControl)))
+        PinControl = 0;
+
+    if (bOutput)
+    {
+        PinControl &= ~AC_PINCTL_IN_EN;
+        PinControl |= AC_PINCTL_OUT_EN;
+        if (DefaultDevice == 0x2 &&
+            NT_SUCCESS(OutNode->GetPinCapabilities(PinNodeId, &PinCaps)) &&
+            PinCaps.HeadphoneDriveCapable)
+        {
+            PinControl |= AC_PINCTL_HP_EN;
+        }
+    }
+    else
+    {
+        PinControl &= ~(AC_PINCTL_OUT_EN | AC_PINCTL_HP_EN);
+        PinControl |= AC_PINCTL_IN_EN;
+    }
+    OutNode->SetPinWidgetControlValue(PinNodeId, PinControl);
+
+    /* the converter is the last node of a playback path and the first of a recording path */
+    ULONG Converter = bOutput ? Path[PathLength - 1] : Path[0];
+    PNODE_CONTEXT ConverterContext = OutNode->FindNodeId(Converter);
+    ConverterContext->Claimed = TRUE;
+    *ConverterNodeId = Converter;
+
+    DPRINT1("HDAUDIO: pin %u uses converter %u\n", PinNodeId, Converter);
+    return STATUS_SUCCESS;
 }
 
 VOID NTAPI
@@ -896,6 +987,13 @@ NTAPI
 CAdapterCommon::Initialize(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp, IN PRESOURCELIST ResourceList)
 {
     NTSTATUS Status;
+    CFunctionGroupNode *OutNode = nullptr;
+    ULONG OutputNodeCount = 0;
+    ULONG InputNodeCount = 0;
+    ULONG PinNodeCount = 0;
+    PULONG OutputNodes = NULL;
+    PULONG InputNodes = NULL;
+    PULONG PinNodes = NULL;
 
     // first acquire HDAUDIO bus interface from hdaudbus
     Status = AcquireBusInterface(DeviceObject);
@@ -925,7 +1023,6 @@ CAdapterCommon::Initialize(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp, IN PRESO
     }
 
     // now enum widgets
-    CFunctionGroupNode *OutNode = nullptr;
     Status = HDAUDIO_EnumFunctionGroupWidgets(m_CodecAddress, m_FunctionGroupStartNode, this, &OutNode);
     if (!NT_SUCCESS(Status))
     {
@@ -934,97 +1031,86 @@ CAdapterCommon::Initialize(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp, IN PRESO
     }
 
     // now get number of input / output widgets
-    ULONG OutputNodeCount = 0;
-    ULONG InputNodeCount = 0;
-    PULONG OutputNodes = 0;
-    PULONG InputNodes = 0;
-    Status = OutNode->GetNodesWithType(0x00, &OutputNodeCount, &OutputNodes);
+    Status = OutNode->GetNodesWithType(HDA_NODE_OUTPUT, &OutputNodeCount, &OutputNodes);
+    if (NT_SUCCESS(Status))
+        Status = OutNode->GetNodesWithType(HDA_NODE_INPUT, &InputNodeCount, &InputNodes);
+    if (NT_SUCCESS(Status))
+        Status = OutNode->GetNodesWithType(HDA_NODE_PIN, &PinNodeCount, &PinNodes);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("HDAUDIO: GetNodesWithType failed for output node with %x\n", Status);
+        DPRINT1("HDAUDIO: GetNodesWithType failed with %x\n", Status);
         delete OutNode;
-        return Status;
+        goto Cleanup;
     }
 
-    Status = OutNode->GetNodesWithType(0x01, &InputNodeCount, &InputNodes);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("HDAUDIO: GetNodesWithType failed for input node with %x\n", Status);
-        delete OutNode;
-        if (OutputNodes)
-            ExFreePool(OutputNodes);
-        return Status;
-    }
-    ULONG PinNodeCount = 0;
-    PULONG PinNodes = NULL;
-    Status = OutNode->GetNodesWithType(0x04, &PinNodeCount, &PinNodes);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("HDAUDIO: GetNodesWithType failed for pin node with %x\n", Status);
-        delete OutNode;
-        if (InputNodes)
-            ExFreePool(InputNodes);
-        if (OutputNodes)
-            ExFreePool(OutputNodes);
-        return Status;
-    }
     DPRINT1(
         "HDAUDIO: InputNodeCount %u OutputNodeCount %u PinNodeCount %u\n", InputNodeCount, OutputNodeCount,
         PinNodeCount);
 
     // read and cache initial volume and mute states
     UCHAR Gain, Mute;
-    Status = OutNode->GetAmplifierGainMute(OutputNodes[0], FALSE, TRUE, 0, &Mute, &Gain);
-    if (NT_SUCCESS(Status))
+    if (OutputNodeCount)
     {
-        DPRINT1("HDAUDIO: Initial output gain %d, mute %d\n", Gain, Mute);
-        if (Gain == 0)
-            Gain = 127;
-        if (Mute == 1)
-            Mute = 0;
-        OutNode->SetCachedOutputGain(Gain);
-        OutNode->SetCachedOutputMute(Mute);
-    }
-
-    PNODE_CONTEXT NodeContext = OutNode->FindNodeId(InputNodes[0]);
-    if (NodeContext)
-    {
-        Status = OutNode->GetAmplifierGainMute(InputNodes[0], TRUE, TRUE, NodeContext->ConnectionCount ?
-                                                                          NodeContext->Connections[0] : 0, &Mute, &Gain);
+        Status = OutNode->GetAmplifierGainMute(OutputNodes[0], FALSE, TRUE, 0, &Mute, &Gain);
         if (NT_SUCCESS(Status))
         {
-            DPRINT1("HDAUDIO: Initial input gain %d, mute %d\n", Gain, Mute);
+            DPRINT1("HDAUDIO: Initial output gain %d, mute %d\n", Gain, Mute);
             if (Gain == 0)
                 Gain = 127;
             if (Mute == 1)
                 Mute = 0;
-            OutNode->SetCachedInputGain(Gain);
-            OutNode->SetCachedInputMute(Mute);
+            OutNode->SetCachedOutputGain(Gain);
+            OutNode->SetCachedOutputMute(Mute);
+        }
+    }
+
+    if (InputNodeCount)
+    {
+        PNODE_CONTEXT NodeContext = OutNode->FindNodeId(InputNodes[0]);
+        if (NodeContext)
+        {
+            Status = OutNode->GetAmplifierGainMute(InputNodes[0], TRUE, TRUE, NodeContext->ConnectionCount ?
+                                                                              NodeContext->Connections[0] : 0, &Mute, &Gain);
+            if (NT_SUCCESS(Status))
+            {
+                DPRINT1("HDAUDIO: Initial input gain %d, mute %d\n", Gain, Mute);
+                if (Gain == 0)
+                    Gain = 127;
+                if (Mute == 1)
+                    Mute = 0;
+                OutNode->SetCachedInputGain(Gain);
+                OutNode->SetCachedInputMute(Mute);
+            }
         }
     }
 
     // read and cache initial amplifier caps
-    AMPLIFIER_CAPABILITIES AmplifierCapabilities = { 0 };
-    Status = OutNode->GetAmplifierDetails(PinNodes[0], FALSE, &AmplifierCapabilities);
-    if (!NT_SUCCESS(Status))
     {
-        DPRINT1("HDAUDIO: GetAmplifierDetails failed status %x, Node %u\n", Status, PinNodes[0]);
-    }
-    else
-    {
-        DPRINT1("HDAUDIO: AmplifierCapabilities NumSteps %u, StepSize %u, Offset %u\n",
-               AmplifierCapabilities.NumSteps, AmplifierCapabilities.Steps, AmplifierCapabilities.Offset);
-    }
+        AMPLIFIER_CAPABILITIES AmplifierCapabilities = { 0 };
+        if (PinNodeCount)
+        {
+            Status = OutNode->GetAmplifierDetails(PinNodes[0], FALSE, &AmplifierCapabilities);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("HDAUDIO: GetAmplifierDetails failed status %x, Node %u\n", Status, PinNodes[0]);
+            }
+            else
+            {
+                DPRINT1("HDAUDIO: AmplifierCapabilities NumSteps %u, StepSize %u, Offset %u\n",
+                       AmplifierCapabilities.NumSteps, AmplifierCapabilities.Steps, AmplifierCapabilities.Offset);
+            }
+        }
 
-    if (AmplifierCapabilities.NumSteps == 0 || AmplifierCapabilities.Steps == 0 || AmplifierCapabilities.Offset == 0)
-    {
-        DPRINT1("HDAUDIO: No steps count or step size specified\n");
-        // fallback to defaults
-        AmplifierCapabilities.NumSteps = AmplifierCapabilities.Offset = OutNode->GetCachedOutputGain();
-        AmplifierCapabilities.Steps = AmplifierCapabilities.NumSteps == 127 ? 2 : 1;
-    }
+        if (AmplifierCapabilities.NumSteps == 0 || AmplifierCapabilities.Steps == 0 || AmplifierCapabilities.Offset == 0)
+        {
+            DPRINT1("HDAUDIO: No steps count or step size specified\n");
+            // fallback to defaults
+            AmplifierCapabilities.NumSteps = AmplifierCapabilities.Offset = OutNode->GetCachedOutputGain();
+            AmplifierCapabilities.Steps = AmplifierCapabilities.NumSteps == 127 ? 2 : 1;
+        }
 
-    OutNode->SetCachedAmplifierCapabilities(&AmplifierCapabilities);
+        OutNode->SetCachedAmplifierCapabilities(&AmplifierCapabilities);
+    }
 
     if (VendorId == 0x111d || // IDT
         VendorId == 0x10ec) // Realtek
@@ -1034,61 +1120,50 @@ CAdapterCommon::Initialize(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp, IN PRESO
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("HDAUDIO: ExecuteVendorSpecificQuirks failed with %x\n", Status);
-            return Status;
+            delete OutNode;
+            goto Cleanup;
         }
     }
 
+    /* from here on the installed filters refer to the function group node, it stays */
     OutNode->ClearVisitedState();
     DPRINT1("ProcessOutputNodes----------------------------------\n");
     Status = ProcessOutputNodes(DeviceObject, Irp, ResourceList, PinNodeCount, PinNodes, (PVOID)OutNode);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("HDAUDIO: ProcessOutputNodes failed for input node with %x\n", Status);
-        delete OutNode;
-        if (InputNodes)
-            ExFreePool(InputNodes);
-        if (OutputNodes)
-            ExFreePool(OutputNodes);
-        if (PinNodes)
-            ExFreePool(PinNodes);
-        return Status;
+        DPRINT1("HDAUDIO: ProcessOutputNodes failed with %x\n", Status);
+        goto Cleanup;
     }
 
-    if (PinNodes)
-        ExFreePool(PinNodes);
-    PinNodes = NULL;
-
-    if (InputNodeCount)
+    if (InputNodeCount && PinNodeCount)
     {
-        Status = OutNode->GetNodesWithType(0x04, &PinNodeCount, &PinNodes);
+        // the output processing marked its pins, start with a complete list
+        ExFreePool(PinNodes);
+        PinNodes = NULL;
+
+        Status = OutNode->GetNodesWithType(HDA_NODE_PIN, &PinNodeCount, &PinNodes);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("HDAUDIO: GetNodesWithType failed for pin node with %x\n", Status);
-            delete OutNode;
-            if (InputNodes)
-                ExFreePool(InputNodes);
-            if (OutputNodes)
-                ExFreePool(OutputNodes);
-            return Status;
+            goto Cleanup;
         }
 
         OutNode->ClearVisitedState();
         DPRINT1("ProcessInputNodes----------------------------------\n");
-        Status = ProcessInputNodes(DeviceObject, Irp, ResourceList, PinNodeCount, PinNodes, (PVOID)OutNode, InputNodeCount, InputNodes);
+        Status = ProcessInputNodes(DeviceObject, Irp, ResourceList, PinNodeCount, PinNodes, (PVOID)OutNode);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("HDAUDIO: ProcessInputNodes failed for input node with %x\n", Status);
-            delete OutNode;
-            if (InputNodes)
-                ExFreePool(InputNodes);
-            if (OutputNodes)
-                ExFreePool(OutputNodes);
-            if (PinNodes)
-                ExFreePool(PinNodes);
-            return Status;
+            DPRINT1("HDAUDIO: ProcessInputNodes failed with %x\n", Status);
         }
     }
 
+Cleanup:
+    if (PinNodes)
+        ExFreePool(PinNodes);
+    if (InputNodes)
+        ExFreePool(InputNodes);
+    if (OutputNodes)
+        ExFreePool(OutputNodes);
     return Status;
 }
 
@@ -1096,6 +1171,56 @@ VOID NTAPI
 HDAUDIO_UnsolicitedResponseCallback(HDAUDIO_CODEC_RESPONSE Param, PVOID Context)
 {
     UNIMPLEMENTED;
+}
+
+/* default devices which take audio from the codec */
+static
+BOOLEAN
+HDAUDIO_IsOutputDevice(
+    IN UCHAR DefaultDevice)
+{
+    // line out, speaker, headphone, S/PDIF out, other digital out
+    return DefaultDevice <= 0x2 || DefaultDevice == 0x4 || DefaultDevice == 0x5;
+}
+
+/* default devices which deliver audio to the codec */
+static
+BOOLEAN
+HDAUDIO_IsInputDevice(
+    IN UCHAR DefaultDevice)
+{
+    // CD, line in, aux, mic, telephony, S/PDIF in, other digital in
+    return DefaultDevice == 0x3 || (DefaultDevice >= 0x8 && DefaultDevice <= 0xD);
+}
+
+/* a pin is in use when the device is built in, plugged in or cannot be detected */
+static
+BOOLEAN
+HDAUDIO_IsPinInUse(
+    IN CFunctionGroupNode *Node,
+    IN ULONG PinNodeId,
+    IN PPIN_CAPABILITIES PinCaps,
+    IN PPIN_CONFIGURATION_DEFAULT PinConfiguration)
+{
+    ULONG DevicePresent = 0;
+
+    // the BIOS marks the pin as not connected
+    if (PinConfiguration->PortConnectivity == 0x1)
+        return FALSE;
+
+    // a built in device is always there, its presence sense means nothing
+    if (PinConfiguration->PortConnectivity != 0x0)
+        return TRUE;
+
+    // a jack without presence detection, or the detection is overridden
+    if (!PinCaps->PresenceDetectCapable || (PinConfiguration->Misc & 0x1))
+        return TRUE;
+
+    if (!NT_SUCCESS(Node->GetPinSense(PinNodeId, &DevicePresent)))
+        return TRUE;
+
+    DPRINT1("HDAUDIO: PinNode %u DevicePresent %x\n", PinNodeId, DevicePresent);
+    return DevicePresent != 0;
 }
 
 NTSTATUS
@@ -1110,180 +1235,85 @@ CAdapterCommon::ProcessOutputNodes(
 {
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
     NTSTATUS Status;
+    ULONG FilterCount = 0;
 
-    for (ULONG NodeIndex = 0; NodeIndex < PinNodeCount; NodeIndex++)
+    /* the pins in use first; without any, the unplugged and unconnected jacks get filters */
+    for (ULONG Pass = 0; Pass < 2 && !FilterCount; Pass++)
     {
-        if (PinNodes[NodeIndex] == (ULONG)-1)
+        for (ULONG NodeIndex = 0; NodeIndex < PinNodeCount; NodeIndex++)
         {
-            // already handled by association
-            DPRINT1("PinNode %u already handled\n", PinNodes[NodeIndex]);
-            continue;
-        }
-        PNODE_CONTEXT NodeContext = OutNode->FindNodeId(PinNodes[NodeIndex]);
-        if (NodeContext && NodeContext->ConnectionCount)
-        {
-            for (ULONG CIndex = 0; CIndex < NodeContext->ConnectionCount; CIndex++)
+            ULONG PinNodeId = PinNodes[NodeIndex];
+            if (PinNodeId == (ULONG)-1)
             {
-                DPRINT1(
-                    "HDAUDIO PinNode %u TotalConnectionCount %u connected to %u\n", PinNodes[NodeIndex],
-                    NodeContext->ConnectionCount, NodeContext->Connections[CIndex]);
-            }
-        }
-        else
-        {
-            // pin node not connected to anything
-            // ignore
-            DPRINT1("PinNode %u not connected\n", PinNodes[NodeIndex]);
-            continue;
-        }
-
-        PIN_CAPABILITIES PinCaps;
-        Status = OutNode->GetPinCapabilities(PinNodes[NodeIndex], &PinCaps);
-        ULONG DevicePresent = 0;
-        if (NT_SUCCESS(Status))
-        {
-            DPRINT1(
-                "HDAUDIO: PinNode %u EAPD % x Input %x Output %x PresenceDetectCapable %x\n", PinNodes[NodeIndex],
-                PinCaps.EAPDCapable, PinCaps.InputCapable, PinCaps.OutputCapable, PinCaps.PresenceDetectCapable);
-
-            if (!PinCaps.OutputCapable)
-            {
-                DPRINT1("HDAUDIO: PinNode %u not outputcapable %x\n", PinNodes[NodeIndex], PinCaps.OutputCapable);
+                // already handled by association
                 continue;
             }
 
-            if (PinCaps.PresenceDetectCapable)
+            PNODE_CONTEXT NodeContext = OutNode->FindNodeId(PinNodeId);
+            if (!NodeContext)
             {
-                Status = OutNode->GetPinSense(PinNodes[NodeIndex], &DevicePresent);
-                if (NT_SUCCESS(Status))
-                {
-                    DPRINT1("HDAUDIO: PinNode %u DevicePresent %x\n", PinNodes[NodeIndex], DevicePresent);
-                    if (!DevicePresent)
-                        continue;
-                }
+                DPRINT1("HDAUDIO: PinNode %u not found\n", PinNodeId);
+                continue;
+            }
+
+            PIN_CAPABILITIES PinCaps;
+            Status = OutNode->GetPinCapabilities(PinNodeId, &PinCaps);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("PinNode %u failed to retrieve pin caps Status %x\n", PinNodeId, Status);
+                continue;
+            }
+
+            PIN_CONFIGURATION_DEFAULT PinConfiguration;
+            Status = OutNode->GetPinConfigurationDefault(PinNodeId, &PinConfiguration);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("PinNode %u failed to retrieve config defaults Status %x\n", PinNodeId, Status);
+                continue;
+            }
+
+            DPRINT1(
+                "HDAUDIO: Pass %u PinNode %u EAPD %x Output %x PresenceDetect %x PortConnectivity %x DefaultDevice %x "
+                "DefaultAssociation %x Sequence %x Misc %x\n", Pass, PinNodeId, PinCaps.EAPDCapable,
+                PinCaps.OutputCapable, PinCaps.PresenceDetectCapable, PinConfiguration.PortConnectivity,
+                PinConfiguration.DefaultDevice, PinConfiguration.DefaultAssociation, PinConfiguration.Sequence,
+                PinConfiguration.Misc);
+
+            if (!PinCaps.OutputCapable || !HDAUDIO_IsOutputDevice(PinConfiguration.DefaultDevice))
+                continue;
+
+            if (Pass == 0 && !HDAUDIO_IsPinInUse(OutNode, PinNodeId, &PinCaps, &PinConfiguration))
+            {
+                DPRINT1("HDAUDIO: Warning PinNode %u not in use\n", PinNodeId);
+                //continue;
+            }
+
+            if (!NodeContext->ConnectionCount)
+            {
+                // the converter is chosen without a path then
+                DPRINT1("Warning: PinNode %u not connected\n", PinNodeId);
             }
 
             if (PinCaps.EAPDCapable)
             {
                 // enable EAPD
-                DPRINT1("Enable EAPD...\n");
-                Status = OutNode->SetEAPD(PinNodes[NodeIndex], TRUE);
+                Status = OutNode->SetEAPD(PinNodeId, TRUE);
                 if (!NT_SUCCESS(Status))
-                {
                     DPRINT1("Warning: SetEAPD failed with %x\n", Status);
-                }
-            }
-        }
-        else
-        {
-            DPRINT1("PinNode %u failed to retrieve pin caps Status %x\n", PinNodes[NodeIndex], Status);
-            continue;
-        }
-
-        // retrieve pin configuration
-        PIN_CONFIGURATION_DEFAULT PinConfiguration;
-        Status = OutNode->GetPinConfigurationDefault(PinNodes[NodeIndex], &PinConfiguration);
-        if (NT_SUCCESS(Status))
-        {
-            if (PinConfiguration.PortConnectivity == 0x1)
-            {
-                // no connection
-                DPRINT1("Ignoring PinNode %u\n", PinNodes[NodeIndex]);
-                ClearRef(PinNodes[NodeIndex], PinNodeCount, PinNodes);
-                continue;
             }
 
-            if (PinConfiguration.DefaultDevice > 0x7)
-            {
-                // not an output pin
-                DPRINT1("Ignoring Pin %u DefaultDevice %u\n", PinNodes[NodeIndex], PinConfiguration.DefaultDevice);
-                continue;
-            }
-
-            DPRINT1(
-                "HDAUDIO: PinNode %u PortConnectivity %x DefaultDevice %x DefaultAssociation %x Sequence %x\n",
-                PinNodes[NodeIndex], PinConfiguration.PortConnectivity, PinConfiguration.DefaultDevice,
-                PinConfiguration.DefaultAssociation, PinConfiguration.Sequence);
             Status = AssociatePins(
-                DeviceObject, Irp, ResourceList, PinConfiguration.DefaultAssociation, PinConfiguration.DefaultDevice, (PVOID)OutNode, 1, &PinNodes[NodeIndex],
+                DeviceObject, Irp, ResourceList, PinNodeId, &PinConfiguration, (PVOID)OutNode, PinNodeCount, PinNodes,
                 NodeContext->Digital);
-        }
-        else
-        {
-            DPRINT1("PinNode %u failed to retrieve config defaults Status %x\n", PinNodes[NodeIndex], Status);
+            if (NT_SUCCESS(Status))
+                FilterCount++;
+            else
+                DPRINT1("HDAUDIO: no output filter for PinNode %u Status %x\n", PinNodeId, Status);
         }
     }
+
+    DPRINT1("HDAUDIO: %u output filters\n", FilterCount);
     return STATUS_SUCCESS;
-}
-
-NTSTATUS
-NTAPI
-CAdapterCommon::IsInputNodeConnectedToPin(
-    IN PVOID Node,
-    IN UCHAR Digital,
-    ULONG InputNodeId,
-    ULONG PinNodeId,
-    ULONG PinNodeCount,
-    OUT PULONG Result)
-{
-    CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
-
-    PULONG ConnectedPins = (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * PinNodeCount, TAG_HDAUDIO);
-    if (!ConnectedPins)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    OutNode->ClearVisitedState();
-    ULONG FoundNodes = 0;
-    NTSTATUS Status = FindConnectedWidgets(0x04, 0, InputNodeId, Node, 0, PinNodeCount, &FoundNodes, ConnectedPins, Digital);
-    if (!NT_SUCCESS(Status))
-    {
-        ExFreePool(ConnectedPins);
-        return Status;
-    }
-    *Result = 0;
-    DPRINT1("Searched for %u FoundNodes %u\n", PinNodeId, FoundNodes);
-    for (ULONG Index = 0; Index < FoundNodes; Index++)
-    {
-        if (ConnectedPins[Index] == PinNodeId)
-        {
-            DPRINT1("Found\n");
-            *Result = 1;
-            break;
-        }
-    }
-    ExFreePool(ConnectedPins);
-    return STATUS_SUCCESS;
-}
-
-VOID
-NTAPI
-CAdapterCommon::CollectPinWithType(
-    IN ULONG DeviceType,
-    IN ULONG PinNodeCount,
-    IN PULONG PinIds,
-    IN PULONG DefaultDeviceTypeList,
-    OUT PULONG ResultListCount,
-    OUT PULONG ResultList)
-{
-    ULONG Count = 0;
-    for (ULONG Index = 0; Index < PinNodeCount; Index++)
-    {
-        if (DefaultDeviceTypeList[Index] == DeviceType)
-            Count++;
-    }
-    *ResultListCount = Count;
-    if (ResultList)
-    {
-        Count = 0;
-        for (ULONG Index = 0; Index < PinNodeCount; Index++)
-        {
-            if (DefaultDeviceTypeList[Index] == DeviceType)
-            {
-                ResultList[Count] = PinIds[Index];
-                Count++;
-            }
-        }
-    }
 }
 
 NTSTATUS
@@ -1294,182 +1324,56 @@ CAdapterCommon::ProcessInputNodes(
     IN PRESOURCELIST ResourceList,
     IN ULONG PinNodeCount,
     IN PULONG PinNodes,
-    IN PVOID Node,
-    IN ULONG InputNodeCount,
-    IN PULONG InputNodes)
+    IN PVOID Node)
 {
-    NTSTATUS Status;
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
+    NTSTATUS Status;
+    ULONG FilterCount = 0;
 
-    PULONG FilteredPinNodes = (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * PinNodeCount, TAG_HDAUDIO);
-    if (!FilteredPinNodes)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    PULONG DefaultDeviceList = (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * PinNodeCount, TAG_HDAUDIO);
-    if (!DefaultDeviceList)
+    /* every input jack in use gets a filter of its own; without any, all of them */
+    for (ULONG Pass = 0; Pass < 2 && !FilterCount; Pass++)
     {
-        ExFreePoolWithTag(FilteredPinNodes, TAG_HDAUDIO);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+        for (ULONG NodeIndex = 0; NodeIndex < PinNodeCount; NodeIndex++)
+        {
+            ULONG PinNodeId = PinNodes[NodeIndex];
+            if (PinNodeId == (ULONG)-1)
+                continue;
 
-    ULONG FilteredPinNodeCount = 0;
+            PNODE_CONTEXT NodeContext = OutNode->FindNodeId(PinNodeId);
+            if (!NodeContext)
+                continue;
 
-    // filter pin nodes which are not input capable or default device is not input
-    for (ULONG NodeIndex = 0; NodeIndex < PinNodeCount; NodeIndex++)
-    {
-        if (PinNodes[NodeIndex] == (ULONG)-1)
-        {
-            // already handled by association
-            DPRINT1("PinNode %u already handled\n", PinNodes[NodeIndex]);
-            continue;
-        }
+            PIN_CAPABILITIES PinCaps;
+            Status = OutNode->GetPinCapabilities(PinNodeId, &PinCaps);
+            if (!NT_SUCCESS(Status) || !PinCaps.InputCapable)
+                continue;
 
-        PIN_CAPABILITIES PinCaps;
-        Status = OutNode->GetPinCapabilities(PinNodes[NodeIndex], &PinCaps);
-        if (!NT_SUCCESS(Status) || !PinCaps.InputCapable)
-        {
-            // ignoring
-            DPRINT1("Ignoring Pin %u\n", PinNodes[NodeIndex]);
-            continue;
-        }
-
-        if (PinCaps.PresenceDetectCapable)
-        {
-            ULONG DevicePresent = 0;
-            Status = OutNode->GetPinSense(PinNodes[NodeIndex], &DevicePresent);
-            if (NT_SUCCESS(Status))
-            {
-                DPRINT1("HDAUDIO: PinNode %u DevicePresent %x\n", PinNodes[NodeIndex], DevicePresent);
-                if (!DevicePresent)
-                    continue;
-            }
-        }
-
-        if (PinCaps.EAPDCapable)
-        {
-            // enable EAPD
-            DPRINT1("Enable EAPD...\n");
-            Status = OutNode->SetEAPD(PinNodes[NodeIndex], TRUE);
-            if (!NT_SUCCESS(Status))
-            {
-                DPRINT1("Warning: SetEAPD failed with %x\n", Status);
-            }
-        }
-
-        // retrieve pin configuration
-        PIN_CONFIGURATION_DEFAULT PinConfiguration;
-        Status = OutNode->GetPinConfigurationDefault(PinNodes[NodeIndex], &PinConfiguration);
-        if (!NT_SUCCESS(Status) || PinConfiguration.DefaultDevice < 0x8)
-        {
-            // ignoring
-            DPRINT1("Ignoring Pin %u DefaultDevice %u\n", PinNodes[NodeIndex], PinConfiguration.DefaultDevice);
-            continue;
-        }
-        DPRINT1("Adding Input Pin %u\n", PinNodes[NodeIndex]);
-        FilteredPinNodes[FilteredPinNodeCount] = PinNodes[NodeIndex];
-        DefaultDeviceList[FilteredPinNodeCount] = PinConfiguration.DefaultDevice;
-        FilteredPinNodeCount++;
-    }
-    if (!FilteredPinNodeCount)
-    {
-        DPRINT1("HDAUDIO: No PinNodes!\n");
-        ExFreePool(FilteredPinNodes);
-        ExFreePool(DefaultDeviceList);
-        return STATUS_SUCCESS;
-    }
-
-    for (ULONG DeviceType = 8; DeviceType < 16; DeviceType++)
-    {
-        PULONG PinsOfSameType = (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * FilteredPinNodeCount, TAG_HDAUDIO);
-        if (!PinsOfSameType)
-        {
-            ExFreePool(FilteredPinNodes);
-            ExFreePool(DefaultDeviceList);
-            return Status;
-        }
-        ULONG PinsOfSameTypeCount = 0;
-        CollectPinWithType(
-            DeviceType, FilteredPinNodeCount, FilteredPinNodes, DefaultDeviceList, &PinsOfSameTypeCount,
-            PinsOfSameType);
-        if (!PinsOfSameTypeCount)
-        {
-            // no pins of that type
-            DPRINT1("No Pins of Type %u\n", DeviceType);
-            ExFreePool(PinsOfSameType);
-            continue;
-        }
-
-        PULONG FilteredInputNodes = (PULONG)ExAllocatePoolZero(NonPagedPool, sizeof(ULONG) * InputNodeCount, TAG_HDAUDIO);
-        if (!FilteredInputNodes)
-        {
-            ExFreePool(PinsOfSameType);
-            ExFreePool(FilteredPinNodes);
-            ExFreePool(DefaultDeviceList);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        ULONG FilteredInputNodeCount = 0;
-        for (ULONG InputIndex = 0; InputIndex < InputNodeCount; InputIndex++)
-        {
-            ULONG Result = 0;
-            for (ULONG PinIndex = 0; PinIndex < PinsOfSameTypeCount; PinIndex++)
-            {
-                PNODE_CONTEXT NodeContext = OutNode->FindNodeId(PinsOfSameType[PinIndex]);
-                Status = IsInputNodeConnectedToPin(
-                    OutNode,
-                    NodeContext->Digital,
-                    InputNodes[InputIndex], PinsOfSameType[PinIndex], PinNodeCount, &Result);
-                if (!NT_SUCCESS(Status))
-                {
-                    ExFreePool(PinsOfSameType);
-                    ExFreePool(FilteredPinNodes);
-                    ExFreePool(DefaultDeviceList);
-                    ExFreePool(FilteredInputNodes);
-                    return Status;
-                }
-
-                if (Result)
-                    break;
-            }
-            if (Result)
-            {
-                FilteredInputNodes[FilteredInputNodeCount] = InputNodes[InputIndex];
-                FilteredInputNodeCount++;
-            }
-        }
-        if (FilteredInputNodeCount && PinsOfSameTypeCount)
-        {
-            // retrieve pin configuration
             PIN_CONFIGURATION_DEFAULT PinConfiguration;
-            Status = OutNode->GetPinConfigurationDefault(PinsOfSameType[0], &PinConfiguration);
-            if (!NT_SUCCESS(Status) || PinConfiguration.DefaultDevice < 0x8)
+            Status = OutNode->GetPinConfigurationDefault(PinNodeId, &PinConfiguration);
+            if (!NT_SUCCESS(Status) || !HDAUDIO_IsInputDevice(PinConfiguration.DefaultDevice))
+                continue;
+
+            if (Pass == 0 && !HDAUDIO_IsPinInUse(OutNode, PinNodeId, &PinCaps, &PinConfiguration))
             {
-                // ignoring
-                DPRINT1("Ignoring Pin %u DefaultDevice %u\n", PinsOfSameType[0], PinConfiguration.DefaultDevice);
+                DPRINT1("HDAUDIO: Input PinNode %u not in use\n", PinNodeId);
                 continue;
             }
 
-            PNODE_CONTEXT NodeContext = OutNode->FindNodeId(PinsOfSameType[0]);
+            DPRINT1("Adding Input Pin %u DefaultDevice %u PortConnectivity %u\n", PinNodeId,
+                    PinConfiguration.DefaultDevice, PinConfiguration.PortConnectivity);
             Status = BuildInstallFilter(
-                DeviceObject,
-                Irp,
-                FALSE,
-                OutNode,
-                ResourceList,
-                1,
-                &PinsOfSameType[0],
-                PinConfiguration.DefaultDevice,
+                DeviceObject, Irp, FALSE, OutNode, ResourceList, 1, &PinNodeId, PinConfiguration.DefaultDevice,
                 NodeContext->Digital);
+            if (NT_SUCCESS(Status))
+                FilterCount++;
+            else
+                DPRINT1("HDAUDIO: no input filter for PinNode %u Status %x\n", PinNodeId, Status);
+
+            PinNodes[NodeIndex] = (ULONG)-1;
         }
-        else
-        {
-            DPRINT1("FilteredInputNodeCount %u PinsOfSameTypeCount %u\n", FilteredInputNodeCount, PinsOfSameTypeCount);
-        }
-        if (FilteredInputNodes)
-            ExFreePool(FilteredInputNodes);
-        ExFreePool(PinsOfSameType);
     }
-    ExFreePool(DefaultDeviceList);
-    ExFreePool(FilteredPinNodes);
+
+    DPRINT1("HDAUDIO: %u input filters\n", FilterCount);
     return STATUS_SUCCESS;
 }
 
@@ -1488,145 +1392,129 @@ CAdapterCommon::BuildInstallFilter(
 {
     NTSTATUS Status;
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
+    ULONG ConverterCount = 0;
+    PUNKNOWN WavePort = NULL;
+    PUNKNOWN TopologyPort = NULL;
 
-    if (VendorId == 0x111d || // IDT
-        VendorId == 0x10ec) // Realtek
+    PULONG Converters = (PULONG)ExAllocatePoolZero(NonPagedPool, AssociatedPinCount * sizeof(ULONG), TAG_HDAUDIO);
+    if (!Converters)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    for (ULONG PinIndex = 0; PinIndex < AssociatedPinCount; PinIndex++)
     {
-        DPRINT1("Node %u\n", AssociatedPins[0]);
+        ULONG PinNodeId = AssociatedPins[PinIndex];
 
-        // Power on the pin
-        Status = OutNode->SetPowerState(AssociatedPins[0], TRUE);
-        if (!NT_SUCCESS(Status))
+        if (VendorId == 0x111d || // IDT
+            VendorId == 0x10ec) // Realtek
         {
-            DPRINT1("HDAUDIO: SetPowerState failed with %x node %u\n", Status, AssociatedPins[0]);
-            return Status;
-        }
+            PIN_CAPABILITIES PinCaps;
 
-        PIN_CAPABILITIES PinCaps;
-        Status = OutNode->GetPinCapabilities(AssociatedPins[0], &PinCaps);
-        if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("HDAUDIO: GetPinCapabilities failed with %x node %u\n", Status, AssociatedPins[0]);
-            return Status;
-        }
-
-        if (PinCaps.EAPDCapable)
-        {
-            // Enable EAPD
-            DPRINT1("Enable EAPD...\n");
-            Status = OutNode->SetEAPD(AssociatedPins[0], TRUE);
+            // Power on the pin and enable the external amplifier
+            Status = OutNode->SetPowerState(PinNodeId, TRUE);
             if (!NT_SUCCESS(Status))
+                DPRINT1("HDAUDIO: SetPowerState failed with %x node %u\n", Status, PinNodeId);
+
+            if (NT_SUCCESS(OutNode->GetPinCapabilities(PinNodeId, &PinCaps)) && PinCaps.EAPDCapable)
             {
-                DPRINT1("Warning: SetEAPD failed with %x node %u\n", Status, AssociatedPins[0]);
+                Status = OutNode->SetEAPD(PinNodeId, TRUE);
+                if (!NT_SUCCESS(Status))
+                    DPRINT1("Warning: SetEAPD failed with %x node %u\n", Status, PinNodeId);
             }
         }
 
-        // Unmute and set maximum gain level
-        AMPLIFIER_GAIN_MUTE_SET Set;
-        Set.Input = bOutput ? 0x0 : 0x1;
-        Set.Output = bOutput ? 0x1 : 0x0;
-        Set.Left = 0x1;
-        Set.Right = 0x0;
-        Set.Index = 0;
-        Set.Mute = 0x0;
-        Set.Gain = 0xFF;
-        Status = OutNode->SetAmplifierGainMute(AssociatedPins[0], &Set);
+        // route the pin to a converter, unmute and enable the path
+        ULONG Converter;
+        Status = SetupPath(OutNode, bOutput ? TRUE : FALSE, PinNodeId, DefaultDevice, Digital, &Converter);
         if (!NT_SUCCESS(Status))
-        {
-            DPRINT1("HDAUDIO: SetAmplifierGainMute failed with %x node %u\n", Status, AssociatedPins[0]);
-            return Status;
-        }
+            continue;
 
-        Set.Left = 0x0;
-        Set.Right = 0x1;
-        Status = OutNode->SetAmplifierGainMute(AssociatedPins[0], &Set);
-        if (!NT_SUCCESS(Status))
+        BOOLEAN Known = FALSE;
+        for (ULONG Index = 0; Index < ConverterCount; Index++)
         {
-            DPRINT1("HDAUDIO: SetAmplifierGainMute failed with %x node %u\n", Status, AssociatedPins[0]);
-            return Status;
+            if (Converters[Index] == Converter)
+                Known = TRUE;
         }
+        if (!Known)
+            Converters[ConverterCount++] = Converter;
     }
 
-    // build wave format
-    if (bOutput)
+    if (!ConverterCount)
     {
-        Status = BuildWaveOutFormat(AssociatedPinCount, AssociatedPins, (PVOID)OutNode, Digital);
+        DPRINT1("HDAUDIO: no converter for pin %u\n", AssociatedPins[0]);
+        ExFreePoolWithTag(Converters, TAG_HDAUDIO);
+        return STATUS_NOT_FOUND;
     }
-    else
-    {
-        Status = BuildWaveInFormat(AssociatedPinCount, AssociatedPins, (PVOID)OutNode);
-    }
+
+    PHDAUDIO_FILTER_CONTEXT FilterContext =
+        HDAUDIO_AllocateFilterContext(bOutput ? FALSE : TRUE, AssociatedPinCount, AssociatedPins, ConverterCount, Converters);
+    ExFreePoolWithTag(Converters, TAG_HDAUDIO);
+    if (!FilterContext)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    // build wave format of the converters
+    Status = BuildWaveFormat((PVOID)OutNode, FilterContext);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("HDAUDIO: BuildWaveFormat failed with %x output %x\n", Status, bOutput);
+        HDAUDIO_ReleaseFilterContext(FilterContext);
         return Status;
     }
 
-    // lets build a subdevice name
+    // the subdevice names are used as object class of the create items, they must stay
+    UCHAR Instance = m_SubdeviceCount[DefaultDevice & 0xF];
     LPWSTR SubdeviceWave = NULL;
-    Status = ChooseSubdeviceName(DefaultDevice, TRUE, &SubdeviceWave);
+    LPWSTR SubdeviceTopology = NULL;
+    Status = ChooseSubdeviceName(DefaultDevice, Instance, TRUE, &SubdeviceWave);
+    if (NT_SUCCESS(Status))
+        Status = ChooseSubdeviceName(DefaultDevice, Instance, FALSE, &SubdeviceTopology);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("HDAUDIO: ChooseSubdeviceName failed with %x\n", Status);
+        if (SubdeviceWave)
+            ExFreePoolWithTag(SubdeviceWave, TAG_HDAUDIO);
+        HDAUDIO_ReleaseFilterContext(FilterContext);
         return Status;
     }
+    m_SubdeviceCount[DefaultDevice & 0xF]++;
 
     // construct wavert port
     DPRINT1("HDAUDIO: SubdeviceName %S\n", SubdeviceWave);
     Status = InstallDevice(
-        DeviceObject, Irp, SubdeviceWave, FALSE, CLSID_PortWaveRT, ResourceList, AssociatedPinCount, AssociatedPins, (PVOID)OutNode,
-        bOutput ? &m_WaveOutFilterDescription : &m_WaveInFilterDescription, &m_WaveRTPortUnknown);
-    if (!NT_SUCCESS(Status))
+        DeviceObject, Irp, SubdeviceWave, FALSE, CLSID_PortWaveRT, ResourceList, FilterContext, (PVOID)OutNode,
+        &FilterContext->WaveDescription, &WavePort);
+    if (NT_SUCCESS(Status))
     {
-        DPRINT1("HDAUDIO: InstallDevice failed with %x\n", Status);
-        return Status;
+        // construct topology port
+        DPRINT1("HDAUDIO: SubdeviceName %S\n", SubdeviceTopology);
+        Status = InstallDevice(
+            DeviceObject, Irp, SubdeviceTopology, TRUE, CLSID_PortTopology, ResourceList, FilterContext, (PVOID)OutNode,
+            bOutput ? TopoOutFilterDescription : TopoInFilterDescription, &TopologyPort);
     }
 
-    // lets build a subdevice name
-    LPWSTR SubdeviceTopology = NULL;
-    Status = ChooseSubdeviceName(DefaultDevice, FALSE, &SubdeviceTopology);
-    if (!NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status))
     {
-        DPRINT1("HDAUDIO: ChooseSubdeviceName failed with %x\n", Status);
-        if (m_WaveRTPortUnknown)
-            m_WaveRTPortUnknown->Release();
-        return Status;
+        if (bOutput)
+        {
+            // register waveout connection
+            Status = PcRegisterPhysicalConnection(DeviceObject, WavePort, 1, TopologyPort, 0);
+        }
+        else
+        {
+            // register wavein connection
+            Status = PcRegisterPhysicalConnection(DeviceObject, TopologyPort, 0, WavePort, 1);
+        }
+        if (!NT_SUCCESS(Status))
+            DPRINT1("HDAUDIO: PcRegisterPhysicalConnection failed with %x\n", Status);
     }
 
-    // construct topology port
-    DPRINT1("HDAUDIO: SubdeviceName %S\n", SubdeviceTopology);
-    Status = InstallDevice(
-        DeviceObject, Irp, SubdeviceTopology, TRUE, CLSID_PortTopology, ResourceList, AssociatedPinCount, AssociatedPins, (PVOID)OutNode,
-        bOutput? TopoOutFilterDescription : TopoInFilterDescription, &m_TopologyPortUnknown);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("HDAUDIO: InstallDevice failed with %x\n", Status);
-        if (m_WaveRTPortUnknown)
-            m_WaveRTPortUnknown->Release();
-        return Status;
-    }
+    if (TopologyPort)
+        TopologyPort->Release();
+    if (WavePort)
+        WavePort->Release();
 
-    if (bOutput)
-    {
-        // register waveout connection
-        Status = PcRegisterPhysicalConnection(DeviceObject, m_WaveRTPortUnknown, 1, m_TopologyPortUnknown, 0);
-    }
-    else
-    {
-        // register wavein connection
-        Status = PcRegisterPhysicalConnection(DeviceObject, m_TopologyPortUnknown, 0, m_WaveRTPortUnknown, 1);
-    }
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("HDAUDIO: PcRegisterPhysicalConnection failed with %x\n", Status);
-        if (m_TopologyPortUnknown)
-            m_TopologyPortUnknown->Release();
-        if (m_WaveRTPortUnknown)
-            m_WaveRTPortUnknown->Release();
-        return Status;
-    }
-
-    return STATUS_SUCCESS;
+    // the miniports hold their own references
+    HDAUDIO_ReleaseFilterContext(FilterContext);
+    return Status;
 }
 
 NTSTATUS
@@ -1635,33 +1523,98 @@ CAdapterCommon::AssociatePins(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp,
     IN PRESOURCELIST ResourceList,
-    IN UCHAR DefaultAssociation,
-    IN UCHAR DefaultDevice,
+    IN ULONG PinNodeId,
+    IN PPIN_CONFIGURATION_DEFAULT PinConfiguration,
     IN PVOID Node,
     IN ULONG PinNodeCount,
     IN PULONG PinNodes,
     IN UCHAR Digital)
 {
     CFunctionGroupNode *OutNode = (CFunctionGroupNode *)Node;
-    NTSTATUS Status;
-    ULONG PinCount;
+    NTSTATUS Status = STATUS_SUCCESS;
     ULONG AssociatedPinCount = 0;
     PULONG AssociatedPins = NULL;
+    ULONG PinCount = 0;
+    UCHAR DefaultDevice = PinConfiguration->DefaultDevice;
 
-    Status =
-        OutNode->GetPinNodesWithDefaultAssociation(DefaultAssociation, Digital, &AssociatedPinCount, &AssociatedPins);
-    DPRINT1("GetPinNodesWithDefaultAssociation Status %x, AssociatedPinCount %u\n", Status, AssociatedPinCount);
-    if (NT_SUCCESS(Status))
+    /* association 15 marks a pin of its own, 0 is reserved */
+    if (PinConfiguration->DefaultAssociation != 0x0 && PinConfiguration->DefaultAssociation != 0xF)
     {
-        Status = BuildInstallFilter(DeviceObject, Irp, TRUE, OutNode, ResourceList, AssociatedPinCount, AssociatedPins, DefaultDevice, Digital);
-        if (NT_SUCCESS(Status))
-        {
-            for(PinCount = 0; PinCount < AssociatedPinCount; PinCount++)
-            {
-                ClearRef(AssociatedPins[PinCount], PinNodeCount, PinNodes);
-            }
-        }
+        Status = OutNode->GetPinNodesWithDefaultAssociation(
+            PinConfiguration->DefaultAssociation, Digital, &AssociatedPinCount, &AssociatedPins);
+        DPRINT1("GetPinNodesWithDefaultAssociation Status %x, AssociatedPinCount %u\n", Status, AssociatedPinCount);
+        if (!NT_SUCCESS(Status))
+            return Status;
     }
+
+    PULONG Pins = (PULONG)ExAllocatePoolZero(NonPagedPool, (AssociatedPinCount + 1) * sizeof(ULONG), TAG_HDAUDIO);
+    PUCHAR Sequences = (PUCHAR)ExAllocatePoolZero(NonPagedPool, AssociatedPinCount + 1, TAG_HDAUDIO);
+    if (!Pins || !Sequences)
+    {
+        if (Pins)
+            ExFreePoolWithTag(Pins, TAG_HDAUDIO);
+        if (Sequences)
+            ExFreePoolWithTag(Sequences, TAG_HDAUDIO);
+        if (AssociatedPins)
+            ExFreePool(AssociatedPins);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* the output pins of the association which still wait for a filter, by sequence */
+    for (ULONG Index = 0; Index < AssociatedPinCount; Index++)
+    {
+        ULONG Pin = AssociatedPins[Index];
+        BOOLEAN Pending = FALSE;
+        for (ULONG PinIndex = 0; PinIndex < PinNodeCount; PinIndex++)
+        {
+            if (PinNodes[PinIndex] == Pin)
+                Pending = TRUE;
+        }
+        if (!Pending)
+            continue;
+
+        PIN_CONFIGURATION_DEFAULT Configuration;
+        PIN_CAPABILITIES PinCaps;
+        if (!NT_SUCCESS(OutNode->GetPinConfigurationDefault(Pin, &Configuration)) ||
+            Configuration.DefaultDevice > 0x7 ||
+            !NT_SUCCESS(OutNode->GetPinCapabilities(Pin, &PinCaps)) || !PinCaps.OutputCapable)
+        {
+            continue;
+        }
+
+        ULONG Position = PinCount;
+        while (Position > 0 && Sequences[Position - 1] > Configuration.Sequence)
+        {
+            Pins[Position] = Pins[Position - 1];
+            Sequences[Position] = Sequences[Position - 1];
+            Position--;
+        }
+        Pins[Position] = Pin;
+        Sequences[Position] = Configuration.Sequence;
+        PinCount++;
+
+        /* the first pin of the association names the filter */
+        if (Position == 0)
+            DefaultDevice = Configuration.DefaultDevice;
+    }
+
+    if (!PinCount)
+    {
+        Pins[0] = PinNodeId;
+        PinCount = 1;
+    }
+
+    Status = BuildInstallFilter(DeviceObject, Irp, TRUE, OutNode, ResourceList, PinCount, Pins, DefaultDevice, Digital);
+
+    /* the pins are done, a failed association is not tried again pin by pin */
+    for (ULONG Index = 0; Index < PinCount; Index++)
+        ClearRef(Pins[Index], PinNodeCount, PinNodes);
+    ClearRef(PinNodeId, PinNodeCount, PinNodes);
+
+    ExFreePoolWithTag(Sequences, TAG_HDAUDIO);
+    ExFreePoolWithTag(Pins, TAG_HDAUDIO);
+    if (AssociatedPins)
+        ExFreePool(AssociatedPins);
     return Status;
 }
 

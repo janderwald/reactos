@@ -847,16 +847,59 @@ CFunctionGroupNode::SetStreamFormat(
 
 NTSTATUS
 NTAPI
-CFunctionGroupNode::SetConverterStream(
+CFunctionGroupNode::GetPinWidgetControlValue(
     IN ULONG NodeId,
-    IN UCHAR StreamId)
+    OUT PUCHAR Value)
 {
     ULONG Verb;
     ULONG Response = 0;
     NTSTATUS Status;
 
+    Verb = (m_CodecAddress << 28) | (NodeId << 20) | (AC_VERB_GET_PIN_WIDGET_CONTROL << 8);
+    Status = m_Adapter->TransferVerb(Verb, &Response);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HDAUDIO: GetPinWidgetControlValue failed with %x\n", Status);
+        return Status;
+    }
+    *Value = (UCHAR)(Response & 0xFF);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+CFunctionGroupNode::SetPinWidgetControlValue(
+    IN ULONG NodeId,
+    IN UCHAR Value)
+{
+    ULONG Verb;
+    ULONG Response = 0;
+    NTSTATUS Status;
+
+    Verb = (m_CodecAddress << 28) | (NodeId << 20) | (AC_VERB_SET_PIN_WIDGET_CONTROL << 8) | Value;
+    Status = m_Adapter->TransferVerb(Verb, &Response);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("HDAUDIO: SetPinWidgetControlValue failed with %x\n", Status);
+        return Status;
+    }
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+CFunctionGroupNode::SetConverterStream(
+    IN ULONG NodeId,
+    IN UCHAR StreamId,
+    IN UCHAR Channel)
+{
+    ULONG Verb;
+    ULONG Response = 0;
+    NTSTATUS Status;
+
+    /* the converter takes the channels Channel and Channel + 1 of the stream */
     Verb = (m_CodecAddress << 28) | (NodeId << 20) | (AC_VERB_SET_CHANNEL_STREAMID << 8) |
-           (StreamId << AC_CONV_STREAM_SHIFT);
+           ((StreamId & 0xF) << AC_CONV_STREAM_SHIFT) | (Channel & AC_CONV_CHANNEL);
     Status = m_Adapter->TransferVerb(Verb, &Response);
     if (!NT_SUCCESS(Status))
     {

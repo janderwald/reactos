@@ -8,7 +8,7 @@
 
 #include "private.h"
 
-#define NDEBUG
+#define YDEBUG
 #include <debug.h>
 
 NTSTATUS
@@ -127,6 +127,10 @@ CMiniportWaveRTStream::SetState(
     }
     else if (State == KSSTATE_RUN)
     {
+        /* the converters must use the format and the tag of the DMA stream. A stream with
+         * a channel pair for every converter is split over them, otherwise every converter
+         * plays the first channels (e.g. speaker and headphone of one association) */
+        BOOLEAN Split = (m_StreamFormat.NumberOfChannels >= m_NodeCount * 2);
         for (ULONG Index = 0; Index < m_NodeCount; Index++)
         {
             Status = m_OutNode->SetStreamFormat(m_Nodes[Index], m_Converter.ConverterFormat);
@@ -134,7 +138,7 @@ CMiniportWaveRTStream::SetState(
         }
         for (ULONG Index = 0; Index < m_NodeCount; Index++)
         {
-            Status = m_OutNode->SetConverterStream(m_Nodes[Index], m_StreamId);
+            Status = m_OutNode->SetConverterStream(m_Nodes[Index], m_StreamId, Split ? (UCHAR)(Index * 2) : 0);
             DPRINT("Node %u SetConverterStream Status %x\n", m_Nodes[Index], Status);
         }
         Status = m_Interface.SetDmaEngineState(m_Interface.Context, RunState, 1, Handles);
@@ -371,7 +375,7 @@ HDAUDIO_AllocateStream(
     NTSTATUS Status;
     HDAUDIO_BUS_INTERFACE_V2 Interface;
 
-    if (!Stream || !Adapter || !Node || !DataFormat || !FilterDescription)
+    if (!Stream || !Adapter || !Node || !DataFormat || !FilterDescription || !NodeCount || !Nodes)
         return STATUS_INVALID_PARAMETER;
 
     if (Pin >= FilterDescription->PinCount)
@@ -444,11 +448,21 @@ HDAUDIO_AllocateStream(
         return Status;
     }
 
+    /* the stream keeps its own list of converters */
+    PULONG StreamNodes = (PULONG)ExAllocatePoolZero(NonPagedPool, NodeCount * sizeof(ULONG), TAG_HDAUDIO);
+    if (!StreamNodes)
+    {
+        Interface.FreeDmaEngine(Interface.Context, hDmaEngine);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlCopyMemory(StreamNodes, Nodes, NodeCount * sizeof(ULONG));
+
     CMiniportWaveRTStream *This = new (NonPagedPool, TAG_HDAUDIO)
-        CMiniportWaveRTStream(NULL, Adapter, Node, Pin, Capture, &StreamFormat, &Converter, &Interface, hDmaEngine, NodeCount, Nodes, FilterDescription);
+        CMiniportWaveRTStream(NULL, Adapter, Node, Pin, Capture, &StreamFormat, &Converter, &Interface, hDmaEngine, NodeCount, StreamNodes, FilterDescription);
     if (!This)
     {
         // out of memory
+        ExFreePoolWithTag(StreamNodes, TAG_HDAUDIO);
         if (hDmaEngine)
             Interface.FreeDmaEngine(Interface.Context, hDmaEngine);
         return STATUS_INSUFFICIENT_RESOURCES;

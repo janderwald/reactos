@@ -80,8 +80,8 @@ CMiniportWaveRT::DataRangeIntersection(
         return Status;
 
     Status = HDAUDIO_ValidateNodeFormats(m_Node,
-                                         m_AssociatedPinCount,
-                                         m_AssociatedPins,
+                                         m_FilterContext->ConverterCount,
+                                         m_FilterContext->Converters,
                                          &StreamFormat);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -117,7 +117,7 @@ CMiniportWaveRT::NewStream(
     IN BOOLEAN Capture,
     IN PKSDATAFORMAT DataFormat)
 {
-    return HDAUDIO_AllocateStream(Stream, m_Adapter, m_Node, Pin, Capture, DataFormat, m_AssociatedPinCount, m_AssociatedPins, m_FilterDescription); 
+    return HDAUDIO_AllocateStream(Stream, m_Adapter, m_Node, Pin, Capture, DataFormat, m_FilterContext->ConverterCount, m_FilterContext->Converters, m_FilterDescription);
 }
 
 NTSTATUS
@@ -132,15 +132,14 @@ CMiniportWaveRT::GetDeviceDescription(
 NTSTATUS
 HDAUDIO_NewMiniportWaveRT(
     OUT PMINIPORTWAVERT* OutMiniport,
-    IN ULONG AssociatedPinsCount,
-    IN PULONG AssociatedPinIds,
+    IN PHDAUDIO_FILTER_CONTEXT FilterContext,
     IN CFunctionGroupNode * Node,
     IN CAdapterCommon * Adapter,
     IN PPCFILTER_DESCRIPTOR FilterDescription)
 {
     CMiniportWaveRT *This;
 
-    This = new (NonPagedPool, TAG_HDAUDIO) CMiniportWaveRT(NULL, AssociatedPinsCount, AssociatedPinIds, Node, Adapter, FilterDescription);
+    This = new (NonPagedPool, TAG_HDAUDIO) CMiniportWaveRT(NULL, FilterContext, Node, Adapter, FilterDescription);
     if (!This)
     {
         // out of memory
