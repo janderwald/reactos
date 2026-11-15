@@ -502,8 +502,49 @@ CAdapterCommon::ExecuteVendorSpecificQuirks(
                 }
 
                 default:
-                    DPRINT1("HDAUDIO: unhanlded DeviceId 0x%x\n", DeviceId);
-                    Status = STATUS_NOT_SUPPORTED;
+                    /* the generic setup still works, the codec must not be dropped */
+                    DPRINT("HDAUDIO: no quirks for IDT DeviceId 0x%x\n", DeviceId);
+                    Status = STATUS_SUCCESS;
+                    break;
+            }
+            break;
+        }
+
+        case 0x8384: // SigmaTel
+        {
+            switch (DeviceId)
+            {
+                // STAC9204/9205
+                case 0x76a0: // STAC9205
+                case 0x76a1: // STAC9204
+                case 0x76a2: // STAC9204D
+                case 0x76a3: // STAC9205D
+                case 0x76a4: // STAC9204
+                case 0x76a5: // STAC9205D
+                case 0x76a6: // STAC9204D
+                case 0x76a7: // STAC9205
+                {
+                    // Avoid D3 to keep GPIO up
+                    Status = OutNode->SetPowerState(m_FunctionGroupStartNode, TRUE);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("HDAUDIO: SetPowerState failed %x\n", Status);
+                        break;
+                    }
+
+                    // The external amplifier (EAPD) is switched by GPIO0
+                    Status = StacGPIOSetup((PVOID)OutNode, 0x1, 0x1, 0x1);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("HDAUDIO: StacGPIOSetup failed %x\n", Status);
+                        break;
+                    }
+                    break;
+                }
+
+                default:
+                    DPRINT("HDAUDIO: no quirks for SigmaTel DeviceId 0x%x\n", DeviceId);
+                    Status = STATUS_SUCCESS;
                     break;
             }
             break;
@@ -754,8 +795,9 @@ CAdapterCommon::ExecuteVendorSpecificQuirks(
                 }
 
                 default:
-                    DPRINT1("HDAUDIO: unhanlded DeviceId 0x%x\n", DeviceId);
-                    Status = STATUS_NOT_SUPPORTED;
+                    /* the generic setup still works, the codec must not be dropped */
+                    DPRINT("HDAUDIO: no quirks for Realtek DeviceId 0x%x\n", DeviceId);
+                    Status = STATUS_SUCCESS;
                     break;
             }
             break;

@@ -649,7 +649,7 @@ CAdapterCommon::BuildWaveFormat(
     HDAUDIO_GetMaskRange(RateMask, HDAUDIO_SampleRates, RTL_NUMBER_OF(HDAUDIO_SampleRates),
                          &MinimumSampleFrequency, &MaximumSampleFrequency);
 
-    DPRINT1("Converters %u MaximumChannels %u Bits %u-%u Frequency %u-%u PCM %u Float %u AC3 %u\n",
+    DPRINT("Converters %u MaximumChannels %u Bits %u-%u Frequency %u-%u PCM %u Float %u AC3 %u\n",
             FilterContext->ConverterCount, MaximumChannels, MinimumBitsPerSample, MaximumBitsPerSample,
             MinimumSampleFrequency, MaximumSampleFrequency,
             FormatPCMSupported, FormatFloatSupported, FormatAC3Supported);
@@ -900,7 +900,7 @@ CAdapterCommon::SetupPath(
         if (!NodeContext)
             continue;
 
-        DPRINT1("HDAUDIO: pin %u path node %u type %u\n", PinNodeId, Path[Index], NodeContext->NodeType);
+        DPRINT("HDAUDIO: pin %u path node %u type %u\n", PinNodeId, Path[Index], NodeContext->NodeType);
 
         OutNode->SetPowerState(Path[Index], TRUE);
 
@@ -965,7 +965,7 @@ CAdapterCommon::SetupPath(
     ConverterContext->Claimed = TRUE;
     *ConverterNodeId = Converter;
 
-    DPRINT1("HDAUDIO: pin %u uses converter %u\n", PinNodeId, Converter);
+    DPRINT("HDAUDIO: pin %u uses converter %u\n", PinNodeId, Converter);
     return STATUS_SUCCESS;
 }
 
@@ -1113,6 +1113,7 @@ CAdapterCommon::Initialize(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp, IN PRESO
     }
 
     if (VendorId == 0x111d || // IDT
+        VendorId == 0x8384 || // SigmaTel
         VendorId == 0x10ec) // Realtek
     {
         // Execute vendor-specific quirks
@@ -1219,7 +1220,7 @@ HDAUDIO_IsPinInUse(
     if (!NT_SUCCESS(Node->GetPinSense(PinNodeId, &DevicePresent)))
         return TRUE;
 
-    DPRINT1("HDAUDIO: PinNode %u DevicePresent %x\n", PinNodeId, DevicePresent);
+    DPRINT("HDAUDIO: PinNode %u DevicePresent %x\n", PinNodeId, DevicePresent);
     return DevicePresent != 0;
 }
 
@@ -1272,7 +1273,7 @@ CAdapterCommon::ProcessOutputNodes(
                 continue;
             }
 
-            DPRINT1(
+            DPRINT(
                 "HDAUDIO: Pass %u PinNode %u EAPD %x Output %x PresenceDetect %x PortConnectivity %x DefaultDevice %x "
                 "DefaultAssociation %x Sequence %x Misc %x\n", Pass, PinNodeId, PinCaps.EAPDCapable,
                 PinCaps.OutputCapable, PinCaps.PresenceDetectCapable, PinConfiguration.PortConnectivity,
@@ -1312,7 +1313,7 @@ CAdapterCommon::ProcessOutputNodes(
         }
     }
 
-    DPRINT1("HDAUDIO: %u output filters\n", FilterCount);
+    DPRINT("HDAUDIO: %u output filters\n", FilterCount);
     return STATUS_SUCCESS;
 }
 
@@ -1355,7 +1356,7 @@ CAdapterCommon::ProcessInputNodes(
 
             if (Pass == 0 && !HDAUDIO_IsPinInUse(OutNode, PinNodeId, &PinCaps, &PinConfiguration))
             {
-                DPRINT1("HDAUDIO: Input PinNode %u not in use\n", PinNodeId);
+                DPRINT("HDAUDIO: Input PinNode %u not in use\n", PinNodeId);
                 continue;
             }
 
@@ -1373,7 +1374,7 @@ CAdapterCommon::ProcessInputNodes(
         }
     }
 
-    DPRINT1("HDAUDIO: %u input filters\n", FilterCount);
+    DPRINT("HDAUDIO: %u input filters\n", FilterCount);
     return STATUS_SUCCESS;
 }
 
@@ -1405,6 +1406,7 @@ CAdapterCommon::BuildInstallFilter(
         ULONG PinNodeId = AssociatedPins[PinIndex];
 
         if (VendorId == 0x111d || // IDT
+            VendorId == 0x8384 || // SigmaTel
             VendorId == 0x10ec) // Realtek
         {
             PIN_CAPABILITIES PinCaps;
